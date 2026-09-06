@@ -1,85 +1,163 @@
 # Vision v1
 
-Status: first draft, synthesized from the R1–R3 research and the design discussion that followed it. Still open to revision — several points below are explicitly flagged as unresolved rather than forced to a conclusion.
+ステータス: 初稿。R1〜R3 の調査と、その後の設計議論を統合したもの。**未解決のまま残している
+論点は、無理に結論を出さず明示している。**
 
-## One-line summary
+## 一行で言うと
 
-A local-first, graph-based tool for a single engineer to represent their day-to-day implementation work — below the granularity of a Jira/Linear ticket — as something they directly manipulate, where useful signals (what's ready, what's blocking, where the bottlenecks are, how the whole thing is flowing) come from the shape of the graph itself rather than from separately maintained fields.
+1人のエンジニアが、日々の実装作業(Jira / Linear のチケットより下の粒度)を、自ら直接
+操作するグラフとして表現するための、ローカル完結型ツール。有用な信号 —— 今なにが着手できるか、
+何が止めているか、どこが詰まっているか、全体がどう流れているか —— は、別途管理するフィールド
+ではなく**グラフの形そのものから**得られる。
 
-## Problem & Opportunity
+## 問題と機会
 
-Research (R1) found that engineers already layer a lightweight, personal mechanism *underneath* their ticket tracker for this granular layer of work — plain text, in-repo markdown, org-mode, in-code TODOs — and that switching to a general-purpose external app for this layer repeatedly causes friction or breaks flow state. Several independent sources described multi-tier, ad hoc decomposition (day/sprint/ticket; overview/laundry-list/backlog) rather than a single flat list.
+**調査 R1** が明らかにしたこと: エンジニアは既に、チケット管理の**下**に、軽量で個人的な
+仕組みを重ねている —— プレーンテキスト、リポジトリ内の markdown、org-mode、コード内の TODO。
+そして、この層のために汎用の外部アプリへ切り替えると、繰り返し摩擦が生じるか、フロー状態が
+壊れるという報告が複数ある。複数の独立した情報源が、単一のフラットなリストではなく、
+**多段階のその場しのぎの分解**(日次/スプリント/チケット、概観/やることリスト/バックログ)を
+記述している。
 
-Research (R2, R3) found a structural gap that spans two entire categories of existing tools:
+**調査 R2・R3** が明らかにしたこと: 既存ツールの**2つのカテゴリにまたがる構造的な空白**。
 
-- **Task/PM tools** (Todoist, Things, TickTick, Jira, Linear, GitHub Projects, etc.) model work as a strict hierarchy or flat list. Where dependency relations exist at all, they are bolted on, not visualized, and are repeatedly requested by users across independent communities (HN 2016/2020/2022/2023, Taskwarrior, Super Productivity, Obsidian Tasks) in different words for the same underlying gap.
-- **Visual/canvas tools** (Miro, tldraw, Excalidraw, FigJam, Obsidian Canvas, Heptabase, Workflowy, Logseq) all model edges as representational objects — a line with a label — with no mechanism to derive status (Ready/Blocked/etc.) from graph structure. The one shipped example of a real derived status (GitHub Issues' "blocked by/blocking") is not a visual tool at all, and took a multi-year public request thread to arrive.
+- **タスク/PM ツール**(Todoist, Things, TickTick, Jira, Linear, GitHub Projects 等)は、
+  作業を厳密な階層かフラットなリストでモデル化する。依存関係は、存在しても後付けであり、
+  可視化されない。そして独立した複数のコミュニティ(HN 2016/2020/2022/2023、Taskwarrior、
+  Super Productivity、Obsidian Tasks)が、**同じ空白を毎回違う言葉で**繰り返し要求している。
+- **ビジュアル/キャンバス系ツール**(Miro, tldraw, Excalidraw, FigJam, Obsidian Canvas,
+  Heptabase, Workflowy, Logseq)は、いずれもエッジを**表現用のオブジェクト** —— ラベル付きの
+  線 —— としてモデル化しており、グラフ構造からステータス(Ready/Blocked 等)を導出する仕組みを
+  持たない。導出されたステータスが実際に出荷されている唯一の例(GitHub Issues の
+  "blocked by/blocking")は**ビジュアルツールではなく**、しかも多年にわたる公開の要望スレッドを
+  経てようやく実装されたものである。
 
-No tool surveyed combines "graph you directly edit" with "status computed from that graph." That combination is the core bet of this product.
+**調査した中に、「自分で編集するグラフ」と「そのグラフから計算されるステータス」を組み合わせた
+ツールは1つもなかった。** この組み合わせが、このプロダクトの中心的な賭けである。
 
-## Target User
+## 対象ユーザー
 
-A single individual: a software engineer, whether an employee or an individual/solo developer. Explicitly **not** a team-coordination tool — multi-user/team workflows are out of scope by design, not just by initial cut.
+**個人1名** —— 会社員か個人開発者かを問わず、ソフトウェアエンジニア。**チーム調整のための
+ツールではない。** 複数ユーザー/チームのワークフローは、初期スコープの都合ではなく、
+設計として範囲外。
 
-## Design Principles
+## 設計原則
 
-Carried over unchanged from the original brief; everything below is built to serve these, not the other way around.
+元のブリーフから変更なく引き継ぐ。以下のすべては、これらに奉仕するために作られている。
 
-1. **The graph-editing experience is the main thing.** The product's primary interaction is editing the graph — not filling out fields, not managing a separate settings/status UI.
-2. **The value is being able to directly manipulate your thinking, as-is.** Structure follows how the person actually thinks, not a template imposed on them. (This is why derived status must never restrict what a person can do with a node — see below.)
-3. **Value emerges from the graph, not from separate bookkeeping.** Ready, Blocked, Bottleneck, and overall flow are all read off the graph's shape — some by explicit computation, some simply by looking at a well-drawn graph.
+1. **グラフを編集する体験が主役。** このプロダクトの主要な操作はグラフの編集であって、
+   フィールドを埋めることでも、別画面で状態を管理することでもない。
+2. **価値は、思考をそのまま操作できることにある。** 構造は本人の考え方に従うのであって、
+   押し付けられたテンプレートに従うのではない。(だからこそ、導出された状態がノードに対する
+   操作を制限してはならない —— 後述。)
+3. **価値は別途の記帳ではなく、グラフから生まれる。** Ready、Blocked、ボトルネック、全体の
+   流れは、すべてグラフの形から読み取る —— 一部は明示的な計算で、一部はただ「よく描かれた
+   グラフを見ること」で。
 
-## Product Concept (current shape)
+## プロダクトの概念(現時点の形)
 
-This section describes the shape the concept has taken through discussion. It is a concept, not a spec — no data schema, storage format, or UI mechanics are decided here.
+議論を通じて概念が取った形を記述する。これは概念であって仕様ではない —— データスキーマ、
+保存形式、UI の機構はここでは決めない。
 
-**The core unit is a Task**, used recursively but with a deliberately shallow limit: a Task may have flat child Tasks (a checklist-like layer), but a child Task cannot itself have children. There is no arbitrarily deep tree.
+**中核となる単位は Task** で、再帰的に使われるが**意図的に浅い制限**がある。Task は
+フラットな子 Task(チェックリスト的な層)を持てるが、子 Task はさらに自分の子を持てない。
+任意の深さの木構造にはしない。
 
-**Two distinct relations exist between Tasks, kept separate on purpose:**
-- *Parent/child* (composition): used when Tasks are simply part of the same whole, with no ordering to express.
-- *Dependency edges* (the graph proper): used specifically when there *is* an ordering relationship. These only connect top-level Tasks — a child Task cannot be a dependency-graph participant. Two flavors are hypothesized (not fully settled — see Open Threads): a **strict** dependency (task B genuinely cannot start until task A is done — tied to technical/structural constraints) and a **loose** ordering (a natural sequence with no hard gate — tied to personal workflow habit, e.g. implementing a class while interleaving its tests).
+**Task 間には2種類の関係があり、意図的に分けている。**
 
-**Project is a region on the canvas, not a tag.** It owns a rectangle you can resize; a Task belongs to it by sitting inside it, and stops belonging when dragged out. Membership is therefore derived from position and never stored — the same treatment as Ready/Blocked, and for the same reason: a stored membership could disagree with where the Task actually is. A child Task inherits its parent's. Dependency edges are always Task-to-Task, never Task-to-Project — a dependency that visually crosses a project boundary is an ordinary edge between two specific Tasks that happen to sit in different regions.
+- *親子(構成)*: 単に同じまとまりの一部であり、順序を表現する必要がないときに使う。
+- *依存エッジ(グラフそのもの)*: **順序関係がある**ときに使う。トップレベルの Task 同士
+  のみを繋ぐ —— 子 Task は依存グラフに参加しない。2種類が仮説として立てられている
+  (未確定。Open Threads 参照): **厳密**な依存(B は A が終わるまで本当に始められない ——
+  技術的・構造的な制約に紐づく)と、**緩やか**な順序(自然な流れだが強制力はない ——
+  個人の作業習慣に紐づく。例: クラスを実装しながらテストを行き来する)。
 
-*(This replaces an earlier reading in which Project was a tag and the frame merely visualized which Tasks shared it. Building the canvas showed it was the other way round. See `design/decisions.md` D-1.)*
+**Project はタグではなく、キャンバス上の領域である。** 大きさを変えられる矩形を持ち、Task は
+その中にあることで所属し、外へドラッグすれば所属しなくなる。したがって**所属は位置から導出
+され、保存されない** —— Ready/Blocked と同じ扱いであり、理由も同じ。保存された所属は、
+Task が実際にある場所と食い違いうるため。子 Task は親の所属を引き継ぐ。依存エッジは常に
+Task 対 Task であり、Task 対 Project ではない —— プロジェクトの境界を跨いで見えるエッジは、
+たまたま別の領域にある2つの Task を繋ぐ、普通のエッジにすぎない。
 
-**State is two independent axes, not one pipeline:**
-- Computed: Ready / Blocked, derived purely from whether a Task's strict-blocking predecessors are Done. Meaningful only for top-level Tasks (child Tasks have no dependency edges to compute from — whether they should inherit their parent's value here is still open).
-- Self-reported: Not Done / In Progress / Done, set explicitly by whichever actor — human, or an AI acting on the human's behalf in conversation — actually did the work. No external or automatic detection of completion (e.g. from a git commit) is in scope.
-- The two axes being independent is what lets a Task be, say, Blocked *and* In Progress at once (refining/prepping a downstream Task before its dependency finishes) — and is why the computed axis must never restrict editing or block setting the self-reported axis.
-- A parent Task's Done state and its children's Done states are independent by design (no auto-rollup), because new child Tasks may be added after existing ones were already completed.
+*(当初は「Project はタグであり、枠はそれを共有する Task の可視化にすぎない」と読んでいた。
+キャンバスを作る過程で逆であることが判明した。`design/decisions.md` D-1 を参照。)*
 
-**Bottleneck and overall flow are not computed values.** Unlike Ready/Blocked, they're expected to be visible simply from a well-designed rendering of the graph — a node many edges converge on reads as a bottleneck; the graph's overall shape gives a gut sense of progress. This is a visualization-design problem, not an algorithm to build.
+**状態は1本のパイプラインではなく、独立した2軸。**
 
-**Single shared canvas.** All Tasks and Projects coexist in one space, not per-project screens — a requirement of allowing dependency edges across project boundaries. A Task's own children can be collapsed into a compact form; independently, a project's member Tasks can be visually clustered/collapsed too (re-routing their edges to the collapsed shape for display only — the underlying edges still reference the specific Tasks).
+- 計算される: Ready / Blocked。厳密な依存の先行 Task が完了しているかだけから導出される。
+  トップレベルの Task に対してのみ意味を持つ(子 Task には計算の元になる依存エッジがない ——
+  親の値を継承すべきかは未決定)。
+- 自己申告: 未着手 / 着手中 / 完了。実際に作業した主体 —— 人間、または会話の中で人間に代わって
+  作業した AI —— が明示的に設定する。**完了の外部検知や自動検知**(git のコミットからの推定等)は
+  スコープ外。
+- 2軸が独立していることが、Task を **Blocked かつ着手中**にできる理由である(依存が終わる前に
+  下流の Task を詰めておく)。そしてこれが、計算される軸が編集や自己申告を制限してはならない
+  理由でもある。
+- 親 Task の完了と子 Task の完了は、設計として独立している(自動連動しない)。既存の子を
+  すべて完了させた後で、新しい子を追加することがあるため。
 
-**Local-first, AI-legible, execution stays outside the product.** All data lives locally; there is no cloud sync and no integration with external ticket systems (Jira, GitHub, etc.) planned. The data structure is meant to be easy for an AI (e.g. Claude Code) to read and act on conversationally — adding/removing Tasks, reporting state, answering "what's Ready" — because the human is expected to often manage the graph *through* a conversation with AI rather than only by direct manipulation. But the product's responsibility stops at managing the task graph: whether an AI (or the human) actually goes and does the underlying work is explicitly outside what this product is responsible for.
+**ボトルネックと全体の流れは、計算される値ではない。** Ready/Blocked と違い、これらは
+よく設計された描画から**そのまま見える**ことを期待している —— 多くのエッジが集まるノードは
+詰まりどころとして目に入り、グラフ全体の形が進捗の感触を与える。これはアルゴリズムを作る
+問題ではなく、可視化を設計する問題である。
 
-**Interaction expectations (not designed yet, but scoped):** the core structural moves — making a Task a child, connecting two Tasks with a dependency edge, putting a Task in a project — are all expected to be reachable with simple mouse gestures (dragging a Task into a project's frame is what puts it there). The actual interaction design is deferred.
+**単一の共有キャンバス。** すべての Task と Project が1つの空間に共存する。プロジェクトごとの
+画面には分けない —— プロジェクトの境界を跨ぐ依存エッジを引けるようにするための要請である。
+Task 自身の子は折りたたんでコンパクトにできる。それとは独立に、あるプロジェクトに属する
+Task 群をクラスタとしてまとめて折りたたむこともできる(表示のためだけにエッジを畳んだ形へ
+繋ぎ替える —— データ上のエッジは引き続き特定の Task を参照している)。
 
-## Visualization Quality Is Core, Not Incidental
+**ローカル完結、AI が読める構造、実行はプロダクトの外。** すべてのデータはローカルにあり、
+クラウド同期も外部チケット管理システム(Jira, GitHub 等)との連携も予定していない。データ構造は
+AI(Claude Code 等)が読んで操作しやすい形であることを意図している —— Task の追加/削除、
+状態の報告、「今なにが Ready か」への回答 —— 人間が直接操作するだけでなく、**AI との会話を
+通じて**グラフを管理する場面が多いと想定しているため。ただしこのプロダクトの責任はグラフの
+管理までで止まる。AI(あるいは人間)が実際に作業をこなすかどうかは、明示的に責任範囲の外。
 
-Because Bottleneck and overall flow are explicitly *not* computed values but things a person is meant to perceive by looking at the graph (see Product Concept above), and because Principle 1 makes graph-editing the primary experience, the legibility and operability of the visualization is not a peripheral implementation detail — it's load-bearing for whether the product's core value proposition works at all. A technically correct dependency graph that's hard to read or clumsy to manipulate would fail the product's actual goal even if every computed value (Ready/Blocked) were correct.
+**操作面の期待(まだ設計していないが、スコープには入っている)**: 中核となる構造上の操作 ——
+Task を子にする、2つの Task を依存エッジで繋ぐ、Task をプロジェクトに入れる —— は、いずれも
+シンプルなマウス操作で到達できることを期待する(プロジェクトへは枠の中へドラッグするだけ)。
+具体的な操作設計は後回しにする。
 
-This is flagged here as a standing priority to carry into every later phase (interaction design, rendering approach, layout algorithm choices, etc.), rather than treated as a normal implementation concern to be traded off for convenience. The concrete design work itself — layout, readability at scale, interaction responsiveness — is not decided here; see Open Threads.
+## 可視化の精度は付随的な実装詳細ではない
 
-## Explicit Non-Goals
+ボトルネックと全体の流れが**計算される値ではなく**、グラフを見ることで知覚されるべきものと
+している以上(上記のプロダクト概念を参照)、そして設計原則1がグラフ編集を主要な体験と
+している以上、**可視化の可読性と操作性は周辺的な実装詳細ではなく、このプロダクトの中心的な
+価値提案が成立するかどうかを左右する**。技術的に正しい依存グラフであっても、読みにくかったり
+操作がぎこちなかったりすれば、計算される値(Ready/Blocked)がすべて正しくてもプロダクトの
+目的は達成されない。
 
-- Team/multi-user coordination of any kind.
-- Cloud storage, sync, or any server-side component.
-- Integration with external trackers (Jira, GitHub Issues, Linear, etc.).
-- The product autonomously executing tasks (writing code, etc.) — AI's role here is managing the graph conversationally, not performing the work it describes.
-- A prescribed decomposition granularity — the size of a "Task" is always the user's own contextual call, not something the tool enforces.
+これは以降のすべてのフェーズ(操作設計、描画方式、レイアウトアルゴリズムの選択など)へ
+持ち越す**常設の優先事項**として明記する。都合に応じてトレードオフしてよい通常の実装上の
+関心事としては扱わない。具体的な設計作業そのもの —— レイアウト、規模が増えたときの可読性、
+操作の応答性 —— はここでは決めない。Open Threads を参照。
 
-## Open Threads (carried into PRD / Requirements)
+## 明示的な非ゴール
 
-- Whether the strict/loose dependency distinction (H1) needs more than two categories, and how it's visually distinguished — unresolved, deferred as a design question.
-- Whether the computed axis (Ready/Blocked) should be inherited by a child Task from its parent, or simply left undefined for children — explicitly undecided.
-- Whether a strict dependency is always tied to a technical/structural constraint, or whether purely workflow-driven strict dependencies exist too — not explored.
-- How the "nest ↔ dependency-edge" restructuring interaction should actually work — deferred, design question.
-- Concrete visualization/layout design (how the graph renders and stays legible/operable as it grows, layout algorithm, rendering approach) — explicitly called out as a standing priority (see "Visualization Quality Is Core, Not Incidental" above), but not designed here; deferred to a later phase.
+- あらゆる形のチーム/複数ユーザーでの調整。
+- クラウド保存、同期、サーバーサイドの構成要素。
+- 外部トラッカー(Jira, GitHub Issues, Linear 等)との連携。
+- プロダクトが自律的にタスクを実行すること —— ここでの AI の役割は会話を通じたグラフの管理で
+  あって、グラフが記述する作業を行うことではない。
+- 分解の粒度を規定すること —— 「1つの Task」の大きさは常にユーザー自身の文脈的な判断であり、
+  ツールが強制するものではない。
 
-## Parking Lot (validated needs, deliberately deferred)
+## 未解決の論点(PRD / 要件定義へ持ち越す)
 
-- A running, diary-style progress note/log per Task, anchored to entering "In Progress" — validated as a real personal need but based on one person's workflow; deferred to a later phase.
-- Deadline- and effort-based progress percentages (per-parent childTask completion %, per-Project completion %, optionally effort-weighted) — deferred; the user was explicit this can be added after the first version.
+- 厳密/緩やかの区別(H1)が2種類で足りるか、そしてどう視覚的に区別するか —— 未解決。
+  設計上の問いとして後回し。
+- 計算される軸(Ready/Blocked)を子 Task が親から継承すべきか、それとも子については未定義の
+  ままにするか —— 明示的に未決定。
+- 厳密な依存が常に技術的・構造的な制約に紐づくのか、それとも純粋にワークフロー由来の厳密な
+  依存も存在するのか —— 未調査。
+- 「入れ子 ↔ 依存エッジ」の組み替え操作を実際どう動かすか —— 後回し。設計上の問い。
+- 具体的な可視化/レイアウト設計(規模が増えても可読性と操作性を保つ方法、レイアウト
+  アルゴリズム、描画方式)—— 常設の優先事項として明記した(上記「可視化の精度は付随的な
+  実装詳細ではない」)が、ここでは設計しない。後続フェーズへ。
+
+## Parking Lot(実在するニーズだが、意図的に見送るもの)
+
+- ~~Task ごとの進捗メモ/日記的なログ~~ —— **FR-10 として実装済み。**
+- 期限・工数ベースの進捗率(親単位の子 Task 完了率、Project 単位の完了率、任意で工数による
+  重み付け)—— 見送り。最初の版の後で追加できる。

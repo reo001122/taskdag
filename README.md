@@ -1,99 +1,122 @@
 # taskdag
 
-> Your implementation work as a DAG, not a list.
+> 実装作業を、リストではなくグラフとして。
 
-**taskdag** is a local-first, graph-based task manager for the granular implementation work a single engineer does day to day — the layer *below* a Jira/Linear ticket.
+**taskdag** は、エンジニアが日々こなす細かい実装作業 —— Jira や Linear のチケットより
+**下の粒度** —— を扱うための、ローカル完結型のタスク管理ツールです。
 
-You draw your work as a graph. The graph tells you what you can actually start right now.
+作業をグラフとして描くと、**今どれに着手できるか**をグラフが教えてくれます。
 
-## Why
+## なぜ作るのか
 
-Every task manager we surveyed — Todoist, Things 3, TickTick, Microsoft To Do, OmniFocus, Jira, Linear, GitHub Projects — models work as a **strict hierarchy or a flat list**. Dependencies, where they exist, are bolted onto that model rather than part of it. GitHub Issues does derive a blocked state from its dependency links, but you read it as a badge in a list; there is no picture of the graph to edit.
+調査したタスク管理ツール(Todoist, Things 3, TickTick, Microsoft To Do, OmniFocus, Jira,
+Linear, GitHub Projects)は、いずれも作業を**厳密な階層かフラットなリスト**でモデル化して
+います。依存関係は、あったとしてもモデルの一部ではなく後付けです。GitHub Issues は依存リンク
+から blocked 状態を導出しますが、それはリストの中のバッジとして読むもので、**編集できる
+グラフの絵はありません**。
 
-Every visual canvas tool we surveyed — Miro, tldraw, Excalidraw, FigJam, Obsidian Canvas, Heptabase, Workflowy, Logseq — has **nodes and edges, but the edges are decorative**. Nothing is computed from them.
+調査したキャンバス系ツール(Miro, tldraw, Excalidraw, FigJam, Obsidian Canvas, Heptabase,
+Workflowy, Logseq)は、いずれも**ノードとエッジを持ちますが、エッジは飾り**です。そこから
+何も計算されません。
 
-One category has the dependency data without a picture. The other has a picture that computes nothing.
+片方は依存関係のデータを持つが絵がない。もう片方は絵を持つが何も計算しない。
 
-taskdag is the combination: **a graph you directly edit, where Ready and Blocked are computed from the graph itself and never maintained by hand.**
+taskdag はその組み合わせです。**自分で編集するグラフがあり、Ready と Blocked はそのグラフ
+から計算される。手で管理することはありません。**
 
-## Core ideas
+## 中心となる考え方
 
-- **Task** — the unit of work. Can hold a flat checklist of **childTasks** (one level deep, no deeper).
-- **Dependency edge** — connects two top-level Tasks. `A → B` means B can't start until A is done.
-- **Project** — a region on the canvas, not a tag. A task belongs to it by sitting inside it; drag it out and it stops belonging. Membership is derived from position, never stored.
-- **Two independent state axes:**
-  - *Computed*: `Ready` / `Blocked` — derived from the dependency graph. You never set these.
-  - *Self-reported*: `Not Done` / `In Progress` / `Done` — set by whoever did the work.
+- **Task** — 作業の単位。フラットな **childTask**(チェックリスト)を持てます。深さは1まで。
+- **依存エッジ** — トップレベルの Task 同士を繋ぎます。`A → B` は「A が終わるまで B は
+  始められない」。
+- **Project** — タグではなく、キャンバス上の**領域**です。Task はその中にあることで所属し、
+  外へ出せば外れます。所属は位置から導出され、保存されません。
+- **独立した2つの状態軸**
+  - *計算される*: `Ready` / `Blocked` —— 依存グラフから導出されます。設定はできません。
+  - *自己申告*: `未着手` / `着手中` / `完了` —— 作業した本人が設定します。
 
-The axes being independent is deliberate: a task can be **Blocked and In Progress at once** — you're doing prep work before its blocker clears. A status that forbade that would get in the way of thinking.
+2軸が独立しているのは意図的です。**Blocked かつ着手中**という状態が成立します —— ブロックが
+外れる前に下準備をしている状況です。これを禁じる状態設計は、思考の邪魔になります。
 
-## Design principles
+## 設計原則
 
-1. **Editing the graph is the main experience.** Not filling in fields.
-2. **You manipulate your thinking directly.** The tool doesn't impose a structure on you — which is why derived status never restricts what you can edit.
-3. **Value comes from the graph.** Ready and Blocked are computed. Bottlenecks and overall flow are meant to be *seen*, not calculated.
+1. **グラフを編集する体験が主役。** フィールドを埋めることではありません。
+2. **思考をそのまま操作できること。** ツールが構造を押し付けない —— だからこそ、導出された
+   状態が編集を妨げることはありません。
+3. **価値はグラフから生まれる。** Ready と Blocked は計算されます。ボトルネックと全体の流れは、
+   計算ではなく**見えること**を狙います。
 
-## Status
+## 現在の状態
 
-**In development, and not yet released.** The canvas runs: you can create tasks, draw dependencies and watch Ready/Blocked update. It has not been through a manual QA pass, so expect rough edges. There is no packaged build to install — see Development below to run it from source.
+**開発中で、まだリリースしていません。** キャンバスは動きます —— Task を作り、依存を引き、
+Ready/Blocked が更新される様子を見られます。ただし手動での品質確認を通していないため、
+粗い箇所があります。インストールできるビルドはまだありません。動かすには下記の「開発」を
+参照してください。
 
-| Phase | Scope | Status |
+| Phase | 範囲 | 状態 |
 |---|---|---|
-| 0 | Walking skeleton — Electron + React Flow + SQLite integration | ✅ Done |
-| 1 | Domain layer (TDD, no framework dependencies) | ✅ Done |
-| 2 | Persistence (SQLite) | ✅ Done |
-| 3 | UI (React Flow canvas) | ✅ Done |
-| 4 | MCP server for AI operation | Next |
+| 0 | 技術検証 — Electron + React Flow + SQLite | ✅ 完了 |
+| 1 | ドメイン層(TDD、フレームワーク非依存) | ✅ 完了 |
+| 2 | 永続化(SQLite) | ✅ 完了 |
+| 3 | UI(React Flow のキャンバス) | ✅ 完了 |
+| 4 | AI 操作のための MCP サーバー | 次 |
 
-## Non-goals
+## やらないこと
 
-Deliberately out of scope, not just deferred:
+後回しではなく、**設計として範囲外**のものです。
 
-- Team / multi-user coordination
-- Cloud storage or sync — **data stays entirely local**
-- Integration with external trackers (Jira, GitHub Issues, Linear)
-- Executing your tasks for you — taskdag manages the graph; doing the work is yours
-- Enforcing a decomposition granularity — how big a task is, is always your call
+- チーム・複数ユーザーでの調整
+- クラウド保存・同期 —— **データは完全にローカルに留まります**
+- 外部チケット管理システム(Jira, GitHub Issues, Linear)との連携
+- あなたの代わりにタスクを実行すること —— taskdag が扱うのはグラフの管理まで
+- 分解の粒度を強制すること —— タスクの大きさは常にあなたが決めます
 
-## AI operation
+## AI からの操作
 
-**Not built yet — this is what Phase 4 is for.** The plan: an MCP server so an AI coding tool (e.g. Claude Code) can manage the graph conversationally — "what's ready?", "mark the auth task done", "drop that one" — while the canvas stays open beside you as a live view.
+**まだ実装していません。Phase 4 で作ります。** 計画としては、MCP サーバーを通じて AI
+コーディングツール(Claude Code など)がグラフを会話で管理できるようにするものです ——
+「今なにが着手できる?」「認証のタスクを完了にして」「これはもう要らないから消して」——
+その隣でキャンバスが生きたビューとして開いたまま更新される、という形を想定しています。
 
-The architecture is already arranged for it. Every write goes through the application layer rather than straight to the database, so when AI operation arrives, dependency rules, cycle prevention and undo will apply to it exactly as they do to your own edits.
+そのための構造は既に用意してあります。すべての書き込みは DB へ直接ではなく
+アプリケーション層を経由するため、AI 操作が入ったときも、依存のルール・循環の防止・Undo が
+人間の操作とまったく同じように適用されます。
 
-## Development
+## 開発
 
-Requires **Node.js 24+** (pinned in `.nvmrc`). The project uses the built-in
-`node:sqlite` module, which needs Node 22.5 or newer — 24 matches the Node version
-Electron itself bundles, so tests and production run the same SQLite.
+**Node.js 24 以上**が必要です(`.nvmrc` で固定)。Node 標準の `node:sqlite` を使っており、
+これには 22.5 以上が要ります。24 にしているのは Electron が内蔵する Node と揃えるためで、
+テストと本番が同じ SQLite で動きます。
 
 ```bash
-npm install          # no native modules, no rebuild step
-npm run dev          # start with hot reload
+nvm use
+npm install          # ネイティブモジュールなし。再ビルド不要
+npm run dev          # ホットリロードつきで起動
 npm run typecheck    # TypeScript
 npm test             # Vitest
-npm run check        # Biome (lint + format)
-npm run build        # production build
+npm run check        # Biome(lint + format)
+npm run build        # 本番ビルド
 ```
 
-### Documentation
+### ドキュメント
 
-The reasoning behind this project is written down, in order:
+このプロジェクトの根拠は、順を追って文書に残しています。
 
-| Path | Contents |
+| パス | 内容 |
 |---|---|
-| `research/` | Primary-source research into how engineers manage granular work, and what existing tools do |
-| `vision/vision.md` | Problem framing, principles, product concept |
-| `vision/PRD.md` | Product requirements |
-| `vision/requirements.md` | v1 requirements with acceptance criteria |
-| `design/` | Tech stack, coding standards, domain design, persistence design, development process |
-| `design/decisions.md` | What was rejected, and what each decision cost |
-| `design/qa-checklist.md` | What to check by hand — the things typecheck and tests cannot catch |
+| `research/` | 一次情報にあたった調査 —— エンジニアが細かい作業をどう管理しているか、既存ツールが何をしているか(英語) |
+| `vision/vision.md` | 問題認識、設計原則、プロダクトの概念 |
+| `vision/PRD.md` | プロダクト要件 |
+| `vision/requirements.md` | v1 の要件と受け入れ条件 |
+| `design/` | 技術選定、コーディング規約、ドメイン設計、永続化設計、開発プロセス |
+| `design/decisions.md` | **却下した案と、各判断が何を犠牲にしたか** |
 
-## Contributing
+## コントリビュート
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Before proposing a design change, `design/decisions.md` records what each choice rejected and cost — the idea may already have been weighed.
+[CONTRIBUTING.md](CONTRIBUTING.md) を参照してください。設計上の変更を提案する前に、
+`design/decisions.md` を見てください —— 各判断が何を却下し、何を失ったかが書いてあります。
+思いついた案は既に検討済みかもしれません。
 
-## License
+## ライセンス
 
 MIT

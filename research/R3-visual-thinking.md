@@ -1,3 +1,7 @@
+> **この文書は英語のままにしています。** 引用元がすべて英語の一次情報(Hacker News、
+> GitHub Issues/Discussions、各ツールの公式ドキュメント)であり、訳すと引用としての
+> 正確さが落ちるためです。他の設計文書は日本語です。
+
 # Scope
 
 This sprint investigates eight visual-thinking / canvas tools — Miro, tldraw, Excalidraw, FigJam, Obsidian Canvas, Heptabase, Workflowy, Logseq — to understand (a) their core interaction/data models (freeform canvas vs. outline vs. block-based vs. graph-based), (b) any documented design rationale from their makers, and (c) how real users/developers discuss using these tools for tracking work/tasks/dependencies specifically, as opposed to pure brainstorming or note-taking. No design conclusions or recommendations are drawn here.

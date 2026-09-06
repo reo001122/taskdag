@@ -1,29 +1,29 @@
-# Contributing
+# コントリビュートについて
 
-taskdag is early and maintained by one person. Issues and pull requests are welcome, with one
-caveat worth stating up front: several parts of the design are deliberate and cost something,
-and the cheapest way to have a change rejected is to undo one of those on purpose.
+taskdag は開発初期で、1人で保守しています。Issue も Pull Request も歓迎しますが、先に
+一点お伝えします。**設計のいくつかの部分は意図的な選択であり、何かを犠牲にして成り立って
+います。** それを知らずに元へ戻す変更が、最も却下されやすいものです。
 
-## Read this first
+## 最初に読んでほしいもの
 
-`design/decisions.md` lists what each design choice rejected and what it cost. If you are about
-to propose something that feels obviously better — storing Ready/Blocked instead of deriving it,
-letting childTasks have dependency edges, reconnecting every edge on delete — check there first.
-It may already have been weighed and dropped, and the entry will say why.
+`design/decisions.md` に、各設計判断が**何を却下し、何を失ったか**を書いています。
 
-## Setup
+「明らかにこうした方がいい」と感じる案 —— Ready/Blocked を導出せず保存する、childTask 間にも
+依存エッジを張れるようにする、削除時に必ず全ての依存を繋ぎ直す —— は、まずそこを見てください。
+既に検討して却下している可能性があり、その場合は理由が書いてあります。
 
-Requires **Node.js 24+**, pinned in `.nvmrc`. The project uses the built-in `node:sqlite`, which
-needs 22.5 or newer; 24 matches the Node version Electron bundles, so tests and production run
-the same SQLite.
+## 環境
+
+**Node.js 24 以上**が必要です(`.nvmrc` で固定)。Node 標準の `node:sqlite` を使っており、
+これには 22.5 以上が要ります。24 にしているのは Electron が内蔵する Node と揃えるためです。
 
 ```bash
 nvm use
-npm install     # no native modules, no rebuild step
+npm install     # ネイティブモジュールなし。再ビルド不要
 npm run dev
 ```
 
-## Before opening a pull request
+## Pull Request を出す前に
 
 ```bash
 npm run typecheck
@@ -31,44 +31,52 @@ npm test
 npm run check   # Biome
 ```
 
-CI runs all three. It will not catch what matters most, though — see below.
+CI でも同じ3つが走ります。ただし**最も重要なものは、これでは捕まりません**(後述)。
 
-## The one architectural rule
+## アーキテクチャ上の唯一のルール
 
-**The domain layer under `src/main/domain/` has no external imports.** Not Electron, not
-`node:sqlite`, not React. It is plain TypeScript.
+**`src/main/domain/` のドメイン層は、外部への import を一切持ちません。** Electron も
+`node:sqlite` も React も参照しない、純粋な TypeScript です。
 
-That is not a style preference. Every write — from the UI today, from an AI over MCP later —
-has to pass through the same code, so dependency rules, cycle prevention and undo apply
-identically to both. Putting domain logic in the renderer would let AI operations bypass it.
-`design/coding-standards.md` §1 has the details.
+これは好みの問題ではありません。**すべての書き込み** —— 今は UI から、将来は MCP 経由で
+AI から —— が同じコードを通る必要があり、そうして初めて依存のルール・循環の防止・Undo が
+どちらにも同じように効きます。ドメインロジックを renderer に置くと、AI からの操作がそれを
+迂回します。詳細は `design/coding-standards.md` §1 にあります。
 
-Practically: if you find yourself reimplementing a judgement in `src/renderer/`, that judgement
-belongs in the domain and should be called, not copied.
+実務的には、`src/renderer/` で何かの判定を書き直していると気づいたら、**その判定はドメインに
+属しており、呼ぶべきもので、写すべきものではありません**。
 
-## Testing
+## テスト
 
-The domain layer is tested first, and its tests name the requirement they cover
-(`FR-3: 両側が複数の場合は自動再接続しない`). If you change behaviour there, change the test that
-describes it — the naming exists so requirement and test stay traceable.
+ドメイン層はテストを先に書きます。テスト名には対応する要件番号を含めてください
+(`FR-3: 両側が複数の場合は自動再接続しない`)。ここの挙動を変えるなら、それを説明している
+テストも変えてください —— 要件とテストの対応を追えるようにするための命名です。
 
-UI is not unit tested. Whether a graph reads well is not something a test can answer.
+UI に単体テストは書きません。グラフが読みやすいかどうかは、テストが答えられる問いでは
+ないためです。
 
-## What automated checks do not catch
+## 自動チェックが捕まえないもの
 
-Typecheck and tests have passed repeatedly while the canvas was visibly broken — nodes that
-would not follow the cursor, titles that could not be edited, borders missing at three corners.
-`design/qa-checklist.md` is the manual pass that catches those. If your change touches the
-canvas, run the relevant sections.
+型チェックもテストも通っているのにキャンバスが目に見えて壊れている、という状態が実際に
+何度も起きました —— ノードがカーソルに付いてこない、タイトルが編集できない、枠線が3つの角で
+途切れている。
 
-## Commits
+キャンバスに触れる変更をしたら、**アプリを開いて実際に使ってください。** 依存をいくつか
+引き、何かを完了にし、Project の枠を動かしてみる。これらはそうしないと表に出てきません。
 
-Conventional Commits (`feat:`, `fix:`, `refactor:`, `docs:`, `chore:`), written in English, one
-concern per commit. Explain why, not what — the diff already says what.
+## コミット
 
-## Scope
+Conventional Commits(`feat:`, `fix:`, `refactor:`, `docs:`, `chore:`)、英語、1コミット
+1論点。**何をしたかではなく、なぜそうしたか**を書いてください。何をしたかは差分が語ります。
 
-Some things are out of scope by design, not by backlog order: team coordination, cloud sync,
-integration with external trackers, and the product executing your tasks for you. The README's
-Non-goals section is the full list. A pull request adding one of these will not be merged, so
-please open an issue first if you think one of them is wrong.
+## スコープ
+
+以下は後回しではなく、**設計として範囲外**です。
+
+- チーム・複数ユーザーでの調整
+- クラウド同期
+- 外部チケット管理システムとの連携
+- あなたの代わりにタスクを実行すること
+
+README の「やらないこと」が全リストです。これらを追加する Pull Request はマージされないため、
+どれかが間違っていると思う場合は、まず Issue を立ててください。

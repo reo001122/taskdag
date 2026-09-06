@@ -1,3 +1,7 @@
+> **この文書は英語のままにしています。** 引用元がすべて英語の一次情報(Hacker News、
+> GitHub Issues/Discussions、各ツールの公式ドキュメント)であり、訳すと引用としての
+> 正確さが落ちるためです。他の設計文書は日本語です。
+
 # Scope
 
 This sprint investigates existing TODO apps (Todoist, Things 3, TickTick, Microsoft To Do, OmniFocus) and project-management tools (Jira, Linear, GitHub Projects) to understand: (1) the data model each assumes for a "unit of work," (2) the stated design rationale behind that model, and (3) documented user pain points and feature requests specifically around task dependencies and fine-grained, sequential implementation work (i.e., work below the granularity of a Jira ticket or GitHub issue). Sources prioritized: official docs, GitHub Issues/Discussions, Hacker News threads, and community forums (Reddit, GTD forums, Omni Group forums).
