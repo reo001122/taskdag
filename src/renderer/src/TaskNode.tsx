@@ -178,6 +178,16 @@ function EditableText({
         if (!closingRef.current && document.hasFocus()) inputRef.current?.focus();
       }}
       onKeyDown={(e) => {
+        /*
+          キャンバスのショートカット(Cmd+Z など)へ渡さない。
+
+          止めるのは capture ではなく、この bubble 側でなければならない。
+          React は listener を root にまとめて置くため、capture で
+          stopPropagation すると event が入力欄まで降りてこなくなり、
+          この onKeyDown 自身が呼ばれなくなる —— Enter が効かなかった原因。
+        */
+        e.stopPropagation();
+
         // 日本語入力の変換確定の Enter を、確定操作と取り違えない。
         // IME 変換中の Enter は「変換を決める」ためのものであって、
         // 入力を終える意思表示ではない。
@@ -194,8 +204,6 @@ function EditableText({
           onEditEnd?.();
         }
       }}
-      // キャンバスのショートカット(Undo など)に横取りされないようにする
-      onKeyDownCapture={(e) => e.stopPropagation()}
     />
   );
 }
@@ -273,6 +281,10 @@ function Memo({
       onMouseDown={(e) => e.stopPropagation()}
       onBlur={finish}
       onKeyDown={(e) => {
+        // Enter で改行できるよう、キャンバスのショートカットへ渡さない。
+        // capture 側で止めるとこのハンドラ自体が呼ばれなくなる(上と同じ理由)。
+        e.stopPropagation();
+
         // Enter は改行。Escape で編集をやめる。
         if (e.key === 'Escape') {
           setEditing(false);
@@ -280,8 +292,6 @@ function Memo({
           setDraft(memo);
         }
       }}
-      // Enter で改行できるよう、キャンバスのショートカットに渡さない
-      onKeyDownCapture={(e) => e.stopPropagation()}
     />
   );
 }
@@ -578,6 +588,9 @@ function ProjectName({
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => {
+        // キャンバスのショートカットへ渡さない(上と同じ理由で bubble 側で止める)
+        e.stopPropagation();
+
         if (e.nativeEvent.isComposing) return;
         if (e.key === 'Enter') {
           e.preventDefault();
@@ -585,7 +598,6 @@ function ProjectName({
         }
         if (e.key === 'Escape') setEditing(false);
       }}
-      onKeyDownCapture={(e) => e.stopPropagation()}
     />
   );
 }

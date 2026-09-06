@@ -320,6 +320,12 @@ export function App(): React.JSX.Element {
           nodeTypes={nodeTypes}
           fitView
           minZoom={0.2}
+          /*
+            選択したノードを前面に上げない。既定では選択が z を跳ね上げるため、
+            Project の枠を選ぶと枠が Task の上に出てきて、中の Task に
+            触れなくなる。枠は常に Task の背面(zIndex: -1)にいるべきもの。
+          */
+          elevateNodesOnSelect={false}
           onNodeDragStart={(_event, node) => {
             if (node.type !== 'projectFrame') return;
             const projectId = node.id.replace('project:', '');
