@@ -1,6 +1,6 @@
 # ドメイン設計 v1
 
-ステータス: 初稿。`vision/requirements.md` のv1(MVP)スコープを対象とする。永続化(SQLite)・UI・MCPは扱わず、**Electron非依存の純粋なTypeScript層**として設計する(`design/development-process.md` Phase 1)。
+ステータス: 初稿。`requirements.md` のv1(MVP)スコープを対象とする。永続化(SQLite)・UI・MCPは扱わず、**Electron非依存の純粋なTypeScript層**として設計する(`design/development-process.md` Phase 1)。
 
 ## 設計の前提
 
