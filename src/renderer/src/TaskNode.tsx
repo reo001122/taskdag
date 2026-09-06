@@ -72,6 +72,36 @@ function StateToggle({
   );
 }
 
+/**
+ * 開いている間、外側が押されたら閉じる。
+ *
+ * blur を閉じる合図にすると、フォーカスを奪われただけで畳まれてしまう。
+ * 押された場所を見るなら、フォーカスがどこへ行ったかに依存しない。
+ *
+ * 判定と後始末は毎レンダー詰め替えた ref 越しに呼ぶ。リスナは登録した時点の
+ * クロージャを掴んだままなので、直接呼ぶと古い値を見る。
+ */
+function useCloseOnOutsidePointerDown(
+  active: boolean,
+  isInside: (target: Node) => boolean,
+  onOutside: () => void,
+): void {
+  const latest = useRef({ isInside, onOutside });
+  useEffect(() => {
+    latest.current = { isInside, onOutside };
+  });
+
+  useEffect(() => {
+    if (!active) return;
+    const onPointerDown = (event: PointerEvent): void => {
+      if (latest.current.isInside(event.target as Node)) return;
+      latest.current.onOutside();
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+  }, [active]);
+}
+
 function EditableText({
   value,
   className,
@@ -110,6 +140,17 @@ function EditableText({
     };
   });
 
+  /*
+    追加された直後に編集へ入る。
+
+    マウント時の初期値だけを見ていたのでは間に合わない。子タスクを足す経路では
+    スナップショットの反映が先に描画され、目印が立つのはその後になるため、
+    「もう出来上がっている入力欄に、後から目印が届く」形になる。
+  */
+  useEffect(() => {
+    if (startInEditMode) setEditing(true);
+  }, [startInEditMode]);
+
   // autoFocus 属性はスクリーンリーダーの読み上げ位置を突然動かすため使わない。
   // 編集に切り替わった時点で明示的にフォーカスする。
   useEffect(() => {
@@ -119,23 +160,15 @@ function EditableText({
     inputRef.current?.select();
   }, [editing]);
 
-  /*
-    編集を閉じるのは「入力欄の外が押されたとき」だけにする。
-
-    blur で閉じていたときは、開いた直後に何かがフォーカスを奪うだけで編集が
-    畳まれ、結果として2回クリックしないと編集に入れなかった。何がフォーカスを
-    奪うかを突き止めるより、フォーカスの行き先を見るのをやめるほうが確実に済む。
-  */
-  useEffect(() => {
-    if (!editing) return;
-    const onPointerDown = (event: PointerEvent): void => {
-      if (inputRef.current?.contains(event.target as Node)) return;
+  // 編集を閉じるのは、入力欄の外が押されたときだけ。
+  useCloseOnOutsidePointerDown(
+    editing,
+    (target) => inputRef.current?.contains(target) ?? false,
+    () => {
       closingRef.current = true;
       finishRef.current(false);
-    };
-    document.addEventListener('pointerdown', onPointerDown, true);
-    return () => document.removeEventListener('pointerdown', onPointerDown, true);
-  }, [editing]);
+    },
+  );
 
   const begin = (): void => {
     setDraft(value);
@@ -632,6 +665,19 @@ export function ProjectFrameNode({ data, selected }: NodeProps): React.JSX.Eleme
   const { id, name, color, colorIndex, onRecolor, onResizeEnd, onRename, onDelete } =
     data as unknown as ProjectNodeData;
   const [pickingColor, setPickingColor] = useState(false);
+  const swatchRef = useRef<HTMLButtonElement>(null);
+  const pickerRef = useRef<HTMLSpanElement>(null);
+
+  // 色を選ばずに他所を押したときも閉じる。開いたままだと下の Task が隠れる。
+  // 見本のボタン自身は「内側」に含める —— 含めないと、閉じた直後に
+  // そのボタンの onClick がもう一度開いてしまう。
+  useCloseOnOutsidePointerDown(
+    pickingColor,
+    (target) =>
+      (swatchRef.current?.contains(target) ?? false) ||
+      (pickerRef.current?.contains(target) ?? false),
+    () => setPickingColor(false),
+  );
 
   return (
     <>
@@ -659,12 +705,13 @@ export function ProjectFrameNode({ data, selected }: NodeProps): React.JSX.Eleme
 
           <button
             type="button"
+            ref={swatchRef}
             className="color-swatch nodrag"
             title="色を変える"
             onClick={() => setPickingColor((v) => !v)}
           />
           {pickingColor && (
-            <span className="color-picker nodrag">
+            <span className="color-picker nodrag" ref={pickerRef}>
               {PROJECT_COLORS.map((swatch, index) => (
                 <button
                   key={swatch}
