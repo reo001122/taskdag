@@ -6,7 +6,7 @@
 
 - DB: SQLite / ドライバ: **`node:sqlite`**(Node標準。`design/tech-stack.md` の切り替え経緯を参照)
 - 規模: 数十〜百Task(NFR-1)。1Taskあたりのchild は数個〜十数個を想定。
-- **AIは参照(SELECT)を直接発行する**(FR-7.5)。したがってスキーマは、AIが自然にクエリできる形である必要がある。
+- **AIの参照経路はアプリケーション層のツール**(FR-7.5。Phase 4 で実装予定)。直接SELECTは開発・デバッグ用の抜け道として残る。
 - **書き込みは必ずドメイン層を経由する**(FR-7.5)。DBはドメインの状態を写す先であり、ロジックを持たない。
 
 ## 1. スキーマ
@@ -16,8 +16,15 @@ PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
 
 CREATE TABLE projects (
-  id   TEXT PRIMARY KEY,
-  name TEXT NOT NULL
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  -- Project はキャンバス上の領域(FR-4)。矩形そのものを持つ
+  position_x  REAL NOT NULL,
+  position_y  REAL NOT NULL,
+  width       REAL NOT NULL,
+  height      REAL NOT NULL,
+  -- 表示側の配色表の何番目か。色の値そのものは持たない
+  color_index INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE tasks (
@@ -25,10 +32,11 @@ CREATE TABLE tasks (
   title      TEXT NOT NULL,
   progress   TEXT NOT NULL
              CHECK (progress IN ('not_done', 'in_progress', 'done')),
-  project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+  -- project_id は持たない。所属は矩形への含有から導出する(FR-4)
   position_x REAL NOT NULL,
   position_y REAL NOT NULL,
-  collapsed  INTEGER NOT NULL DEFAULT 0 CHECK (collapsed IN (0, 1))
+  collapsed  INTEGER NOT NULL DEFAULT 0 CHECK (collapsed IN (0, 1)),
+  memo       TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE child_tasks (
@@ -37,7 +45,8 @@ CREATE TABLE child_tasks (
   title       TEXT NOT NULL,
   progress    TEXT NOT NULL
               CHECK (progress IN ('not_done', 'in_progress', 'done')),
-  order_index INTEGER NOT NULL
+  order_index INTEGER NOT NULL,
+  memo        TEXT NOT NULL DEFAULT ''
   -- UNIQUE (parent_id, order_index) は意図的に課さない。理由は §3 を参照
 );
 
@@ -58,7 +67,6 @@ CREATE TABLE app_settings (
 
 CREATE INDEX idx_edges_to   ON dependency_edges(to_task_id);
 CREATE INDEX idx_edges_from ON dependency_edges(from_task_id);
-CREATE INDEX idx_tasks_project ON tasks(project_id);
 CREATE INDEX idx_child_parent_order ON child_tasks(parent_id, order_index);
 ```
 
@@ -98,13 +106,13 @@ INV-3のみDB側で守れない。これは要件で認識済みであり(FR-7�
 
 ### 導出値は保存しない
 
-`readiness`(軸a)のカラムは存在しない。コーディング規約4項の通り、常に導出する。childTaskの `project_id` も持たない(親から導出)。
+`readiness`(軸a)のカラムは存在しない。コーディング規約4項の通り、常に導出する。**Project への所属も同様で、`tasks` にも `child_tasks` にも `project_id` を持たない** —— 矩形への含有から導出する(FR-4)。
 
 ## 2. 導出値のビュー
 
 導出値(Ready/Blocked)を保存しない方針のもとで、参照を容易にするためのビューを定義する。
 
-**当初はAIが直接SELECTするための仕組みとして設計したが、FR-7.5の改訂により、AIの正式な参照経路はMCPツール(`get_ready_tasks` 等)となった。** したがってこれらのビューの第一の利用者は**MCPツールとアプリケーション層自身**である(ツールの実装がこのビューをSELECTする)。AIによる直接SELECTは開発・デバッグ時の用途として残る。
+**当初はAIが直接SELECTするための仕組みとして設計したが、FR-7.5の改訂により、AIの正式な参照経路はアプリケーション層のツール(`get_ready_tasks` 等。Phase 4 で実装予定)となった。** したがってこれらのビューの第一の利用者は**アプリケーション層自身**である。AIによる直接SELECTは開発・デバッグ時の用途として残る。
 
 ビューを設ける価値は変わらない。導出ロジックをSQL側にも持つことで、ツール実装が単純なSELECT 1文で済む。
 
@@ -122,27 +130,40 @@ SELECT
   ) THEN 'blocked' ELSE 'ready' END AS readiness
 FROM tasks t;
 
--- AIが最も使うであろう複合ビュー
+-- Project への所属の導出(FR-4)。domain/project.ts の projectOfTask と同じ意味。
+-- 判定は Task の左上の点。重なりは面積の小さいほう、同面積なら id の小さいほう。
+CREATE VIEW task_project AS
+SELECT
+  t.id AS task_id,
+  (SELECT p.id
+     FROM projects p
+    WHERE t.position_x >= p.position_x AND t.position_x <= p.position_x + p.width
+      AND t.position_y >= p.position_y AND t.position_y <= p.position_y + p.height
+    ORDER BY p.width * p.height ASC, p.id ASC
+    LIMIT 1) AS project_id
+FROM tasks t;
+
+-- よく使う複合ビュー
 CREATE VIEW task_overview AS
 SELECT
   t.id, t.title, t.progress,
   r.readiness,
-  p.name AS project_name,
+  (SELECT name FROM projects WHERE id = tp.project_id) AS project_name,
   (SELECT COUNT(*) FROM child_tasks c WHERE c.parent_id = t.id) AS child_total,
   (SELECT COUNT(*) FROM child_tasks c WHERE c.parent_id = t.id
      AND c.progress = 'done') AS child_done
 FROM tasks t
 JOIN task_readiness r ON r.task_id = t.id
-LEFT JOIN projects p ON p.id = t.project_id;
+JOIN task_project tp ON tp.task_id = t.id;
 
--- childTaskのProjectタグ継承(FR-4)を反映したビュー
+-- childTask は親の所属を引き継ぐ(FR-4)。親の位置から導出される。
 CREATE VIEW child_task_view AS
-SELECT c.*, t.project_id
+SELECT c.*, tp.project_id
 FROM child_tasks c
-JOIN tasks t ON t.id = c.parent_id;
+JOIN task_project tp ON tp.task_id = c.parent_id;
 ```
 
-これにより、AIは例えば以下のように問い合わせられる。
+これにより、「今着手できるもの」は1文で引ける。
 
 ```sql
 -- 「今すぐ着手できるタスクは？」
@@ -228,11 +249,13 @@ Electronの `app.getPath('userData')` 配下に置く。
 ~/Library/Application Support/taskdag/taskdag.db   (macOS)
 ```
 
-**AIがこのパスを知る必要がある**(直接SELECTするため)。アプリ内から現在のDBパスを確認できる導線(設定画面への表示など)を用意する。UI設計時の考慮事項として引き継ぐ。
+開発・デバッグ時に直接 SELECT する場合にこのパスが要る。アプリ内から現在のDBパスを確認できる導線(設定画面への表示など)を用意する。UI設計時の考慮事項として引き継ぐ。
 
 ## 6. マイグレーション
 
 `PRAGMA user_version` によるバージョン管理を採用する。追加のライブラリを導入しない。
+
+**上に載せたスキーマは現行(user_version = 5)のもの。** 以下は、そこへ至るまでの変更。
 
 ```
 user_version = 1  : 初期スキーマ
@@ -240,6 +263,9 @@ user_version = 2  : Project を「タグ」から「領域」へ(FR-4)
                     - projects に position_x / position_y / width / height を追加
                     - tasks.project_id を削除(所属は導出値になったため)
                     - task_project ビューを追加(所属の導出)
+user_version = 3  : projects.color_index を追加(FR-4)
+user_version = 4  : tasks.memo を追加(FR-10)
+user_version = 5  : child_tasks.memo を追加(FR-10)
 ```
 
 **v2 の適用順序には制約がある。** SQLite は列を落とす際に既存ビューを検証するため、
@@ -262,4 +288,4 @@ user_version = 2  : Project を「タグ」から「領域」へ(FR-4)
 
 - アプリ未起動時にAIがDBを読む場合の扱い。読み取り専用であれば問題ないが、**アプリ起動中にAIが読んだ内容が古くなる**可能性はある(アプリ側の書き込み後)。AIが都度SELECTする運用であれば実害は小さいと考えられる。
 - MCPサーバーの起動形態(`design/tech-stack.md` の未決定事項)と関連: アプリ未起動時に書き込みを受け付ける必要があるか。必要ならMCPサーバーを独立プロセス化する検討が要る。
-- バックアップ/エクスポート機能の要否。要件に記載がないため v1 スコープ外だが、ローカル完結である以上、データ消失時の復旧手段がない点は認識しておく。
+- エクスポート(FR-9)の実装方法。要件としては確定しているが、DBファイルをコピーする導線をどこに置くかは未定。

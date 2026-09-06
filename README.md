@@ -8,11 +8,11 @@ You draw your work as a graph. The graph tells you what you can actually start r
 
 ## Why
 
-Every task manager we surveyed — Todoist, Things 3, TickTick, Microsoft To Do, OmniFocus, Jira, Linear, GitHub Projects — models work as a **strict hierarchy or a flat list**. Where dependency relations exist at all, they're bolted on and never visualized.
+Every task manager we surveyed — Todoist, Things 3, TickTick, Microsoft To Do, OmniFocus, Jira, Linear, GitHub Projects — models work as a **strict hierarchy or a flat list**. Dependencies, where they exist, are bolted onto that model rather than part of it. GitHub Issues does derive a blocked state from its dependency links, but you read it as a badge in a list; there is no picture of the graph to edit.
 
-Every visual canvas tool we surveyed — Miro, tldraw, Excalidraw, FigJam, Obsidian Canvas, Heptabase, Workflowy, Logseq — has **nodes and edges, but the edges are decorative**. No tool derives status from graph structure.
+Every visual canvas tool we surveyed — Miro, tldraw, Excalidraw, FigJam, Obsidian Canvas, Heptabase, Workflowy, Logseq — has **nodes and edges, but the edges are decorative**. Nothing is computed from them.
 
-Task tools have the dependency data but no picture. Canvas tools have the picture but derive nothing.
+One category has the dependency data without a picture. The other has a picture that computes nothing.
 
 taskdag is the combination: **a graph you directly edit, where Ready and Blocked are computed from the graph itself and never maintained by hand.**
 
@@ -20,7 +20,7 @@ taskdag is the combination: **a graph you directly edit, where Ready and Blocked
 
 - **Task** — the unit of work. Can hold a flat checklist of **childTasks** (one level deep, no deeper).
 - **Dependency edge** — connects two top-level Tasks. `A → B` means B can't start until A is done.
-- **Project** — a tag, not a container. A Task carries zero or one.
+- **Project** — a region on the canvas, not a tag. A task belongs to it by sitting inside it; drag it out and it stops belonging. Membership is derived from position, never stored.
 - **Two independent state axes:**
   - *Computed*: `Ready` / `Blocked` — derived from the dependency graph. You never set these.
   - *Self-reported*: `Not Done` / `In Progress` / `Done` — set by whoever did the work.
@@ -35,7 +35,7 @@ The axes being independent is deliberate: a task can be **Blocked and In Progres
 
 ## Status
 
-**In development.** The canvas is usable — create tasks, draw dependencies, watch Ready/Blocked update. The MCP server for AI operation is next.
+**In development, and not yet released.** The canvas runs: you can create tasks, draw dependencies and watch Ready/Blocked update. It has not been through a manual QA pass, so expect rough edges. There is no packaged build to install — see Development below to run it from source.
 
 | Phase | Scope | Status |
 |---|---|---|
@@ -57,9 +57,9 @@ Deliberately out of scope, not just deferred:
 
 ## AI operation
 
-taskdag exposes an MCP server so an AI coding tool (e.g. Claude Code) can manage the graph conversationally — "what's ready?", "mark the auth task done", "drop that one" — while the canvas stays open beside you as a live view.
+**Not built yet — this is what Phase 4 is for.** The plan: an MCP server so an AI coding tool (e.g. Claude Code) can manage the graph conversationally — "what's ready?", "mark the auth task done", "drop that one" — while the canvas stays open beside you as a live view.
 
-All writes go through the application layer, never straight to the database, so dependency rules, cycle prevention and undo apply to AI actions exactly as they do to yours. Undo covers what the AI did too.
+The architecture is already arranged for it. Every write goes through the application layer rather than straight to the database, so when AI operation arrives, dependency rules, cycle prevention and undo will apply to it exactly as they do to your own edits.
 
 ## Development
 
@@ -89,6 +89,10 @@ The reasoning behind this project is written down, in order:
 | `design/` | Tech stack, coding standards, domain design, persistence design, development process |
 | `design/decisions.md` | What was rejected, and what each decision cost |
 | `design/qa-checklist.md` | What to check by hand — the things typecheck and tests cannot catch |
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Before proposing a design change, `design/decisions.md` records what each choice rejected and cost — the idea may already have been weighed.
 
 ## License
 

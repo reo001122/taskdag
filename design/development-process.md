@@ -66,7 +66,7 @@ E2Eテスト(Playwright)は、UIが安定してから**回帰防止目的での�
 
 **目的**: プロダクトの正しさの核を、Electronを起動せずに完成させる。
 
-- Task / childTask / 依存エッジ / Projectタグ のモデル定義
+- Task / childTask / 依存エッジ / Project のモデル定義
 - 循環検知(FR-3)
 - 削除時の再接続ルール(FR-3)
 - Ready/Blocked の導出(FR-5)
