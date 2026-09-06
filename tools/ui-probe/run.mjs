@@ -61,6 +61,19 @@ async function main() {
   process.exit(failures === 0 ? 0 : 1);
 }
 
+/** 終わるまで待つ。素直に終わらなければ落とす。 */
+function stop(child, graceMs = 3000) {
+  return new Promise((resolve) => {
+    if (child.exitCode !== null) return resolve();
+    const timer = setTimeout(() => child.kill('SIGKILL'), graceMs);
+    child.on('close', () => {
+      clearTimeout(timer);
+      resolve();
+    });
+    child.kill();
+  });
+}
+
 /**
  * シナリオごとにアプリを起動し直す。
  *
@@ -92,7 +105,9 @@ async function runScenario(scenario) {
     error = e;
   } finally {
     cdp?.close();
-    electron.kill();
+    // 終了を待ってから消す。Electron はまだ user-data-dir へ書いており、
+    // 待たずに消すと ENOTEMPTY で落ちる。
+    await stop(electron);
     rmSync(userDataDir, { recursive: true, force: true });
   }
 
