@@ -217,9 +217,9 @@ export function App(): React.JSX.Element {
           type: 'task',
           position: task.position,
           data: data as never,
-          // 左上の取っ手だけで動かす。本体でも動かせると、タイトルを
-          // クリックして編集するつもりが動いてしまう。
-          dragHandle: '.task-grip',
+          // dragHandle は指定しない。本体のどこを掴んでも動く。
+          // 名前・メモ・各ボタンには nodrag が付いているので、
+          // そこをクリックしても移動にはならない。
         };
       });
 
