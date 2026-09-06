@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": []
+  },
+  "include": ["src/renderer/**/*", "src/preload/**/*.d.ts", "src/shared/**/*"]
+}
