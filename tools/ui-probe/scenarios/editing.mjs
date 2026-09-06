@@ -7,7 +7,7 @@
  */
 export default {
   name: 'editing',
-  description: '名前の編集と、Shift+Enter による分解の書き出し',
+  description: '名前の編集、Shift+Enter での書き出し、Backspace での取り消し',
 
   async run({ evaluate, waitFor, wait, key, type, check }) {
     const state = () =>
@@ -65,5 +65,41 @@ export default {
     s = await state();
     check('Enter は確定するだけで childTask を増やさない', s.children.length === 2, s.children);
     check('2件目の名前が確定している', s.children[1] === 'こども2', s.children);
+
+    // 行き過ぎたぶんを、手をキーボードに置いたまま戻す
+    await evaluate(`[...document.querySelectorAll('.child-title')].at(-1).click(); return 1;`);
+    await waitFor('名前が入力欄になる', `return !!document.querySelector('.child .text-input')`);
+    await key({ key: 'Enter', code: 13, shift: true });
+    await waitFor(
+      'childTask が3件になる',
+      `return document.querySelectorAll('.child').length === 3`,
+    );
+    await key({ key: 'Backspace', code: 8 });
+    await key({ key: 'Backspace', code: 8 });
+
+    await waitFor(
+      'childTask が2件へ戻る',
+      `return document.querySelectorAll('.child').length === 2`,
+    );
+    s = await state();
+    check('空の名前で Backspace を押すと childTask が消える', s.children.length === 2, s.children);
+    check('消したあとは1つ上の名前へ戻る', s.activeTag === 'INPUT', s);
+    check('戻った先の名前は消えていない', s.children[1] === null, s.children);
+
+    // Task 名では同じ操作で消えない(FR-1 の確認を迂回しないこと)
+    await key({ key: 'Escape', code: 27 });
+    await wait(200);
+    await evaluate(`document.querySelector('.task-title').click(); return 1;`);
+    await waitFor(
+      'Task 名が入力欄になる',
+      `return !!document.querySelector('.task-head .text-input')`,
+    );
+    for (let i = 0; i < 6; i += 1) await key({ key: 'Backspace', code: 8 });
+    await wait(300);
+    check(
+      'Task 名は空にして Backspace を押しても消えない',
+      (await state()).tasks.length === 1,
+      await state(),
+    );
   },
 };

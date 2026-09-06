@@ -21,16 +21,27 @@ export type TaskNodeData = {
   /** 所属先の色。Project ごとに決まる。属していなければ null。 */
   projectColor: string | null;
   hideCompleted: boolean;
-  /** 作成直後の子タスクを、追加と同時に編集状態にするための目印。 */
-  autoEditLastChild: boolean;
-  /** 作成直後の Task を、追加と同時に編集状態にするための目印。 */
-  autoEditTitle: boolean;
+  /** 追加・削除の直後に編集へ入れる相手。Task と childTask のどちらの id も入る。 */
+  autoEdit: AutoEdit;
   send: (command: Command) => void;
   requestDelete: (id: string) => void;
   onAutoEditConsumed: () => void;
   /** 入力中に Shift+Enter が押された。確定して、続けてもう1件足す。 */
   onChildChainAdd: (parentId: string) => void;
+  /** 名前を空にして Backspace が押された。その childTask を消す。 */
+  onChildRemoveWhileEditing: (childId: string) => void;
 };
+
+/**
+ * カーソルの置き方。
+ *
+ * 足したばかりの項目は仮の名前が入っているので全選択(打てば置き換わる)。
+ * 消した先で1つ上へ戻ったときは末尾に置く —— 全選択だと、次の1打で
+ * 前の項目の名前まで消える。
+ */
+export type Caret = 'all' | 'end';
+
+export type AutoEdit = { id: string; caret: Caret } | null;
 
 /** 未着手 → 着手中 → 完了 → 未着手 と巡回する。 */
 const nextProgress = (current: Progress): Progress =>
@@ -86,12 +97,13 @@ const log = logger('edit');
  * 取れたか(document.activeElement)を見て、駄目なら次のフレームで試す。
  * 要素が消えていれば諦める。
  */
-function focusWhenVisible(el: HTMLInputElement | null, framesLeft = 20): void {
+function focusWhenVisible(el: HTMLInputElement | null, caret: Caret, framesLeft = 20): void {
   if (!el || !document.contains(el)) return;
 
   el.focus();
   if (document.activeElement === el) {
-    el.select();
+    if (caret === 'all') el.select();
+    else el.setSelectionRange(el.value.length, el.value.length);
     return;
   }
 
@@ -99,7 +111,7 @@ function focusWhenVisible(el: HTMLInputElement | null, framesLeft = 20): void {
     log.warn('入力欄にフォーカスできなかった');
     return;
   }
-  requestAnimationFrame(() => focusWhenVisible(el, framesLeft - 1));
+  requestAnimationFrame(() => focusWhenVisible(el, caret, framesLeft - 1));
 }
 
 /**
@@ -136,17 +148,27 @@ function EditableText({
   value,
   className,
   startEditing: startInEditMode = false,
+  caret = 'all',
   onCommit,
   onEditEnd,
   onCommitAndAdd,
+  onRemoveWhenEmpty,
 }: {
   value: string;
   className: string;
   startEditing?: boolean;
+  caret?: Caret;
   onCommit: (next: string) => void;
   onEditEnd?: () => void;
   /** Shift+Enter で確定したときに呼ばれる。確定して、続けて次の項目を足す用。 */
   onCommitAndAdd?: () => void;
+  /**
+   * 名前が空の状態で Backspace が押されたときに呼ばれる。渡さなければ何も起きない。
+   *
+   * **childTask にだけ渡す。** Task を同じ操作で消せるようにすると、childTask の
+   * 巻き添え削除と依存エッジの再接続が無言で走る。FR-1 がそこに確認を要求している。
+   */
+  onRemoveWhenEmpty?: () => void;
 }): React.JSX.Element {
   const [editing, setEditing] = useState(startInEditMode);
   const [draft, setDraft] = useState(value);
@@ -188,8 +210,8 @@ function EditableText({
   useEffect(() => {
     if (!editing) return;
     closingRef.current = false;
-    focusWhenVisible(inputRef.current);
-  }, [editing]);
+    focusWhenVisible(inputRef.current, caret);
+  }, [editing, caret]);
 
   // 編集を閉じるのは、入力欄の外が押されたときだけ。
   useCloseOnOutsidePointerDown(
@@ -262,6 +284,14 @@ function EditableText({
           // Enter は確定だけ。Shift+Enter は確定して次の項目へ進む。
           // 分解を一気に書き出す間、ボタンへ手を戻さずに済む。
           finishRef.current(e.shiftKey);
+        }
+        // 空の名前で Backspace は「この項目を取り消す」。Shift+Enter で
+        // 行き過ぎたぶんを、手をキーボードに置いたまま戻せるようにする。
+        if (e.key === 'Backspace' && draft === '' && onRemoveWhenEmpty) {
+          e.preventDefault();
+          setEditing(false);
+          onEditEnd?.();
+          onRemoveWhenEmpty();
         }
         if (e.key === 'Escape') {
           setEditing(false);
@@ -366,12 +396,12 @@ export function TaskNode({ data }: NodeProps): React.JSX.Element {
     children,
     projectColor,
     hideCompleted,
-    autoEditLastChild,
-    autoEditTitle,
+    autoEdit,
     send,
     requestDelete,
     onAutoEditConsumed,
     onChildChainAdd,
+    onChildRemoveWhileEditing,
   } = data as unknown as TaskNodeData;
 
   const isDone = task.progress === 'done';
@@ -423,7 +453,8 @@ export function TaskNode({ data }: NodeProps): React.JSX.Element {
           <EditableText
             value={task.title}
             className="task-title"
-            startEditing={autoEditTitle}
+            startEditing={autoEdit?.id === task.id}
+            caret={autoEdit?.caret}
             onEditEnd={onAutoEditConsumed}
             onCommit={(title) => send({ type: 'updateTaskTitle', id: task.id, title })}
             // Shift+Enter で、Task 名を打ち終えた勢いのまま分解に入れる
@@ -512,7 +543,8 @@ export function TaskNode({ data }: NodeProps): React.JSX.Element {
                     <EditableText
                       value={child.title}
                       className="child-title"
-                      startEditing={autoEditLastChild && isLast}
+                      startEditing={autoEdit?.id === child.id}
+                      caret={autoEdit?.caret}
                       onEditEnd={onAutoEditConsumed}
                       onCommit={(title) =>
                         send({ type: 'updateChildTaskTitle', id: child.id, title })
@@ -520,6 +552,8 @@ export function TaskNode({ data }: NodeProps): React.JSX.Element {
                       // Shift+Enter で確定したら、続けてもう1件足す。
                       // 分解は一気に書き出したいので、都度ボタンへ手を戻したくない。
                       onCommitAndAdd={() => onChildChainAdd(task.id)}
+                      // 名前を空にして Backspace で、この項目を取り消す
+                      onRemoveWhenEmpty={() => onChildRemoveWhileEditing(child.id)}
                     />
 
                     <span className="child-actions nodrag">

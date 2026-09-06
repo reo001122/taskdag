@@ -18,7 +18,13 @@ import type { Command, DeletePlan, GraphSnapshot } from '../../shared/ipc';
 import { PROJECT_COLOR_COUNT, projectColorAt } from './colors';
 import { computeLayout } from './layout';
 import { logger } from './log';
-import { ProjectFrameNode, type ProjectNodeData, TaskNode, type TaskNodeData } from './TaskNode';
+import {
+  type AutoEdit,
+  ProjectFrameNode,
+  type ProjectNodeData,
+  TaskNode,
+  type TaskNodeData,
+} from './TaskNode';
 
 const log = logger('graph');
 
@@ -31,12 +37,13 @@ export function App(): React.JSX.Element {
   const [askProjectName, setAskProjectName] = useState(false);
 
   /**
-   * 追加した直後の要素を、そのまま編集状態にするための目印。
+   * 直後に編集へ入れる相手。Task と childTask のどちらの id も入る。
+   *
    * 作ってから名前を打つまでを1続きの操作にする —— 毎回、仮の名前を
-   * 消してから入力させるのは、分解の勢いを削ぐ。
+   * 消してから入力させるのは、分解の勢いを削ぐ。消したときにも使う:
+   * 1つ上へ戻して、手をキーボードに置いたまま続けられるようにする。
    */
-  const [autoEditTaskId, setAutoEditTaskId] = useState<string | null>(null);
-  const [autoEditChildOf, setAutoEditChildOf] = useState<string | null>(null);
+  const [autoEdit, setAutoEdit] = useState<AutoEdit>(null);
 
   /**
    * React Flow に描画を任せるための状態。
@@ -112,22 +119,46 @@ export function App(): React.JSX.Element {
         const next = await dispatch({ type: 'createTask', title: '新しいタスク', position });
         const created = next?.tasks.find((t) => !before.has(t.id));
         log.debug('Task を作った', { id: created?.id ?? null });
-        if (created) setAutoEditTaskId(created.id);
+        if (created) setAutoEdit({ id: created.id, caret: 'all' });
       })();
     },
     [dispatch, snapshot],
   );
 
-  /** 子タスクを1件足し、そのまま名前の入力に入る。Enter で連続して足せる。 */
+  /** childTask を1件足し、そのまま名前の入力に入る。Shift+Enter で連続して足せる。 */
   const addChild = useCallback(
     (parentId: string) => {
       void (async () => {
-        await dispatch({ type: 'createChildTask', parentId, title: '項目' });
-        log.debug('childTask を作った。親の末尾を編集に入れる', { parentId });
-        setAutoEditChildOf(parentId);
+        const before = new Set(snapshot?.childTasks.map((c) => c.id) ?? []);
+        const next = await dispatch({ type: 'createChildTask', parentId, title: '項目' });
+        const created = next?.childTasks.find((c) => !before.has(c.id));
+        log.debug('childTask を作った', { id: created?.id ?? null });
+        if (created) setAutoEdit({ id: created.id, caret: 'all' });
       })();
     },
-    [dispatch],
+    [dispatch, snapshot],
+  );
+
+  /**
+   * 編集中の childTask を消し、1つ上の名前へ戻る(FR-2)。
+   *
+   * 上がなければフォーカスは移さない。親の Task 名へ送ると、次の項目の名前を
+   * Task 名に打ち込んでしまう事故が起きる —— 見た目がほとんど同じ入力欄で、
+   * 意味だけが違うため。
+   */
+  const removeChildWhileEditing = useCallback(
+    (childId: string) => {
+      void (async () => {
+        const parent = snapshot?.tasks.find((t) => t.childTaskIds.includes(childId));
+        const siblings = parent?.childTaskIds ?? [];
+        const previous = siblings[siblings.indexOf(childId) - 1] ?? null;
+
+        await dispatch({ type: 'deleteChildTask', id: childId });
+        log.debug('空の childTask を消した', { childId, backTo: previous });
+        setAutoEdit(previous === null ? null : { id: previous, caret: 'end' });
+      })();
+    },
+    [dispatch, snapshot],
   );
 
   // Cmd+Z / Cmd+Shift+Z(FR-8)。AI が行った操作もこれで戻せる。
@@ -149,8 +180,7 @@ export function App(): React.JSX.Element {
   }, []);
 
   const onAutoEditConsumed = useCallback(() => {
-    setAutoEditTaskId(null);
-    setAutoEditChildOf(null);
+    setAutoEdit(null);
   }, []);
 
   const built = useMemo(() => {
@@ -212,12 +242,12 @@ export function App(): React.JSX.Element {
           children: ordered,
           projectColor: task.projectId === null ? null : (colorOf.get(task.projectId) ?? null),
           hideCompleted: snapshot.hideCompleted,
-          autoEditTitle: autoEditTaskId === task.id,
-          autoEditLastChild: autoEditChildOf === task.id,
+          autoEdit,
           send,
           requestDelete,
           onAutoEditConsumed,
           onChildChainAdd: addChild,
+          onChildRemoveWhileEditing: removeChildWhileEditing,
         };
         return {
           id: task.id,
@@ -248,9 +278,9 @@ export function App(): React.JSX.Element {
     send,
     requestDelete,
     addChild,
+    removeChildWhileEditing,
     onAutoEditConsumed,
-    autoEditTaskId,
-    autoEditChildOf,
+    autoEdit,
   ]);
 
   useEffect(() => {
