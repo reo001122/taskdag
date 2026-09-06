@@ -2,6 +2,7 @@ import { Handle, Position as HandlePosition, type NodeProps, NodeResizer } from 
 import { useEffect, useRef, useState } from 'react';
 import type { ChildTaskSnapshot, Command, Progress, TaskSnapshot } from '../../shared/ipc';
 import { PROJECT_COLORS } from './colors';
+import { logger } from './log';
 
 /**
  * Task のカスタムノード(FR-2, FR-5, FR-6)
@@ -70,6 +71,35 @@ function StateToggle({
       <span className="state-box" />
     </button>
   );
+}
+
+const log = logger('edit');
+
+/**
+ * 入力欄へフォーカスを移す。移るまで数フレーム待つ。
+ *
+ * **1回呼ぶだけでは足りない。** React Flow はノードの寸法を測り終えるまで
+ * そのノードを `visibility: hidden` にしており、隠れている要素への focus() は
+ * 何も起こさずに黙って終わる。Task や childTask を足した直後は、まさにその
+ * 瞬間に当たる —— 入力欄は現れるのに、打った文字がどこにも入らなかった。
+ *
+ * 取れたか(document.activeElement)を見て、駄目なら次のフレームで試す。
+ * 要素が消えていれば諦める。
+ */
+function focusWhenVisible(el: HTMLInputElement | null, framesLeft = 20): void {
+  if (!el || !document.contains(el)) return;
+
+  el.focus();
+  if (document.activeElement === el) {
+    el.select();
+    return;
+  }
+
+  if (framesLeft <= 0) {
+    log.warn('入力欄にフォーカスできなかった');
+    return;
+  }
+  requestAnimationFrame(() => focusWhenVisible(el, framesLeft - 1));
 }
 
 /**
@@ -148,16 +178,17 @@ function EditableText({
     「もう出来上がっている入力欄に、後から目印が届く」形になる。
   */
   useEffect(() => {
-    if (startInEditMode) setEditing(true);
-  }, [startInEditMode]);
+    if (!startInEditMode) return;
+    log.debug('追加直後の目印が届いた。編集に入る', { value });
+    setEditing(true);
+  }, [startInEditMode, value]);
 
   // autoFocus 属性はスクリーンリーダーの読み上げ位置を突然動かすため使わない。
   // 編集に切り替わった時点で明示的にフォーカスする。
   useEffect(() => {
     if (!editing) return;
     closingRef.current = false;
-    inputRef.current?.focus();
-    inputRef.current?.select();
+    focusWhenVisible(inputRef.current);
   }, [editing]);
 
   // 編集を閉じるのは、入力欄の外が押されたときだけ。
