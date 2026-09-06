@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
     "test:watch": "vitest",
+    "probe": "node tools/ui-probe/run.mjs",
     "check": "biome ci .",
     "fix": "biome check --write ."
   },

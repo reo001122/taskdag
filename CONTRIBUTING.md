@@ -78,6 +78,17 @@ npm run dev -- -- --log=debug     # 前の -- は npm、後の -- は electron-v
 `silent` / `error` / `warn` / `info` / `debug` の5段階。main のログはターミナルに、
 renderer のログは DevTools のコンソールに出ます。
 
+### 一度直したものが戻っていないかを見る
+
+```bash
+npm run probe
+```
+
+描画されているアプリを実際に操作して、対話が期待どおりに起きるかを確かめます
+(`tools/ui-probe/README.md`)。**見やすいかどうかは判定できません。**
+アプリを開いて使うことの代わりにはならず、直したものが黙って戻っていないかを
+確かめるためのものです。画面が要るため CI では動かしていません。
+
 ## コミット
 
 Conventional Commits(`feat:`, `fix:`, `refactor:`, `docs:`, `chore:`)、英語、1コミット
