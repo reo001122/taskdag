@@ -17,7 +17,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Command, DeletePlan, GraphSnapshot } from '../../shared/ipc';
 import { PROJECT_COLOR_COUNT, projectColorAt } from './colors';
 import { computeLayout } from './layout';
+import { logger } from './log';
 import { ProjectFrameNode, type ProjectNodeData, TaskNode, type TaskNodeData } from './TaskNode';
+
+const log = logger('graph');
 
 const nodeTypes: NodeTypes = { task: TaskNode, projectFrame: ProjectFrameNode };
 
@@ -74,6 +77,7 @@ export function App(): React.JSX.Element {
       setError(result.ok ? null : result.error);
       return result.snapshot;
     } catch (e) {
+      log.error('コマンドを送れなかった', { command, cause: e });
       setError(e instanceof Error ? e.message : String(e));
       return null;
     }
@@ -91,6 +95,7 @@ export function App(): React.JSX.Element {
       setSnapshot(await window.api.getGraph());
       setError(null);
     } catch (e) {
+      log.error('グラフを読めなかった', e);
       setError(e instanceof Error ? e.message : String(e));
     }
   }, []);
@@ -106,6 +111,7 @@ export function App(): React.JSX.Element {
         const before = new Set(snapshot?.tasks.map((t) => t.id) ?? []);
         const next = await dispatch({ type: 'createTask', title: '新しいタスク', position });
         const created = next?.tasks.find((t) => !before.has(t.id));
+        log.debug('Task を作った', { id: created?.id ?? null });
         if (created) setAutoEditTaskId(created.id);
       })();
     },
@@ -117,6 +123,7 @@ export function App(): React.JSX.Element {
     (parentId: string) => {
       void (async () => {
         await dispatch({ type: 'createChildTask', parentId, title: '項目' });
+        log.debug('childTask を作った。親の末尾を編集に入れる', { parentId });
         setAutoEditChildOf(parentId);
       })();
     },

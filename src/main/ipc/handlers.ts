@@ -2,6 +2,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { IpcMain } from 'electron';
 import type { Command, CommandResult, DeletePlan, GraphSnapshot } from '../../shared/ipc';
 import { IPC } from '../../shared/ipc';
+import type { Logger } from '../../shared/log';
 import type { AppService } from '../app-service';
 import { getHideCompleted, setHideCompleted } from '../db/settings';
 import { type DomainError, describeDomainError } from '../domain/errors';
@@ -175,6 +176,7 @@ export function registerIpc(
   service: AppService,
   db: DatabaseSync,
   dbPath: string,
+  log: Logger,
 ): void {
   const snapshot = (): GraphSnapshot => buildSnapshot(service, db, dbPath);
 
@@ -182,12 +184,21 @@ export function registerIpc(
 
   ipcMain.handle(IPC.command, (_event, raw: unknown): CommandResult => {
     const parsed = parseCommand(raw);
-    if (!parsed.ok) return { ok: false, error: parsed.error, snapshot: snapshot() };
+    if (!parsed.ok) {
+      // ここを通るのは renderer か MCP クライアント側の不具合。握りつぶすと
+      // 「操作しても何も起きない」としか見えないので、必ず残す。
+      log.warn('コマンドを検証で弾いた', { error: parsed.error, raw });
+      return { ok: false, error: parsed.error, snapshot: snapshot() };
+    }
+
+    log.debug('コマンド', parsed.value);
 
     const result = executeCommand(service, db, parsed.value);
-    return result.ok
-      ? { ok: true, snapshot: snapshot() }
-      : { ok: false, error: result.error, snapshot: snapshot() };
+    if (!result.ok) {
+      log.info('コマンドをドメインが拒否した', { type: parsed.value.type, error: result.error });
+      return { ok: false, error: result.error, snapshot: snapshot() };
+    }
+    return { ok: true, snapshot: snapshot() };
   });
 
   // 接続ドラッグ開始時に一度だけ呼ばれる。副作用を持たない。
