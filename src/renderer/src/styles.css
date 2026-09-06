@@ -129,22 +129,27 @@ body {
 }
 
 .task {
-  /* React Flow は draggable なノードに grab カーソルを付けるが、実際に掴めるのは
-     左上の取っ手だけ。ノードのクラスを打ち消しにいくと React Flow 側の規則と
-     優先度を争うことになるので、本体に直接指定する。 */
-  cursor: default;
+  /* 本体のどこを掴んでも動く。名前やボタンの上では、それぞれの
+     カーソル(text / pointer)が上書きする。 */
+  cursor: grab;
   position: relative;
   min-width: 160px;
   max-width: 280px;
   background: var(--surface);
   border: 1px solid var(--border);
-  /* 左上だけ角を落とす。そこが掴む場所であり、所属を示す印の場所でもある。 */
+  /* 左上だけ角を落とす。そこが所属を示す印の場所。 */
   border-radius: 0 8px 8px 8px;
   /* ヘッダや子タスクの背景が角を上書きしないよう切り落とす。
-     取っ手は .task-wrap 側に出してあるので、これに巻き込まれない。 */
+     印は .task-wrap 側に出してあるので、これに巻き込まれない。 */
   overflow: hidden;
 }
 
+/* 掴んでいる間。React Flow がノードに .dragging を付ける。 */
+.react-flow__node.dragging .task {
+  cursor: grabbing;
+}
+
+/* 所属先を示す印。掴む場所ではないので、カーソルは本体に任せる。 */
 .task-grip {
   position: absolute;
   top: 0;
@@ -157,10 +162,6 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: grab;
-}
-.task-grip:active {
-  cursor: grabbing;
 }
 
 .task-grip-dot {
@@ -297,7 +298,7 @@ body {
 }
 
 .state-button {
-  font-size: 12px;
+  font-size: 10px;
   line-height: 1;
   padding: 2px;
   border: none;
@@ -551,107 +552,11 @@ body {
   border-color: var(--text);
 }
 
-.project-frame-label /* 状態の表示。塗り分けた角丸四角で、未着手 / 着手中 / 完了 を見分ける。 */
-.state-toggle {
-  display: flex;
-  align-items: center;
-  padding: 2px;
-  border: none;
-  background: none;
-  cursor: pointer;
-}
-
-.state-box {
-  position: relative;
-  box-sizing: border-box;
-  width: 14px;
-  height: 14px;
-  border: 1.5px solid var(--text-dim);
-  border-radius: 4px;
-}
-
-/* 着手中: 枠を強調し、内側を塗る。今やっているものが一番目に入るように。 */
-.state-toggle.is-in-progress .state-box {
-  border-color: var(--active);
-}
-.state-toggle.is-in-progress .state-box::after {
-  content: "";
-  position: absolute;
-  inset: 2px;
-  border-radius: 2px;
-  background: var(--active);
-}
-
-/* 完了: 塗りつぶしてチェックを載せる。 */
-.state-toggle.is-done .state-box {
-  background: var(--text-dim);
-  border-color: var(--text-dim);
-}
-.state-toggle.is-done .state-box::after {
-  content: "";
-  position: absolute;
-  top: 1px;
-  left: 4px;
-  width: 3px;
-  height: 7px;
-  border: solid var(--surface);
-  border-width: 0 1.5px 1.5px 0;
-  transform: rotate(45deg);
-}
-
-.state-button {
-  font-size: 10px;
+/* Project のラベル上のボタン。Task と同じく、ホバーするまで出さない。 */
+.project-frame-label .state-button {
   opacity: 0;
 }
-.project-frame-label:hover /* 状態の表示。塗り分けた角丸四角で、未着手 / 着手中 / 完了 を見分ける。 */
-.state-toggle {
-  display: flex;
-  align-items: center;
-  padding: 2px;
-  border: none;
-  background: none;
-  cursor: pointer;
-}
-
-.state-box {
-  position: relative;
-  box-sizing: border-box;
-  width: 14px;
-  height: 14px;
-  border: 1.5px solid var(--text-dim);
-  border-radius: 4px;
-}
-
-/* 着手中: 枠を強調し、内側を塗る。今やっているものが一番目に入るように。 */
-.state-toggle.is-in-progress .state-box {
-  border-color: var(--active);
-}
-.state-toggle.is-in-progress .state-box::after {
-  content: "";
-  position: absolute;
-  inset: 2px;
-  border-radius: 2px;
-  background: var(--active);
-}
-
-/* 完了: 塗りつぶしてチェックを載せる。 */
-.state-toggle.is-done .state-box {
-  background: var(--text-dim);
-  border-color: var(--text-dim);
-}
-.state-toggle.is-done .state-box::after {
-  content: "";
-  position: absolute;
-  top: 1px;
-  left: 4px;
-  width: 3px;
-  height: 7px;
-  border: solid var(--surface);
-  border-width: 0 1.5px 1.5px 0;
-  transform: rotate(45deg);
-}
-
-.state-button {
+.project-frame-label:hover .state-button {
   opacity: 1;
 }
 

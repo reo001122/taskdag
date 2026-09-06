@@ -27,7 +27,7 @@ export type TaskNodeData = {
   send: (command: Command) => void;
   requestDelete: (id: string) => void;
   onAutoEditConsumed: () => void;
-  /** 入力中に Enter が押された。続けてもう1件足す。 */
+  /** 入力中に Shift+Enter が押された。確定して、続けてもう1件足す。 */
   onChildChainAdd: (parentId: string) => void;
 };
 
@@ -78,27 +78,63 @@ function EditableText({
   startEditing: startInEditMode = false,
   onCommit,
   onEditEnd,
-  onEnterChain,
+  onCommitAndAdd,
 }: {
   value: string;
   className: string;
   startEditing?: boolean;
   onCommit: (next: string) => void;
   onEditEnd?: () => void;
-  /** Enter で確定したときに呼ばれる。続けて次の項目を足す用。 */
-  onEnterChain?: () => void;
+  /** Shift+Enter で確定したときに呼ばれる。確定して、続けて次の項目を足す用。 */
+  onCommitAndAdd?: () => void;
 }): React.JSX.Element {
   const [editing, setEditing] = useState(startInEditMode);
   const [draft, setDraft] = useState(value);
   const inputRef = useRef<HTMLInputElement>(null);
+  /** 外を押して閉じにいっている最中。blur でフォーカスを取り返さないための目印。 */
+  const closingRef = useRef(false);
+
+  /*
+    確定処理は下の document リスナからも呼ぶ。リスナは編集に入った時点の
+    クロージャを掴んだままなので、そこから直接呼ぶと打った内容が見えない。
+    毎レンダーで詰め替えた ref 越しに呼ぶことで、常に最新の draft を見る。
+  */
+  const finishRef = useRef<(alsoAdd: boolean) => void>(() => {});
+  useEffect(() => {
+    finishRef.current = (alsoAdd: boolean): void => {
+      setEditing(false);
+      onEditEnd?.();
+      const trimmed = draft.trim();
+      if (trimmed.length > 0 && trimmed !== value) onCommit(trimmed);
+      if (alsoAdd) onCommitAndAdd?.();
+    };
+  });
 
   // autoFocus 属性はスクリーンリーダーの読み上げ位置を突然動かすため使わない。
   // 編集に切り替わった時点で明示的にフォーカスする。
   useEffect(() => {
-    if (editing) {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    }
+    if (!editing) return;
+    closingRef.current = false;
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, [editing]);
+
+  /*
+    編集を閉じるのは「入力欄の外が押されたとき」だけにする。
+
+    blur で閉じていたときは、開いた直後に何かがフォーカスを奪うだけで編集が
+    畳まれ、結果として2回クリックしないと編集に入れなかった。何がフォーカスを
+    奪うかを突き止めるより、フォーカスの行き先を見るのをやめるほうが確実に済む。
+  */
+  useEffect(() => {
+    if (!editing) return;
+    const onPointerDown = (event: PointerEvent): void => {
+      if (inputRef.current?.contains(event.target as Node)) return;
+      closingRef.current = true;
+      finishRef.current(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
   }, [editing]);
 
   const begin = (): void => {
@@ -106,26 +142,14 @@ function EditableText({
     setEditing(true);
   };
 
-  const finish = (chain: boolean): void => {
-    setEditing(false);
-    onEditEnd?.();
-    const trimmed = draft.trim();
-    if (trimmed.length > 0 && trimmed !== value) onCommit(trimmed);
-    if (chain) onEnterChain?.();
-  };
-
   if (!editing) {
     // 見た目は文章だが、実際には編集を起動する操作子なので button にする。
-    // ワンクリックで編集に入る。ドラッグは mousedown + 移動なので click は
-    // 発火せず、ノードの移動とは競合しない。
+    // ワンクリックで編集に入る。nodrag を付けてあるため、ここを掴んでも
+    // ノードは動かない —— 移動は名前以外のどこを掴んでもできる。
     return (
       <button
         type="button"
         className={`${className} nodrag`}
-        // React Flow はノードを選択するときに、ノード要素へフォーカスを移す。
-        // それが起きると、直後に開いた入力欄が即座に blur して編集が閉じてしまう。
-        // ここで mousedown を止めて、React Flow に処理させない。
-        onMouseDown={(e) => e.stopPropagation()}
         onClick={begin}
         onKeyDown={(e) => {
           if (e.key === 'F2') {
@@ -143,13 +167,27 @@ function EditableText({
   return (
     <input
       // nodrag: 入力中にドラッグ扱いされると文字を選択できない(React Flow の規約)
-      className={`text-input nodrag`}
+      className="text-input nodrag"
       ref={inputRef}
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => finish(false)}
-      onMouseDown={(e) => e.stopPropagation()}
+      onBlur={() => {
+        // 外を押したときは上のリスナが先に閉じるので、ここには来ない。
+        // 来るのはフォーカスを奪われたときだけ。打った文字がどこにも入らなく
+        // なるので取り返す(ウィンドウごと切り替わったときは放っておく)。
+        if (!closingRef.current && document.hasFocus()) inputRef.current?.focus();
+      }}
       onKeyDown={(e) => {
+        /*
+          キャンバスのショートカット(Cmd+Z など)へ渡さない。
+
+          止めるのは capture ではなく、この bubble 側でなければならない。
+          React は listener を root にまとめて置くため、capture で
+          stopPropagation すると event が入力欄まで降りてこなくなり、
+          この onKeyDown 自身が呼ばれなくなる —— Enter が効かなかった原因。
+        */
+        e.stopPropagation();
+
         // 日本語入力の変換確定の Enter を、確定操作と取り違えない。
         // IME 変換中の Enter は「変換を決める」ためのものであって、
         // 入力を終える意思表示ではない。
@@ -157,15 +195,15 @@ function EditableText({
 
         if (e.key === 'Enter') {
           e.preventDefault();
-          finish(true);
+          // Enter は確定だけ。Shift+Enter は確定して次の項目へ進む。
+          // 分解を一気に書き出す間、ボタンへ手を戻さずに済む。
+          finishRef.current(e.shiftKey);
         }
         if (e.key === 'Escape') {
           setEditing(false);
           onEditEnd?.();
         }
       }}
-      // キャンバスのショートカット(Undo など)に横取りされないようにする
-      onKeyDownCapture={(e) => e.stopPropagation()}
     />
   );
 }
@@ -243,6 +281,10 @@ function Memo({
       onMouseDown={(e) => e.stopPropagation()}
       onBlur={finish}
       onKeyDown={(e) => {
+        // Enter で改行できるよう、キャンバスのショートカットへ渡さない。
+        // capture 側で止めるとこのハンドラ自体が呼ばれなくなる(上と同じ理由)。
+        e.stopPropagation();
+
         // Enter は改行。Escape で編集をやめる。
         if (e.key === 'Escape') {
           setEditing(false);
@@ -250,8 +292,6 @@ function Memo({
           setDraft(memo);
         }
       }}
-      // Enter で改行できるよう、キャンバスのショートカットに渡さない
-      onKeyDownCapture={(e) => e.stopPropagation()}
     />
   );
 }
@@ -322,8 +362,8 @@ export function TaskNode({ data }: NodeProps): React.JSX.Element {
             startEditing={autoEditTitle}
             onEditEnd={onAutoEditConsumed}
             onCommit={(title) => send({ type: 'updateTaskTitle', id: task.id, title })}
-            // Task 名を打ち終えた勢いのまま、分解に入れるようにする
-            onEnterChain={() => onChildChainAdd(task.id)}
+            // Shift+Enter で、Task 名を打ち終えた勢いのまま分解に入れる
+            onCommitAndAdd={() => onChildChainAdd(task.id)}
           />
 
           <span className="task-actions nodrag">
@@ -413,9 +453,9 @@ export function TaskNode({ data }: NodeProps): React.JSX.Element {
                       onCommit={(title) =>
                         send({ type: 'updateChildTaskTitle', id: child.id, title })
                       }
-                      // Enter で確定したら、続けてもう1件足す。
+                      // Shift+Enter で確定したら、続けてもう1件足す。
                       // 分解は一気に書き出したいので、都度ボタンへ手を戻したくない。
-                      onEnterChain={() => onChildChainAdd(task.id)}
+                      onCommitAndAdd={() => onChildChainAdd(task.id)}
                     />
 
                     <span className="child-actions nodrag">
@@ -486,12 +526,12 @@ export function TaskNode({ data }: NodeProps): React.JSX.Element {
       </div>
 
       {/*
-        左上の頂点に重なる丸点。所属先の印であり、Task を掴んで動かす場所でもある。
-        本体でも動かせると、タイトルをクリックして編集するつもりが動いてしまう。
+        左上の頂点に重なる丸点。どの Project に属しているかの印。
+        移動は本体のどこを掴んでもできるので、ここは掴む場所ではない。
       */}
       <div
         className="task-grip"
-        title={projectColor ? 'ドラッグで移動(Project に所属)' : 'ドラッグで移動'}
+        title={projectColor ? 'この Project に所属' : 'Project に属していない'}
       >
         <span className={`task-grip-dot${projectColor ? '' : ' is-unassigned'}`} />
       </div>
@@ -548,6 +588,9 @@ function ProjectName({
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => {
+        // キャンバスのショートカットへ渡さない(上と同じ理由で bubble 側で止める)
+        e.stopPropagation();
+
         if (e.nativeEvent.isComposing) return;
         if (e.key === 'Enter') {
           e.preventDefault();
@@ -555,7 +598,6 @@ function ProjectName({
         }
         if (e.key === 'Escape') setEditing(false);
       }}
-      onKeyDownCapture={(e) => e.stopPropagation()}
     />
   );
 }
