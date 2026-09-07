@@ -29,8 +29,8 @@ export default {
       まだ移っていないだけなのかを取り違える。** 待った時間も残しておく ——
       遅くなったこと自体が兆候になる。
     */
-    const focusedInput = async (label) => {
-      const waitedMs = await evaluate(`
+    const awaitFocus = () =>
+      evaluate(`
         const t0 = performance.now();
         return await new Promise((resolve) => {
           const tick = () => {
@@ -43,6 +43,9 @@ export default {
           tick();
         });
       `);
+
+    const focusedInput = async (label) => {
+      const waitedMs = await awaitFocus();
       const s = await state();
       check(label, waitedMs >= 0, { waitedMs, ...s });
       return s;
@@ -93,6 +96,8 @@ export default {
       'childTask が3件になる',
       `return document.querySelectorAll('.child').length === 3`,
     );
+    // 打つ前にフォーカスが着くのを待つ。着く前に押すと、どこにも入らない。
+    await awaitFocus();
     await key({ key: 'Backspace', code: 8 });
     await key({ key: 'Backspace', code: 8 });
 
@@ -112,6 +117,7 @@ export default {
       'Task 名が入力欄になる',
       `return !!document.querySelector('.task-head .text-input')`,
     );
+    await awaitFocus();
     for (let i = 0; i < 6; i += 1) await key({ key: 'Backspace', code: 8 });
     await wait(300);
     check(
