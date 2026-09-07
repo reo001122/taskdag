@@ -5,7 +5,7 @@
  * 使い方は tools/ui-probe/README.md。
  */
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -126,6 +126,7 @@ async function runScenario(scenario) {
   const checks = [];
   let error = null;
   let cdp = null;
+  let shotPath = null;
   try {
     const port = await readAssignedPort(electron);
     cdp = await connect(port, {
@@ -141,6 +142,20 @@ async function runScenario(scenario) {
   } catch (e) {
     error = e;
   } finally {
+    /*
+      落ちたときだけ画面を残す。**DOM を読むだけでは分からないことがある** ——
+      要素は在るのに重なって読めない、色が背景と同化している。原因を探る前に
+      まず見られるようにしておく。人が見るためのもので、自動判定はしない。
+    */
+    if (cdp && (error || checks.some((c) => !c.ok))) {
+      try {
+        const png = await cdp.screenshot();
+        shotPath = join(repoRoot, `ui-probe-${scenario.name}.png`);
+        writeFileSync(shotPath, Buffer.from(png, 'base64'));
+      } catch {
+        shotPath = null;
+      }
+    }
     cdp?.close();
     // 終了を待ってから消す。Electron はまだ user-data-dir へ書いており、
     // 待たずに消すと ENOTEMPTY で落ちる。
@@ -155,6 +170,7 @@ async function runScenario(scenario) {
     );
   }
   if (error) console.log(`  ! ${error.message}`);
+  if (shotPath) console.log(`  画面: ${shotPath}`);
 
   return checks.filter((c) => !c.ok).length + (error ? 1 : 0);
 }
