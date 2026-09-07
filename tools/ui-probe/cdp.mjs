@@ -6,24 +6,34 @@
 
 const MODIFIER = { alt: 1, ctrl: 2, meta: 4, shift: 8 };
 
-/** page ターゲットが現れるまで待つ。起動直後は一覧が空で返る。 */
-async function findPage(port, timeoutMs) {
+/**
+ * page ターゲットが現れるまで待つ。起動直後は一覧が空で返る。
+ *
+ * expectedUrlPrefix を渡すと、その配下を開いている page 以外は掴まない。
+ * 掴む相手が本当にこちらの起動したアプリかを、ポート以外でも確かめるため。
+ */
+async function findPage(port, timeoutMs, expectedUrlPrefix) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
       const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
-      const page = targets.find((t) => t.type === 'page' && t.webSocketDebuggerUrl);
+      const page = targets.find(
+        (t) =>
+          t.type === 'page' &&
+          t.webSocketDebuggerUrl &&
+          (!expectedUrlPrefix || (t.url ?? '').startsWith(expectedUrlPrefix)),
+      );
       if (page) return page;
     } catch {
       // まだ listen していない
     }
     await new Promise((r) => setTimeout(r, 100));
   }
-  throw new Error(`page target が ${timeoutMs}ms 以内に現れなかった`);
+  throw new Error(`期待した page target が ${timeoutMs}ms 以内に現れなかった`);
 }
 
-export async function connect(port, { onConsole, timeoutMs = 15000 } = {}) {
-  const page = await findPage(port, timeoutMs);
+export async function connect(port, { onConsole, expectedUrlPrefix, timeoutMs = 15000 } = {}) {
+  const page = await findPage(port, timeoutMs, expectedUrlPrefix);
   const ws = new WebSocket(page.webSocketDebuggerUrl);
   const pending = new Map();
   let nextId = 0;

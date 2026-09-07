@@ -25,7 +25,6 @@ const flag = (name) => argv.includes(`--${name}`);
 const option = (name, fallback) =>
   argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
 
-const port = Number(option('port', '9222'));
 const logLevel = option('log', 'debug');
 const showLogs = flag('show-logs');
 const wanted = option('scenario', null);
@@ -61,6 +60,41 @@ async function main() {
   process.exit(failures === 0 ? 0 : 1);
 }
 
+/**
+ * 起動したプロセス自身が名乗った CDP のポートを読む。
+ *
+ * **固定のポート番号を決め打ちしてはならない。** 既にそのポートが使われていると
+ * (開発中のアプリが動いている、前回の probe が残っている)、こちらが起動した
+ * プロセスは listen に失敗する一方、接続は先客のほうへ成功してしまう。
+ * その先客は利用者の本物のデータを開いており、シナリオがそれを書き換える。
+ *
+ * `--remote-debugging-port=0` で OS に空きを選ばせ、標準エラーに出る
+ * 「DevTools listening on ws://127.0.0.1:<port>/」から読む。名乗るのは
+ * 自分が起動したプロセスなので、取り違えようがない。
+ */
+function readAssignedPort(child, timeoutMs = 15000) {
+  return new Promise((resolve, reject) => {
+    let buffer = '';
+    const timer = setTimeout(
+      () => reject(new Error(`CDP のポートを ${timeoutMs}ms 以内に名乗らなかった`)),
+      timeoutMs,
+    );
+    const onData = (chunk) => {
+      buffer += chunk.toString();
+      const found = buffer.match(/DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)\//);
+      if (!found) return;
+      clearTimeout(timer);
+      child.stderr.off('data', onData);
+      resolve(Number(found[1]));
+    };
+    child.stderr.on('data', onData);
+    child.once('exit', () => {
+      clearTimeout(timer);
+      reject(new Error('アプリがポートを名乗る前に終了した'));
+    });
+  });
+}
+
 /** 終わるまで待つ。素直に終わらなければ落とす。 */
 function stop(child, graceMs = 3000) {
   return new Promise((resolve) => {
@@ -84,15 +118,18 @@ async function runScenario(scenario) {
   const userDataDir = mkdtempSync(join(tmpdir(), 'taskdag-probe-'));
   const electron = spawn(
     electronBinary,
-    ['.', `--remote-debugging-port=${port}`, `--user-data-dir=${userDataDir}`, `--log=${logLevel}`],
-    { cwd: repoRoot, stdio: showLogs ? 'inherit' : 'ignore' },
+    ['.', '--remote-debugging-port=0', `--user-data-dir=${userDataDir}`, `--log=${logLevel}`],
+    { cwd: repoRoot, stdio: ['ignore', showLogs ? 'inherit' : 'ignore', 'pipe'] },
   );
+  if (showLogs) electron.stderr.pipe(process.stderr);
 
   const checks = [];
   let error = null;
   let cdp = null;
   try {
+    const port = await readAssignedPort(electron);
     cdp = await connect(port, {
+      expectedUrlPrefix: `file://${join(repoRoot, 'out', 'renderer')}`,
       onConsole: showLogs ? (type, text) => console.log(`  renderer.${type} ${text}`) : undefined,
     });
     await cdp.waitFor('画面が描画される', `return !!document.querySelector('.react-flow')`);
