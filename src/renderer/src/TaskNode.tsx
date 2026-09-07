@@ -429,8 +429,8 @@ export function TaskNode({ data }: NodeProps): React.JSX.Element {
 
   return (
     /*
-      取っ手は角からはみ出すため、本体の外側に置く。本体の中に置くと
-      overflow: hidden で切り落とされ、かといって visible にすると
+      取っ手と接続の端は、角や辺からはみ出すため本体の外側に置く。本体の中に
+      置くと overflow: hidden で切り落とされ、かといって visible にすると
       ヘッダの背景が親の丸い角を上書きして枠線が途切れる。
     */
     <div
@@ -440,8 +440,6 @@ export function TaskNode({ data }: NodeProps): React.JSX.Element {
       }
     >
       <div className={className}>
-        <Handle type="target" position={HandlePosition.Left} />
-
         <div className="task-head">
           <StateToggle
             progress={task.progress}
@@ -619,9 +617,15 @@ export function TaskNode({ data }: NodeProps): React.JSX.Element {
             })}
           </div>
         )}
-
-        <Handle type="source" position={HandlePosition.Right} />
       </div>
+
+      {/*
+        接続の端は、取っ手と同じ理由で本体の外側に置く。本体は角を整えるために
+        overflow: hidden にしてあり、中に置くと**外側の半分が切り落とされる**。
+        見た目は縦棒のままなのに掴める幅が実測 2.5px しかなく、狙って掴めない。
+      */}
+      <Handle type="target" position={HandlePosition.Left} />
+      <Handle type="source" position={HandlePosition.Right} />
 
       {/*
         左上の頂点に重なる丸点。どの Project に属しているかの印。
