@@ -139,7 +139,8 @@ export async function connect(port, { onConsole, expectedUrlPrefix, timeoutMs = 
   };
 
   /** 画面をそのまま撮る。見た目の判断は人に渡すためのもので、自動判定はしない。 */
-  const screenshot = async () => (await send('Page.captureScreenshot', { format: 'png' })).result?.data;
+  const screenshot = async () =>
+    (await send('Page.captureScreenshot', { format: 'png' })).result?.data;
 
   return { evaluate, waitFor, wait, key, type, mouse, drag, screenshot, close: () => ws.close() };
 }

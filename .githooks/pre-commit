@@ -1,0 +1,31 @@
+#!/bin/sh
+#
+# コミット前の確認。
+#
+# 型チェック・Biome・単体テストは常に走らせる(数秒)。
+# 画面に関わるものが含まれるときだけ、実機を操作する確認(npm run probe)も走らせる。
+#
+# **probe はウィンドウを出さない**(--hidden)。コミットのたびに画面が割り込むのでは
+# 常時走らせられない。落ちたときだけ ui-probe-<name>.png に画面が残る。
+#
+# 有効化: npm install が git config core.hooksPath .githooks を設定する。
+# 一時的に飛ばす: git commit --no-verify
+
+set -e
+
+# nvm があれば .nvmrc に合わせる。hook は非ログインシェルで動くため、
+# 開発に使っている Node とは限らない(node:sqlite は 22.5 以上を要求する)。
+if [ -s "$HOME/.nvm/nvm.sh" ]; then
+  . "$HOME/.nvm/nvm.sh" >/dev/null 2>&1
+  nvm use >/dev/null 2>&1 || true
+fi
+
+npm run typecheck
+npm run check
+npm test
+
+# 画面に関わる変更が含まれるか
+if git diff --cached --name-only --diff-filter=ACMR |
+  grep -Eq '^(src/renderer/|src/main/|src/preload/|src/shared/|tools/ui-probe/)'; then
+  npm run probe
+fi

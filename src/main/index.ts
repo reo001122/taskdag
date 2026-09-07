@@ -15,6 +15,12 @@ function createWindow(): void {
   const window = new BrowserWindow({
     width: 1280,
     height: 860,
+    /*
+      自動チェック(tools/ui-probe)用。描画は普通に行われ、CDP からも触れるが、
+      画面には出ない。コミットのたびにウィンドウが割り込んでフォーカスを
+      奪うのでは、確認を常時走らせられない。
+    */
+    show: !process.argv.includes('--hidden'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,

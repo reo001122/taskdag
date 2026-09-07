@@ -118,7 +118,14 @@ async function runScenario(scenario) {
   const userDataDir = mkdtempSync(join(tmpdir(), 'taskdag-probe-'));
   const electron = spawn(
     electronBinary,
-    ['.', '--remote-debugging-port=0', `--user-data-dir=${userDataDir}`, `--log=${logLevel}`],
+    [
+      '.',
+      '--remote-debugging-port=0',
+      `--user-data-dir=${userDataDir}`,
+      `--log=${logLevel}`,
+      // 既定では画面に出さない。シナリオを書いている最中だけ --show-window で出す。
+      ...(flag('show-window') ? [] : ['--hidden']),
+    ],
     { cwd: repoRoot, stdio: ['ignore', showLogs ? 'inherit' : 'ignore', 'pipe'] },
   );
   if (showLogs) electron.stderr.pipe(process.stderr);
