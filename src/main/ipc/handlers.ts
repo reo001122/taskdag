@@ -171,6 +171,26 @@ export function executeCommand(
   }
 }
 
+/**
+ * 作成コマンドが対象とする集合の id。実行の前後で比べて、作られた id を割り出す。
+ *
+ * main はコマンドを1件ずつ同期実行するため、この前後は必ず1コマンド分だけ離れている
+ * (design/tech-stack.md「書き込みが構造的に直列化される」)。renderer 側で
+ * スナップショットの差分を取ると、この保証がないので取り違える。
+ */
+function idsCreatedBy(service: AppService, command: Command): Set<string> | null {
+  switch (command.type) {
+    case 'createTask':
+      return service.query((s) => new Set<string>(s.graph.tasks.keys()));
+    case 'createChildTask':
+      return service.query((s) => new Set<string>(s.graph.childTasks.keys()));
+    case 'createProject':
+      return service.query((s) => new Set<string>(s.graph.projects.keys()));
+    default:
+      return null;
+  }
+}
+
 export function registerIpc(
   ipcMain: IpcMain,
   service: AppService,
@@ -193,12 +213,19 @@ export function registerIpc(
 
     log.debug('コマンド', parsed.value);
 
+    const before = idsCreatedBy(service, parsed.value);
+
     const result = executeCommand(service, db, parsed.value);
     if (!result.ok) {
       log.info('コマンドをドメインが拒否した', { type: parsed.value.type, error: result.error });
       return { ok: false, error: result.error, snapshot: snapshot() };
     }
-    return { ok: true, snapshot: snapshot() };
+
+    const after = before === null ? null : idsCreatedBy(service, parsed.value);
+    const createdId =
+      before === null || after === null ? null : ([...after].find((id) => !before.has(id)) ?? null);
+
+    return { ok: true, snapshot: snapshot(), createdId };
   });
 
   // 接続ドラッグ開始時に一度だけ呼ばれる。副作用を持たない。

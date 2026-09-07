@@ -23,9 +23,28 @@ export default {
         };
       `);
 
+    /*
+      フォーカスは即座には移らない。React Flow がノードを測り終えるまで待つ必要が
+      あり、実測で初回は 70ms 前後かかる。直後に見にいくと、**移らなかったのか、
+      まだ移っていないだけなのかを取り違える。** 待った時間も残しておく ——
+      遅くなったこと自体が兆候になる。
+    */
     const focusedInput = async (label) => {
+      const waitedMs = await evaluate(`
+        const t0 = performance.now();
+        return await new Promise((resolve) => {
+          const tick = () => {
+            if (document.activeElement?.classList?.contains('text-input')) {
+              return resolve(Math.round(performance.now() - t0));
+            }
+            if (performance.now() - t0 > 2000) return resolve(-1);
+            requestAnimationFrame(tick);
+          };
+          tick();
+        });
+      `);
       const s = await state();
-      check(label, s.activeTag === 'INPUT' && s.activeClass.includes('text-input'), s);
+      check(label, waitedMs >= 0, { waitedMs, ...s });
       return s;
     };
 
@@ -81,9 +100,8 @@ export default {
       'childTask が2件へ戻る',
       `return document.querySelectorAll('.child').length === 2`,
     );
-    s = await state();
+    s = await focusedInput('消したあとは1つ上の名前へ戻る');
     check('空の名前で Backspace を押すと childTask が消える', s.children.length === 2, s.children);
-    check('消したあとは1つ上の名前へ戻る', s.activeTag === 'INPUT', s);
     check('戻った先の名前は消えていない', s.children[1] === null, s.children);
 
     // Task 名では同じ操作で消えない(FR-1 の確認を迂回しないこと)

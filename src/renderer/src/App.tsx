@@ -14,7 +14,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import './styles.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Command, DeletePlan, GraphSnapshot } from '../../shared/ipc';
+import type { Command, CommandResult, DeletePlan, GraphSnapshot } from '../../shared/ipc';
 import { PROJECT_COLOR_COUNT, projectColorAt } from './colors';
 import { computeLayout } from './layout';
 import { logger } from './log';
@@ -76,13 +76,19 @@ export function App(): React.JSX.Element {
     members: Map<string, { x: number; y: number }>;
   } | null>(null);
 
-  /** コマンドを送り、更新後のスナップショットを返す。失敗しても投げない。 */
-  const dispatch = useCallback(async (command: Command): Promise<GraphSnapshot | null> => {
+  /**
+   * コマンドを送り、結果をそのまま返す。失敗しても投げない。
+   *
+   * 成否まで返すのは、**成功したときにしか続けてはいけない後処理があるため**。
+   * スナップショットは失敗時にも返る(現在の状態)ので、それだけを見ていると
+   * 起きなかった変更を前提に画面を動かしてしまう。
+   */
+  const dispatch = useCallback(async (command: Command): Promise<CommandResult | null> => {
     try {
       const result = await window.api.send(command);
       setSnapshot(result.snapshot);
       setError(result.ok ? null : result.error);
-      return result.snapshot;
+      return result;
     } catch (e) {
       log.error('コマンドを送れなかった', { command, cause: e });
       setError(e instanceof Error ? e.message : String(e));
@@ -111,32 +117,37 @@ export function App(): React.JSX.Element {
     void refresh();
   }, [refresh]);
 
-  /** Task を作り、そのまま名前の入力に入る。 */
+  /**
+   * Task を作り、そのまま名前の入力に入る。
+   *
+   * 作った id は main が返す。ここでスナップショットの差分から割り出すと、
+   * 作成が2件同時に飛んだときに1つ前を掴む(shared/ipc.ts の createdId)。
+   */
   const addTask = useCallback(
     (position: { x: number; y: number }) => {
       void (async () => {
-        const before = new Set(snapshot?.tasks.map((t) => t.id) ?? []);
-        const next = await dispatch({ type: 'createTask', title: '新しいタスク', position });
-        const created = next?.tasks.find((t) => !before.has(t.id));
-        log.debug('Task を作った', { id: created?.id ?? null });
-        if (created) setAutoEdit({ id: created.id, caret: 'all' });
+        const result = await dispatch({ type: 'createTask', title: '新しいタスク', position });
+        log.debug('Task を作った', { id: result?.ok ? result.createdId : null });
+        if (result?.ok && result.createdId !== null) {
+          setAutoEdit({ id: result.createdId, caret: 'all' });
+        }
       })();
     },
-    [dispatch, snapshot],
+    [dispatch],
   );
 
   /** childTask を1件足し、そのまま名前の入力に入る。Shift+Enter で連続して足せる。 */
   const addChild = useCallback(
     (parentId: string) => {
       void (async () => {
-        const before = new Set(snapshot?.childTasks.map((c) => c.id) ?? []);
-        const next = await dispatch({ type: 'createChildTask', parentId, title: '項目' });
-        const created = next?.childTasks.find((c) => !before.has(c.id));
-        log.debug('childTask を作った', { id: created?.id ?? null });
-        if (created) setAutoEdit({ id: created.id, caret: 'all' });
+        const result = await dispatch({ type: 'createChildTask', parentId, title: '項目' });
+        log.debug('childTask を作った', { id: result?.ok ? result.createdId : null });
+        if (result?.ok && result.createdId !== null) {
+          setAutoEdit({ id: result.createdId, caret: 'all' });
+        }
       })();
     },
-    [dispatch, snapshot],
+    [dispatch],
   );
 
   /**
@@ -145,6 +156,7 @@ export function App(): React.JSX.Element {
    * 上がなければフォーカスは移さない。親の Task 名へ送ると、次の項目の名前を
    * Task 名に打ち込んでしまう事故が起きる —— 見た目がほとんど同じ入力欄で、
    * 意味だけが違うため。
+   *
    */
   const removeChildWhileEditing = useCallback(
     (childId: string) => {
