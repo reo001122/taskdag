@@ -157,6 +157,10 @@ export function App(): React.JSX.Element {
    * Task 名に打ち込んでしまう事故が起きる —— 見た目がほとんど同じ入力欄で、
    * 意味だけが違うため。
    *
+   * **戻り先は、削除が成功したうえで、削除後もまだ在ることを確かめてから決める。**
+   * 戻り先を選ぶのは削除前のグラフだが、その間に別の操作(将来は AI からのものも)が
+   * 割り込めば、選んだ相手はもう別の位置にいるか、消えている。分からないときは
+   * 動かさないほうがよい —— 違う項目にフォーカスすると、次の1打がそこへ入る。
    */
   const removeChildWhileEditing = useCallback(
     (childId: string) => {
@@ -165,9 +169,16 @@ export function App(): React.JSX.Element {
         const siblings = parent?.childTaskIds ?? [];
         const previous = siblings[siblings.indexOf(childId) - 1] ?? null;
 
-        await dispatch({ type: 'deleteChildTask', id: childId });
-        log.debug('空の childTask を消した', { childId, backTo: previous });
-        setAutoEdit(previous === null ? null : { id: previous, caret: 'end' });
+        const result = await dispatch({ type: 'deleteChildTask', id: childId });
+        if (!result?.ok) {
+          log.warn('childTask を消せなかった', { childId });
+          return;
+        }
+
+        const stillThere =
+          previous !== null && result.snapshot.childTasks.some((c) => c.id === previous);
+        log.debug('空の childTask を消した', { childId, backTo: stillThere ? previous : null });
+        setAutoEdit(stillThere ? { id: previous, caret: 'end' } : null);
       })();
     },
     [dispatch, snapshot],
