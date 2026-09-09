@@ -727,8 +727,8 @@ export type ProjectNodeData = {
  * これはタグの見た目ではなく、領域そのもの。中に入っている Task が
  * この Project に属することになる。
  *
- * 枠の内側はクリックを透過させる(pointer-events: none)。透過させないと、
- * 枠の上にある Task を掴めなくなる。掴めるのはラベルと、リサイズの取っ手だけ。
+ * 枠はどこを掴んでも動く。中の Task は手前にいるので、Task の上から始めた
+ * ドラッグは Task の移動になる —— 枠が持っていくことはない。
  */
 export function ProjectFrameNode({ data, selected }: NodeProps): React.JSX.Element {
   const { id, name, color, colorIndex, onRecolor, onResizeEnd, onRename, onDelete } =

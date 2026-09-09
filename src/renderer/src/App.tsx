@@ -236,8 +236,8 @@ export function App(): React.JSX.Element {
         type: 'projectFrame',
         position: project.position,
         data: data as never,
-        // ラベルだけを掴んで動かす。枠の内側は Task を掴めるよう透過させている。
-        dragHandle: '.project-frame-label',
+        // dragHandle は指定しない。枠の内側のどこを掴んでも動く。
+        // 中の Task は手前(zIndex 0)にいるので、今までどおり個別に掴める。
         // Task より背面に置く
         zIndex: -1,
         style: { width: project.width, height: project.height },

@@ -481,9 +481,12 @@ body {
   border-radius: 12px;
   width: 100%;
   height: 100%;
-  /* 内側はクリックを透過させる。透過させないと枠の上の Task を掴めない。
-     掴めるのはラベルと、リサイズの取っ手だけ。 */
-  pointer-events: none;
+  /* 枠はどこを掴んでも動く。中の Task は手前にいるので、Task の上から
+     始めたドラッグは Task の移動になる。 */
+  cursor: grab;
+}
+.react-flow__node.dragging .project-frame {
+  cursor: grabbing;
 }
 .project-frame-label {
   position: absolute;
@@ -497,12 +500,7 @@ body {
   color: var(--project-color, var(--project));
   font-size: 11px;
   letter-spacing: 0.03em;
-  /* ここが枠を掴んで動かす取っ手になる */
-  pointer-events: auto;
   cursor: grab;
-}
-.project-frame-label:active {
-  cursor: grabbing;
 }
 
 .project-name {
