@@ -610,3 +610,16 @@ body {
 .react-flow__handle:hover {
   background: var(--ready);
 }
+
+/*
+  枠の大きさを変える取っ手。選ばなくても掴めるが、常に濃く出ていると
+  枠が賑やかになるので、ホバーまでは薄く置く。
+*/
+.react-flow__resize-control.handle {
+  opacity: 0.35;
+  transition: opacity 0.1s;
+}
+.react-flow__node:hover .react-flow__resize-control.handle,
+.react-flow__resize-control.handle.is-selected {
+  opacity: 1;
+}

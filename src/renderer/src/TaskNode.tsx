@@ -750,10 +750,17 @@ export function ProjectFrameNode({ data, selected }: NodeProps): React.JSX.Eleme
 
   return (
     <>
+      {/*
+        大きさを変える取っ手は常に置いておく。選んでから掴む2手にすると、
+        「掴めない」と受け取られる —— 取っ手が出ていないことが、選択されて
+        いないせいだと分かるのは、仕組みを知っている側だけ。
+        選んでいない間は薄く出し、ホバーで濃くする(styles.css)。
+      */}
       <NodeResizer
         minWidth={140}
         minHeight={120}
-        isVisible={selected}
+        isVisible
+        handleClassName={selected ? 'is-selected' : undefined}
         onResizeEnd={(_event, params) =>
           onResizeEnd(id, { x: params.x, y: params.y }, params.width, params.height)
         }
