@@ -386,6 +386,15 @@ export function App(): React.JSX.Element {
             触れなくなる。枠は常に Task の背面(zIndex: -1)にいるべきもの。
           */
           elevateNodesOnSelect={false}
+          /*
+            2本指スクロールは拡大縮小ではなく移動に割り当てる。
+
+            枠の内側がドラッグで移動できるようになったぶん、ドラッグでパンできる
+            余白が減った。地図や図を扱う道具では、スクロール=移動・ピンチ=拡大が
+            広く使われている慣習でもある。拡大縮小はピンチと Cmd+スクロールに残る。
+          */
+          zoomOnScroll={false}
+          panOnScroll
           onNodeDragStart={(_event, node) => {
             if (node.type !== 'projectFrame') return;
             const projectId = node.id.replace('project:', '');

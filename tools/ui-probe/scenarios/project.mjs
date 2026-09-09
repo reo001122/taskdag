@@ -9,7 +9,7 @@ export default {
   name: 'project',
   description: 'Project の枠が Task を覆わないこと、色パレットが閉じること',
 
-  async run({ evaluate, waitFor, wait, key, type, drag, check }) {
+  async run({ evaluate, waitFor, wait, key, type, drag, wheel, check }) {
     /** ノードの画面上の位置。動いたかどうかを見るためだけに使う。 */
     const spots = () =>
       evaluate(`
@@ -102,5 +102,37 @@ export default {
       after,
     });
     check('P-4d そのとき枠は動かない', !moved(before, after, 'プロジェクトA'), { before, after });
+
+    /*
+      2本指スクロールは移動、Cmd 併用で拡大縮小。
+      枠の内側がドラッグで動くようになったぶん、パンの手段をここに移している。
+    */
+    const viewport = () =>
+      evaluate(`
+        const t = getComputedStyle(document.querySelector('.react-flow__viewport')).transform;
+        const m = new DOMMatrixReadOnly(t);
+        return { x: Math.round(m.e), y: Math.round(m.f), zoom: Number(m.a.toFixed(3)) };
+      `);
+    const centre = { x: 640, y: 400 };
+
+    let v = await viewport();
+    await wheel(centre, { deltaY: 120 });
+    await wait(300);
+    let next = await viewport();
+    check('N-1 2本指スクロールで表示が移動する', next.y !== v.y, { v, next });
+    check('N-2 そのとき拡大率は変わらない', next.zoom === v.zoom, { v, next });
+
+    /*
+      トラックパッドのピンチは、macOS では ctrlKey 付きの wheel として届く
+      (@xyflow/system も「macos sets ctrlKey=true for pinch gesture」と書いている)。
+      ピンチそのものは送れないので、同じ形の入力で確かめる。
+    */
+    v = await viewport();
+    // 縮小方向に動かす。この時点の拡大率は上限(maxZoom)に張り付いており、
+    // 拡大方向では頭打ちになって変化が出ない。
+    await wheel(centre, { deltaY: 120, modifiers: 2 }); // ctrl = ピンチ相当
+    await wait(300);
+    next = await viewport();
+    check('N-3 ピンチ相当の入力では拡大縮小になる', next.zoom !== v.zoom, { v, next });
   },
 };

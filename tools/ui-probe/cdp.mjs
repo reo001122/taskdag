@@ -125,6 +125,18 @@ export async function connect(port, { onConsole, expectedUrlPrefix, timeoutMs = 
     });
   };
 
+  /** 2本指スクロール。deltaY だけ渡せば縦、modifiers に 4 を渡すと Cmd 併用。 */
+  const wheel = async (at, { deltaX = 0, deltaY = 0, modifiers = 0 } = {}) => {
+    await send('Input.dispatchMouseEvent', {
+      type: 'mouseWheel',
+      x: at.x,
+      y: at.y,
+      deltaX,
+      deltaY,
+      modifiers,
+    });
+  };
+
   const drag = async (from, to, steps = 10) => {
     await mouse('mousePressed', from.x, from.y);
     for (let i = 1; i <= steps; i += 1) {
@@ -142,5 +154,16 @@ export async function connect(port, { onConsole, expectedUrlPrefix, timeoutMs = 
   const screenshot = async () =>
     (await send('Page.captureScreenshot', { format: 'png' })).result?.data;
 
-  return { evaluate, waitFor, wait, key, type, mouse, drag, screenshot, close: () => ws.close() };
+  return {
+    evaluate,
+    waitFor,
+    wait,
+    key,
+    type,
+    mouse,
+    drag,
+    wheel,
+    screenshot,
+    close: () => ws.close(),
+  };
 }
