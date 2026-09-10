@@ -9,7 +9,7 @@ export default {
   name: 'readiness',
   description: 'B. 依存の向き、Ready/Blocked、完了の非表示',
 
-  async run({ evaluate, waitFor, wait, key, type, drag, check }) {
+  async run({ evaluate, waitFor, waitForFocus, wait, key, type, drag, check }) {
     /*
       全体が入るように表示を合わせる。
 
@@ -28,10 +28,7 @@ export default {
         `[...document.querySelectorAll('.toolbar button')].find((b) => b.textContent.includes('Task')).click(); return 1;`,
       );
       await waitFor('入力欄が開く', `return !!document.querySelector('.task-head .text-input')`);
-      await waitFor(
-        'フォーカスが移る',
-        `return document.activeElement?.classList?.contains('text-input')`,
-      );
+      await waitForFocus();
       await type(title);
       await key({ key: 'Enter', code: 13 });
       await wait(250);

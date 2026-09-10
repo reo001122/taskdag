@@ -9,7 +9,7 @@ export default {
   name: 'editing',
   description: '名前の編集、Shift+Enter での書き出し、Backspace での取り消し',
 
-  async run({ evaluate, waitFor, wait, key, type, check }) {
+  async run({ evaluate, waitFor, waitForFocus, wait, key, type, check }) {
     const state = () =>
       evaluate(`
         const active = document.activeElement;
@@ -29,23 +29,8 @@ export default {
       まだ移っていないだけなのかを取り違える。** 待った時間も残しておく ——
       遅くなったこと自体が兆候になる。
     */
-    const awaitFocus = () =>
-      evaluate(`
-        const t0 = performance.now();
-        return await new Promise((resolve) => {
-          const tick = () => {
-            if (document.activeElement?.classList?.contains('text-input')) {
-              return resolve(Math.round(performance.now() - t0));
-            }
-            if (performance.now() - t0 > 2000) return resolve(-1);
-            requestAnimationFrame(tick);
-          };
-          tick();
-        });
-      `);
-
     const focusedInput = async (label) => {
-      const waitedMs = await awaitFocus();
+      const waitedMs = await waitForFocus();
       const s = await state();
       check(label, waitedMs >= 0, { waitedMs, ...s });
       return s;
@@ -97,7 +82,7 @@ export default {
       `return document.querySelectorAll('.child').length === 3`,
     );
     // 打つ前にフォーカスが着くのを待つ。着く前に押すと、どこにも入らない。
-    await awaitFocus();
+    await waitForFocus();
     await key({ key: 'Backspace', code: 8 });
     await key({ key: 'Backspace', code: 8 });
 
@@ -117,7 +102,7 @@ export default {
       'Task 名が入力欄になる',
       `return !!document.querySelector('.task-head .text-input')`,
     );
-    await awaitFocus();
+    await waitForFocus();
     for (let i = 0; i < 6; i += 1) await key({ key: 'Backspace', code: 8 });
     await wait(300);
     check(

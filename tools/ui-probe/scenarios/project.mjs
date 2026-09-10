@@ -9,7 +9,7 @@ export default {
   name: 'project',
   description: 'Project の枠が Task を覆わないこと、色パレットが閉じること',
 
-  async run({ evaluate, waitFor, wait, key, type, drag, wheel, check }) {
+  async run({ evaluate, waitFor, waitForFocus, wait, key, type, drag, wheel, check }) {
     /** ノードの画面上の位置。動いたかどうかを見るためだけに使う。 */
     const spots = () =>
       evaluate(`
@@ -32,6 +32,7 @@ export default {
       `[...document.querySelectorAll('.toolbar button')].find((b) => b.textContent.includes('Task')).click(); return 1;`,
     );
     await waitFor('Task が現れる', `return document.querySelectorAll('.task').length === 1`);
+    await waitForFocus();
     await type('中の作業');
     await key({ key: 'Enter', code: 13 });
     await wait(300);
@@ -41,6 +42,7 @@ export default {
       `[...document.querySelectorAll('.toolbar button')].find((b) => b.textContent.includes('Project')).click(); return 1;`,
     );
     await waitFor('名前を聞く dialog が開く', `return !!document.querySelector('dialog[open]')`);
+    await waitForFocus();
     await type('プロジェクトA');
     await key({ key: 'Enter', code: 13 });
     await waitFor('枠が現れる', `return !!document.querySelector('.project-frame')`);

@@ -93,6 +93,28 @@ export async function connect(port, { onConsole, expectedUrlPrefix, timeoutMs = 
     throw new Error(`条件が満たされないまま ${timeout}ms 経過: ${label}`);
   };
 
+  /**
+   * 入力欄にフォーカスが移るまで待ち、待った時間(ms)を返す。移らなければ -1。
+   *
+   * **打つ前に必ず通すこと。** 入力欄が現れてから実際にフォーカスが着くまでには
+   * 間がある(React Flow がノードを測り終えるまで待つため、実測で初回 70ms 前後)。
+   * 着く前に打つと、最初の文字が黙って落ちる。
+   */
+  const waitForFocus = (timeout = 2000) =>
+    evaluate(`
+      const t0 = performance.now();
+      return await new Promise((resolve) => {
+        const tick = () => {
+          if (document.activeElement?.classList?.contains('text-input')) {
+            return resolve(Math.round(performance.now() - t0));
+          }
+          if (performance.now() - t0 > ${timeout}) return resolve(-1);
+          requestAnimationFrame(tick);
+        };
+        tick();
+      });
+    `);
+
   const key = async ({ key: name, code, shift = false, meta = false }) => {
     const modifiers = (shift ? MODIFIER.shift : 0) | (meta ? MODIFIER.meta : 0);
     const base = {
@@ -157,6 +179,7 @@ export async function connect(port, { onConsole, expectedUrlPrefix, timeoutMs = 
   return {
     evaluate,
     waitFor,
+    waitForFocus,
     wait,
     key,
     type,
