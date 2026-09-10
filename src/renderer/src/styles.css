@@ -297,6 +297,15 @@ body {
   transform: rotate(45deg);
 }
 
+/* 折りたたみ中の件数。数字が入るので、記号だけのときより少し広く取る。 */
+.state-button.is-collapsed {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
 .state-button {
   font-size: 10px;
   line-height: 1;
@@ -335,7 +344,8 @@ body {
 
 /* ホバーを待たずに見せるもの */
 .task-actions .state-button.has-memo,
-.child-actions .state-button.has-memo {
+.child-actions .state-button.has-memo,
+.task-actions .state-button.is-collapsed {
   opacity: 1;
 }
 

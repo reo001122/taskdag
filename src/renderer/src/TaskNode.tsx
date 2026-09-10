@@ -461,15 +461,20 @@ export function TaskNode({ data }: NodeProps): React.JSX.Element {
 
           <span className="task-actions nodrag">
             {children.length > 0 && (
+              /*
+                折りたたんでいる間は件数を出す。畳んだ Task は1行の Task と
+                見た目が変わらず、**中身があること自体が画面から消える**。
+                件数は畳んでいるときだけ出す —— 開いていれば数えられる。
+              */
               <button
                 type="button"
-                className="state-button"
-                title={task.collapsed ? `展開 (${children.length})` : '折りたたむ'}
+                className={`state-button${task.collapsed ? ' is-collapsed' : ''}`}
+                title={task.collapsed ? `展開 (${children.length} 件)` : '折りたたむ'}
                 onClick={() =>
                   send({ type: 'setTaskCollapsed', id: task.id, collapsed: !task.collapsed })
                 }
               >
-                {task.collapsed ? '▸' : '▾'}
+                {task.collapsed ? `▸ ${children.length}` : '▾'}
               </button>
             )}
             <button
