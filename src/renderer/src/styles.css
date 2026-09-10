@@ -345,11 +345,20 @@ body {
   opacity: 1;
 }
 
-/* ホバーを待たずに見せるもの */
+/*
+  ホバーを待たずに見せるもの。
+
+  メモの印は FR-10 が「常に表示する」と決めている —— 中断して戻ってきたときに
+  読み返すためのものなので、探しにいかないと見つからないなら役に立たない。
+*/
 .task-actions .state-button.has-memo,
 .child-actions .state-button.has-memo,
 .task-actions .state-button.is-collapsed {
   opacity: 1;
+}
+.task-actions .state-button.has-memo,
+.child-actions .state-button.has-memo {
+  color: var(--active);
 }
 
 /*
@@ -408,11 +417,6 @@ body {
 .child .memo-input {
   margin: 0 0 3px 24px;
   width: calc(100% - 24px);
-}
-
-/* メモがあるものは印に色を付ける(FR-10)。見せ続ける指定は上にまとめてある。 */
-.state-button.has-memo {
-  color: var(--active);
 }
 
 .task-children {
