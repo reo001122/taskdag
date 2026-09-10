@@ -737,7 +737,8 @@ body {
   opacity: 0;
   transition: opacity 0.1s;
 }
-.edge-remove.is-shown {
+.edge-remove.is-shown,
+.edge-remove:focus-visible {
   opacity: 1;
 }
 .edge-remove:hover {

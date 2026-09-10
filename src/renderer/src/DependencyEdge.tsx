@@ -39,6 +39,9 @@ export function DependencyEdge({
       <BaseEdge id={id} path={path} markerEnd={markerEnd} />
 
       {/* 線は細い。狙えるようにするため、当たり判定だけを太くした透明な線を重ねる。 */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: ホバーは × を早く見せる
+          ための補助にすぎない。キーボードからは × 自体に Tab で辿り着け、
+          そのとき :focus-visible で見えるようにしてある(styles.css)。 */}
       <path
         d={path}
         fill="none"
