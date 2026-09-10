@@ -713,6 +713,39 @@ body {
 }
 
 /*
+  依存を外す × 。線に重ねて置く。
+
+  消えている間もポインタを受ける(visibility を切らない)。見えなくなった瞬間に
+  掴めなくなると、線から × へカーソルを移す途中で消えて押せなくなる。
+*/
+.edge-remove {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: all;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.edge-remove.is-shown {
+  opacity: 1;
+}
+.edge-remove:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/*
   接続点。左上の丸点と紛らわしくないよう、丸ではなく縦棒にする。
 
   **見えている棒より、掴める範囲を広く取る。** 棒を太くすると Task の輪郭が

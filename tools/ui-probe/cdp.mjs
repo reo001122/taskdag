@@ -67,6 +67,15 @@ export async function connect(port, { onConsole, expectedUrlPrefix, timeoutMs = 
 
   await send('Runtime.enable');
 
+  /*
+    ページを常にフォーカスされている扱いにする。
+
+    画面に出していない窓は OS から見て前面ではなく、**起動直後に送ったキーが
+    どこにも入らないことがある**(並列で起動するようになってから顕在化した)。
+    実際に人が使うときは窓が前面にあるので、そちらへ寄せるほうが本番に近い。
+  */
+  await send('Emulation.setFocusEmulationEnabled', { enabled: true });
+
   /** renderer 内で式を評価して値を持ち帰る。本文は async 関数の中身として書く。 */
   const evaluate = async (body) => {
     const response = await send('Runtime.evaluate', {

@@ -2,6 +2,7 @@ import {
   Background,
   Controls,
   type Edge,
+  type EdgeTypes,
   MarkerType,
   MiniMap,
   type Node,
@@ -16,6 +17,7 @@ import './styles.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Command, CommandResult, DeletePlan, GraphSnapshot } from '../../shared/ipc';
 import { PROJECT_COLOR_COUNT, projectColorAt } from './colors';
+import { DependencyEdge, type DependencyEdgeData } from './DependencyEdge';
 import { computeLayout, type NodeSize } from './layout';
 import { logger } from './log';
 import {
@@ -27,6 +29,8 @@ import {
 } from './TaskNode';
 
 const log = logger('graph');
+
+const edgeTypes: EdgeTypes = { dependency: DependencyEdge };
 
 const nodeTypes: NodeTypes = { task: TaskNode, projectFrame: ProjectFrameNode };
 
@@ -206,6 +210,14 @@ export function App(): React.JSX.Element {
     setAutoEdit(null);
   }, []);
 
+  /** 依存を1本外す(FR-3)。線の上の × から呼ばれる。 */
+  const removeEdge = useCallback(
+    (id: string) => {
+      send({ type: 'disconnect', id });
+    },
+    [send],
+  );
+
   /**
    * 描かれている Task の実寸(FR-6 の整列で使う)。
    *
@@ -304,13 +316,18 @@ export function App(): React.JSX.Element {
     // 結果として残るエッジは「まだ実際にブロックしているもの」だけになる(FR-6)。
     const visibleEdges: Edge[] = snapshot.edges
       .filter((e) => !hidden.has(e.from) && !hidden.has(e.to))
-      .map((e) => ({
-        id: e.id,
-        source: e.from,
-        target: e.to,
-        // 向きが依存の向きそのもの。線だけでは「どちらが先か」が伝わらない。
-        markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18 },
-      }));
+      .map((e) => {
+        const data: DependencyEdgeData = { onRemove: removeEdge };
+        return {
+          id: e.id,
+          source: e.from,
+          target: e.to,
+          type: 'dependency',
+          data: data as never,
+          // 向きが依存の向きそのもの。線だけでは「どちらが先か」が伝わらない。
+          markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18 },
+        };
+      });
 
     return { nodes: [...frames, ...taskNodes], edges: visibleEdges };
   }, [
@@ -319,6 +336,7 @@ export function App(): React.JSX.Element {
     requestDelete,
     addChild,
     removeChildWhileEditing,
+    removeEdge,
     onAutoEditConsumed,
     autoEdit,
   ]);
@@ -414,6 +432,7 @@ export function App(): React.JSX.Element {
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           fitView
           minZoom={0.2}
           /*

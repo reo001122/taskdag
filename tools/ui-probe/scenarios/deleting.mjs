@@ -9,7 +9,7 @@ export default {
   name: 'deleting',
   description: 'F. 削除前に、何がなくなり何が繋ぎ直されるかを見せる',
 
-  async run({ evaluate, waitFor, waitForFocus, wait, key, type, drag, check }) {
+  async run({ evaluate, waitFor, waitForFocus, wait, key, type, drag, mouse, check }) {
     const click = (text) =>
       evaluate(
         `[...document.querySelectorAll('.toolbar button')].find((b) => b.textContent.includes(${JSON.stringify(text)})).click(); return 1;`,
@@ -105,6 +105,32 @@ export default {
       !(await evaluate(`return !!document.querySelector('dialog[open]')`)),
     );
     check('F-5b Escape では何も消えない', (await edgeCount()) === 2, await edgeCount());
+
+    // --- 線に重ねた × で、その依存だけを外せる(FR-3) ---
+    const cross = await evaluate(`
+      const el = document.querySelector('.edge-remove');
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+    `);
+    check('F-6a 依存の線の上に、外すための印がある', cross !== null, cross);
+    if (cross) {
+      await mouse('mouseMoved', cross.x, cross.y);
+      await wait(200);
+      const shown = await evaluate(
+        `return getComputedStyle(document.querySelector('.edge-remove')).opacity`,
+      );
+      check('F-6b 線に触れると印が見える', Number(shown) > 0.5, shown);
+
+      await mouse('mousePressed', cross.x, cross.y);
+      await mouse('mouseReleased', cross.x, cross.y);
+      await waitFor('矢印が1本になる', `return document.querySelectorAll('.react-flow__edge').length === 1`);
+      check('F-6c 印を押すと、その依存だけが外れる', (await edgeCount()) === 1, await edgeCount());
+
+      // 続きの検査のために張り直す
+      await connect('A', 'B');
+      await waitFor('矢印が2本', `return document.querySelectorAll('.react-flow__edge').length === 2`);
+    }
 
     // --- 入力・出力とも複数にすると、繋ぎ直しは行われない(FR-3) ---
     await addTask('A2');
