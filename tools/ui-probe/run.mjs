@@ -51,9 +51,23 @@ async function main() {
     await run('node', ['node_modules/electron-vite/bin/electron-vite.js', 'build']);
   }
 
+  /*
+    シナリオは並べて走らせる。それぞれ自前のアプリと使い捨ての user-data-dir を
+    持ち、CDP のポートも OS が割り当てるので、互いに干渉しない。
+    **コミットのたびに走らせるものなので、待ち時間は短いほどよい。**
+  */
+  const results = await Promise.all(scenarios.map(runScenario));
+
   let failures = 0;
-  for (const scenario of scenarios) {
-    failures += await runScenario(scenario);
+  for (const result of results) {
+    console.log(`\n# ${result.scenario.name} — ${result.scenario.description}`);
+    for (const c of result.checks) {
+      const detail = c.ok || c.detail === undefined ? '' : `  → ${JSON.stringify(c.detail)}`;
+      console.log(`  ${c.ok ? '✓' : '✗'} ${c.label}${detail}`);
+    }
+    if (result.error) console.log(`  ! ${result.error.message}`);
+    if (result.shotPath) console.log(`  画面: ${result.shotPath}`);
+    failures += result.checks.filter((c) => !c.ok).length + (result.error ? 1 : 0);
   }
 
   console.log(failures === 0 ? '\nすべて期待どおり' : `\n期待と違ったもの: ${failures}`);
@@ -170,16 +184,7 @@ async function runScenario(scenario) {
     rmSync(userDataDir, { recursive: true, force: true });
   }
 
-  console.log(`\n# ${scenario.name} — ${scenario.description}`);
-  for (const c of checks) {
-    console.log(
-      `  ${c.ok ? '✓' : '✗'} ${c.label}${c.ok || c.detail === undefined ? '' : `  → ${JSON.stringify(c.detail)}`}`,
-    );
-  }
-  if (error) console.log(`  ! ${error.message}`);
-  if (shotPath) console.log(`  画面: ${shotPath}`);
-
-  return checks.filter((c) => !c.ok).length + (error ? 1 : 0);
+  return { scenario, checks, error, shotPath };
 }
 
 await main();

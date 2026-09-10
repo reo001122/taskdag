@@ -647,36 +647,46 @@ function DeleteDialog({
         <h2>「{target}」を削除しますか？</h2>
 
         {plan.removedChildTaskIds.length > 0 && (
-          <p>子タスク {plan.removedChildTaskIds.length} 件も一緒に削除されます。</p>
+          <p className="dialog-lead">
+            子タスク {plan.removedChildTaskIds.length} 件も一緒に削除されます。
+          </p>
         )}
 
+        {/*
+          なくなるものと、代わりにできるものを、色で見分けられるようにする。
+          再接続の規則は条件で変わる(FR-3)ので、読み比べる場面が必ず来る。
+        */}
         {plan.removedEdges.length > 0 && (
-          <>
-            <div>なくなる依存関係:</div>
-            <ul>
+          <section className="dialog-section">
+            <h3 className="dialog-label">なくなる依存関係</h3>
+            <ul className="edge-list is-removed">
               {plan.removedEdges.map((e) => (
                 <li key={`${e.from}->${e.to}`}>
-                  {titleOf(e.from)} → {titleOf(e.to)}
+                  <span>{titleOf(e.from)}</span>
+                  <span className="arrow">→</span>
+                  <span>{titleOf(e.to)}</span>
                 </li>
               ))}
             </ul>
-          </>
+          </section>
         )}
 
         {plan.addedEdges.length > 0 ? (
-          <>
-            <div>つなぎ直される依存関係:</div>
-            <ul>
+          <section className="dialog-section">
+            <h3 className="dialog-label">つなぎ直される依存関係</h3>
+            <ul className="edge-list is-added">
               {plan.addedEdges.map((e) => (
                 <li key={`${e.from}->${e.to}`}>
-                  {titleOf(e.from)} → {titleOf(e.to)}
+                  <span>{titleOf(e.from)}</span>
+                  <span className="arrow">→</span>
+                  <span>{titleOf(e.to)}</span>
                 </li>
               ))}
             </ul>
-          </>
+          </section>
         ) : (
           plan.removedEdges.length > 0 && (
-            <p className="error">つなぎ直しは行われません。上の依存関係は失われます。</p>
+            <p className="dialog-warning">つなぎ直しは行われません。上の依存関係は失われます。</p>
           )
         )}
 

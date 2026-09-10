@@ -172,6 +172,16 @@ export async function connect(port, { onConsole, expectedUrlPrefix, timeoutMs = 
     await mouse('mouseReleased', to.x, to.y);
   };
 
+  /**
+   * 明暗のテーマを切り替える。'light' | 'dark' | null(端末の設定に戻す)。
+   * 配色は両方定義してあるので、片方だけ見て済ませない。
+   */
+  const emulateColorScheme = async (scheme) => {
+    await send('Emulation.setEmulatedMedia', {
+      features: scheme ? [{ name: 'prefers-color-scheme', value: scheme }] : [],
+    });
+  };
+
   /** 画面をそのまま撮る。見た目の判断は人に渡すためのもので、自動判定はしない。 */
   const screenshot = async () =>
     (await send('Page.captureScreenshot', { format: 'png' })).result?.data;
@@ -186,6 +196,7 @@ export async function connect(port, { onConsole, expectedUrlPrefix, timeoutMs = 
     mouse,
     drag,
     wheel,
+    emulateColorScheme,
     screenshot,
     close: () => ws.close(),
   };

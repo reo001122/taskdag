@@ -24,6 +24,8 @@
   --project: #8b8b84;
 
   --danger: #b42318;
+  /* 危険なボタンの上に載せる文字色。地の色に合わせて反転させる。 */
+  --danger-ink: #ffffff;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -43,6 +45,7 @@
     --project: #6f6f78;
 
     --danger: #f87171;
+    --danger-ink: #2b0f0f;
   }
 }
 
@@ -572,37 +575,129 @@ body {
   background: var(--surface);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 16px 18px;
-  width: min(440px, 90vw);
+  border-radius: 14px;
+  padding: 22px 24px 18px;
+  width: min(460px, 92vw);
   max-height: 80vh;
   overflow: auto;
+  /* 枠線だけでは、暗い背景の上で面が立たない。影で持ち上げる。 */
+  box-shadow:
+    0 20px 50px rgb(0 0 0 / 45%),
+    0 2px 8px rgb(0 0 0 / 30%);
 }
 .dialog::backdrop {
-  background: rgb(0 0 0 / 35%);
+  background: rgb(0 0 0 / 55%);
+  backdrop-filter: blur(2px);
 }
+
 .dialog h2 {
-  margin: 0 0 10px;
-  font-size: 14px;
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.5;
 }
-.dialog ul {
-  margin: 4px 0 10px;
-  padding-left: 18px;
+.dialog-lead {
+  margin: 0 0 4px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.dialog-section {
+  margin-top: 16px;
+}
+.dialog-label {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   color: var(--text-dim);
 }
-.dialog li {
-  margin: 2px 0;
+
+/*
+  依存の一覧。既定の中黒は行頭を下げるだけで、なくなるのか増えるのかを
+  区別しない。左の色帯でそれを示す。
+*/
+.edge-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
+.edge-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 4px 10px;
+  border-left: 2px solid var(--border);
+  border-radius: 0 5px 5px 0;
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  font-size: 13px;
+}
+.edge-list .arrow {
+  color: var(--text-dim);
+}
+.edge-list.is-removed li {
+  border-left-color: var(--danger);
+  color: var(--text-dim);
+}
+.edge-list.is-added li {
+  border-left-color: var(--ready);
+}
+
+.dialog-warning {
+  margin: 16px 0 0;
+  padding: 9px 11px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .dialog .actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  margin-top: 12px;
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+/* 既定のままだと OS のボタンがそのまま出て、暗い面から浮いてしまう。 */
+.dialog button {
+  font: inherit;
+  padding: 7px 15px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+.dialog button:hover {
+  border-color: var(--text-dim);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+.dialog button:focus-visible {
+  outline: 2px solid var(--ready);
+  outline-offset: 2px;
 }
 .dialog .danger {
-  color: #fff;
   background: var(--danger);
   border-color: var(--danger);
+  color: var(--danger-ink);
+  font-weight: 500;
+}
+.dialog .danger:hover {
+  background: color-mix(in srgb, var(--danger) 85%, var(--text));
+  border-color: color-mix(in srgb, var(--danger) 85%, var(--text));
+}
+
+.dialog .text-input.wide {
+  width: 100%;
+  margin-top: 4px;
+  padding: 7px 10px;
 }
 
 /*
