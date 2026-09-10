@@ -758,52 +758,6 @@ body {
 .react-flow__resize-control.handle.is-selected {
   opacity: 1;
 }
-/*
-  接続点。左上の丸点と紛らわしくないよう、丸ではなく縦棒にする。
-
-  **見えている棒より、掴める範囲を広く取る。** 棒を太くすると Task の輪郭が
-  うるさくなるが、細いままだと狙って掴めない(実測 5px では足りなかった)。
-  当たり判定だけを棒の3倍に広げ、見える棒は ::after で 5px のまま描く。
-*/
-.react-flow__handle {
-  width: 15px;
-  height: 22px;
-  border: none;
-  border-radius: 0;
-  background: transparent;
-}
-.react-flow__handle::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  bottom: 2px;
-  left: 50%;
-  width: 5px;
-  transform: translateX(-50%);
-  border-radius: 2px;
-  background: var(--border);
-}
-.react-flow__handle:hover::after {
-  background: var(--ready);
-}
-/*
-  位置は動かさない。React Flow が transform で辺の中心に置いているので、
-  left / right を足すと**その分だけ外側へずれる**(実測で 7px 外に出ていた)。
-  幅を変えるだけで、当たり判定は辺をまたいで広がる。
-*/
-
-/*
-  枠の大きさを変える取っ手。選ばなくても掴めるが、常に濃く出ていると
-  枠が賑やかになるので、ホバーまでは薄く置く。
-*/
-.react-flow__resize-control.handle {
-  opacity: 0.35;
-  transition: opacity 0.1s;
-}
-.react-flow__node:hover .react-flow__resize-control.handle,
-.react-flow__resize-control.handle.is-selected {
-  opacity: 1;
-}
 /* 既定の青ではなく枠と同じ色にする。選択の跡ではなく、枠の一部として見せる。 */
 .react-flow__resize-control.handle {
   width: 8px;
