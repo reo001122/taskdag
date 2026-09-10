@@ -433,6 +433,18 @@ export function App(): React.JSX.Element {
           onEdgesChange={onEdgesChange}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
+          /*
+            Delete / Backspace による削除を無効にする。
+
+            React Flow の既定では、選んだノードやエッジをこのキーで消せる。
+            **Task がそれで消えると、削除前に何が起きるかを見せる約束(FR-1)を
+            迂回する。** 実際には Task 自体は消えず(こちらがコマンドを送らないため
+            次のスナップショットで戻る)、繋がっていた依存だけが黙って消えていた。
+
+            Task は × から(確認つき)、依存は線の上の × から、childTask は名前を
+            空にした Backspace から。どれも対象がはっきりしている経路にまとめる。
+          */
+          deleteKeyCode={null}
           fitView
           minZoom={0.2}
           /*
