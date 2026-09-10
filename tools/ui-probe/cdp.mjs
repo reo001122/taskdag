@@ -127,12 +127,41 @@ export async function connect(port, { onConsole, expectedUrlPrefix, timeoutMs = 
     await send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
   };
 
-  /** 1文字ずつ本物のキーイベントとして送る。React は本物の DOM イベントを聴いている。 */
-  const type = async (text) => {
-    for (const ch of text) {
-      await send('Input.dispatchKeyEvent', { type: 'keyDown', text: ch, key: ch });
-      await send('Input.dispatchKeyEvent', { type: 'keyUp', key: ch });
+  /**
+   * 1文字ずつ本物のキーイベントとして送り、**入ったことを確かめる。**
+   *
+   * フォーカスが着いた直後でも、まれに打鍵がどこにも入らないことがある
+   * (名前が既定のまま残り、後続の検査がまとめて落ちる形で出た)。
+   * 入っていなければ、入力欄を空にしてから打ち直す。
+   *
+   * 入力欄は編集に入った時点で全選択されているので、1回で入れば値は text と
+   * 一致する。部分的に入った状態を「入った」と見なさないよう、一致で判定する。
+   */
+  const type = async (text, attempts = 3) => {
+    const valueOfFocused = () =>
+      evaluate(`
+        const el = document.activeElement;
+        return el && 'value' in el ? el.value : null;
+      `);
+    const clearFocused = () =>
+      evaluate(`
+        const el = document.activeElement;
+        if (!el || !('value' in el)) return 0;
+        const set = Object.getOwnPropertyDescriptor(el.constructor.prototype, 'value').set;
+        set.call(el, '');
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        return 1;
+      `);
+
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      for (const ch of text) {
+        await send('Input.dispatchKeyEvent', { type: 'keyDown', text: ch, key: ch });
+        await send('Input.dispatchKeyEvent', { type: 'keyUp', key: ch });
+      }
+      if ((await valueOfFocused()) === text) return;
+      await clearFocused();
     }
+    throw new Error(`打った文字が入力欄に入らなかった: ${text}`);
   };
 
   /** 実際のマウス入力。React Flow のドラッグは pointer 系を見ているため click() では代替できない。 */
