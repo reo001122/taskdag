@@ -74,10 +74,7 @@ export default {
     const edgeCount = () =>
       evaluate(`return document.querySelectorAll('.react-flow__edge').length`);
 
-    /**
-     * 矢印の本数が n 本に落ち着くまで待つ。
-     * 描き直しの最中は一瞬 0 本になるため、数えた1回の値は当てにならない。
-     */
+    /** 矢印の本数が n 本に落ち着くまで待つ(コマンドの往復ぶん)。 */
     const edgesSettle = (n) =>
       waitFor(
         `矢印が ${n} 本になる`,
@@ -133,6 +130,36 @@ export default {
     await advance('B', 2);
     c = await look('C');
     check('B-3 B を完了にすると C も実線になる', c.ready && c.borderStyle === 'solid', c);
+
+    /*
+      グラフが変わる間、矢印が消えないこと。
+
+      **1回数えるだけでは分からない。** ノードを丸ごと差し替えていた頃は、
+      React Flow が寸法を測り直す1フレームだけ端点が消え、矢印もまとめて
+      消えていた。目には一瞬のちらつきとしてしか映らない。
+    */
+    await edgesSettle(2);
+    const duringUpdate = await evaluate(`
+      const samples = [];
+      let running = true;
+      const tick = () => {
+        if (!running) return;
+        samples.push(document.querySelectorAll('.react-flow__edge').length);
+        requestAnimationFrame(tick);
+      };
+      tick();
+      document.querySelector('.task .state-toggle').click();
+      await new Promise((r) => setTimeout(r, 600));
+      running = false;
+      return samples;
+    `);
+    check(
+      'B-9 グラフが変わる間、矢印が1フレームも消えない',
+      duringUpdate.every((n) => n === 2),
+      duringUpdate.join(''),
+    );
+    // 押した状態を戻しておく(この Task は既に完了しており、1周させると元へ戻る)
+    await advance('A', 2);
 
     // 循環になる接続は成立しない(FR-3)
     await edgesSettle(2);

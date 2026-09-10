@@ -306,8 +306,26 @@ export function App(): React.JSX.Element {
     autoEdit,
   ]);
 
+  /*
+    作り直したノードを、既にあるものへ**重ねる**。丸ごと差し替えない。
+
+    React Flow はノードを差し替えられると、そのノードの measured(測った寸法)を
+    受け取り直す。こちらが作る側は寸法を知らないので undefined になり、
+    測り直しが終わるまでの1フレーム、**そのノードは visibility: hidden にされる。**
+    グラフが変わるたびに画面がちらつく原因がこれだった(実測: 削除時に 333H222…)。
+    端点の寸法が無い間はエッジも描かれないので、矢印も同じ1フレーム消える。
+
+    重ねれば measured がそのまま残る。React Flow が持たせている選択状態も
+    巻き添えで消えなくなる。
+  */
   useEffect(() => {
-    setNodes(built.nodes);
+    setNodes((current) => {
+      const existing = new Map(current.map((node) => [node.id, node]));
+      return built.nodes.map((node) => {
+        const before = existing.get(node.id);
+        return before ? { ...before, ...node } : node;
+      });
+    });
     setEdges(built.edges);
   }, [built, setNodes, setEdges]);
 
