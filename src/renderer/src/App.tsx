@@ -16,7 +16,7 @@ import './styles.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Command, CommandResult, DeletePlan, GraphSnapshot } from '../../shared/ipc';
 import { PROJECT_COLOR_COUNT, projectColorAt } from './colors';
-import { computeLayout } from './layout';
+import { computeLayout, type NodeSize } from './layout';
 import { logger } from './log';
 import {
   type AutoEdit,
@@ -206,6 +206,23 @@ export function App(): React.JSX.Element {
     setAutoEdit(null);
   }, []);
 
+  /**
+   * 描かれている Task の実寸(FR-6 の整列で使う)。
+   *
+   * **決め打ちの見積もりでは足りない。** 子タスクやメモで背が伸びるため、
+   * 固定値で枠を張ると中身がはみ出し、所属(位置から導かれる)が壊れる。
+   * offsetWidth / offsetHeight はキャンバスの拡大縮小の影響を受けないので、
+   * そのままレイアウトの座標系で使える。
+   */
+  const measureTasks = useCallback((): Map<string, NodeSize> => {
+    const sizes = new Map<string, NodeSize>();
+    for (const el of document.querySelectorAll<HTMLElement>('.react-flow__node-task[data-id]')) {
+      const id = el.dataset.id;
+      if (id) sizes.set(id, { width: el.offsetWidth, height: el.offsetHeight });
+    }
+    return sizes;
+  }, []);
+
   const built = useMemo(() => {
     if (!snapshot) return { nodes: [] as Node[], edges: [] as Edge[] };
 
@@ -361,7 +378,8 @@ export function App(): React.JSX.Element {
           disabled={!snapshot || snapshot.tasks.length === 0}
           onClick={() => {
             if (!snapshot) return;
-            const layout = computeLayout(snapshot);
+            const layout = computeLayout(snapshot, measureTasks());
+            log.debug('整列した', { tasks: layout.positions.length });
             send({ type: 'applyLayout', ...layout });
           }}
           title="依存関係にそって並べ直す。手動で置いた位置は上書きされる"

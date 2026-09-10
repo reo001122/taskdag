@@ -6,28 +6,41 @@ import type { GraphSnapshot, Position } from '../../shared/ipc';
  * レイアウトは正しさの問題ではなく見た目の問題であり、ドメインロジックではない
  * (design/domain-design.md §7)。ここで座標を算出し、applyLayout で送る。
  *
- * 依存の深さで横の段を決め、**Project ごとに縦の帯へ分ける**。
- * 深さだけで並べると同じ Project の Task が縦に散らばり、それを囲む枠が
- * 巨大化して他の Task まで飲み込んでしまう。所属は位置から導出されるため、
- * レイアウトが所属を壊さないことは必須の条件になる。
+ * 組み立ての順序:
+ *
+ *   1. 依存の深さで**列**を決める。列の x は全体で共通にする ——
+ *      Project をまたいでも、依存が左から右へ読める並びになる。
+ *   2. Project ごとに**グループ**を組み、その中で列に沿って縦へ積む。
+ *   3. グループを縦に重ねずに並べ、外接矩形へ余白を足したものを枠にする。
+ *
+ * **寸法は呼び出し側が実測して渡す。** 以前は 240×60 の決め打ちで見積もって
+ * いたため、子タスクやメモで背が伸びた Task が枠からはみ出し、下の帯の枠と
+ * 重なっていた。所属は位置から導かれる(FR-4)ので、はみ出しはそのまま
+ * 所属の消失につながる。
  */
 
-const COLUMN_GAP = 320;
-const ROW_GAP = 190;
+/** 列と列の間隔。ノードの幅は含まない(列ごとに実測した最大幅を使う)。 */
+const COLUMN_GAP = 90;
+/** 同じ列で縦に積むときの間隔。 */
+const ROW_GAP = 40;
 const ORIGIN: Position = { x: 80, y: 80 };
+/** 枠と、中の Task との余白。左上の丸点や接続点がはみ出すぶんも見込む。 */
 const FRAME_PADDING = 36;
-/** 帯の間隔。枠どうしが接触しないよう、余白の2倍より広く取る。 */
-const BAND_GAP = FRAME_PADDING * 3;
-/** 枠を描くためのおおよそのノード寸法。実測ではなく見た目の当たり。 */
-const NODE_WIDTH = 240;
-const NODE_HEIGHT = 60;
+/** グループ(枠)どうしの間隔。 */
+const GROUP_GAP = 72;
+/** 実測が取れなかったときの当て。描画前に整列された場合の保険。 */
+const FALLBACK_SIZE: NodeSize = { width: 240, height: 60 };
+/** 所属する Task がない枠の大きさ。 */
+const EMPTY_FRAME = { width: 300, height: 160 };
+
+export type NodeSize = { width: number; height: number };
 
 export type LayoutResult = {
   positions: { id: string; position: Position }[];
   projects: { id: string; position: Position; width: number; height: number }[];
 };
 
-/** 先行を辿ったときの最大の深さ。これが横の段になる。 */
+/** 先行を辿ったときの最大の深さ。これが列になる。 */
 function computeDepths(snapshot: GraphSnapshot): Map<string, number> {
   const predecessors = new Map<string, string[]>();
   for (const task of snapshot.tasks) predecessors.set(task.id, []);
@@ -59,101 +72,108 @@ function computeDepths(snapshot: GraphSnapshot): Map<string, number> {
   return depth;
 }
 
-export function computeLayout(snapshot: GraphSnapshot): LayoutResult {
-  const depth = computeDepths(snapshot);
-
-  // Project ごとにまとめる。所属なしは最後の帯へ。
-  const bands: { projectId: string | null; taskIds: string[] }[] = snapshot.projects.map((p) => ({
-    projectId: p.id,
-    taskIds: snapshot.tasks.filter((t) => t.projectId === p.id).map((t) => t.id),
-  }));
-  bands.push({
-    projectId: null,
-    taskIds: snapshot.tasks.filter((t) => t.projectId === null).map((t) => t.id),
-  });
-
-  const positions: { id: string; position: Position }[] = [];
-  const bandBounds = new Map<string, { minY: number; maxY: number }>();
-
-  let bandTop = ORIGIN.y;
-  for (const band of bands) {
-    if (band.taskIds.length === 0) continue;
-
-    // 帯の中で、深さごとに縦に積む
-    const columns = new Map<number, string[]>();
-    for (const id of band.taskIds) {
-      const column = depth.get(id) ?? 0;
-      const list = columns.get(column) ?? [];
-      list.push(id);
-      columns.set(column, list);
-    }
-
-    let rowsUsed = 0;
-    for (const [column, ids] of columns) {
-      [...ids].sort().forEach((id, row) => {
-        positions.push({
-          id,
-          position: { x: ORIGIN.x + column * COLUMN_GAP, y: bandTop + row * ROW_GAP },
-        });
-      });
-      rowsUsed = Math.max(rowsUsed, ids.length);
-    }
-
-    if (band.projectId !== null) {
-      bandBounds.set(band.projectId, {
-        minY: bandTop,
-        maxY: bandTop + (rowsUsed - 1) * ROW_GAP + NODE_HEIGHT,
-      });
-    }
-
-    bandTop += rowsUsed * ROW_GAP + BAND_GAP;
+/** 列ごとの x。実測した最大幅で決めるので、幅の広い Task があっても隣と重ならない。 */
+function columnPositions(
+  snapshot: GraphSnapshot,
+  depth: ReadonlyMap<string, number>,
+  sizeOf: (id: string) => NodeSize,
+): Map<number, number> {
+  const widest = new Map<number, number>();
+  for (const task of snapshot.tasks) {
+    const column = depth.get(task.id) ?? 0;
+    widest.set(column, Math.max(widest.get(column) ?? 0, sizeOf(task.id).width));
   }
 
-  return { positions, projects: frames(snapshot, positions, bandBounds, bandTop) };
+  const x = new Map<number, number>();
+  let cursor = ORIGIN.x;
+  for (const column of [...widest.keys()].sort((a, b) => a - b)) {
+    x.set(column, cursor);
+    cursor += (widest.get(column) ?? 0) + COLUMN_GAP;
+  }
+  return x;
 }
 
-/**
- * 整列後の位置に合わせて枠を張り直す。
- *
- * Task だけ動かすと枠から外れて所属が消えるため、枠のほうを追従させる。
- * 所属する Task がなくなった枠は、他の帯に重なって意図しない Task を
- * 取り込まないよう、最後尾の空き地へ退ける。
- */
-function frames(
+export function computeLayout(
   snapshot: GraphSnapshot,
-  positions: readonly { id: string; position: Position }[],
-  bandBounds: ReadonlyMap<string, { minY: number; maxY: number }>,
-  emptyAreaTop: number,
-): { id: string; position: Position; width: number; height: number }[] {
-  const byId = new Map(positions.map((p) => [p.id, p.position]));
+  sizes: ReadonlyMap<string, NodeSize>,
+): LayoutResult {
+  const sizeOf = (id: string): NodeSize => sizes.get(id) ?? FALLBACK_SIZE;
+  const depth = computeDepths(snapshot);
+  const columnX = columnPositions(snapshot, depth, sizeOf);
 
-  let emptySlot = emptyAreaTop;
-  return snapshot.projects.map((project) => {
-    const members = snapshot.tasks
-      .filter((t) => t.projectId === project.id)
-      .map((t) => byId.get(t.id))
-      .filter((p): p is Position => p !== undefined);
+  // Project ごとにまとめる。所属なしは最後のグループへ(枠は持たない)。
+  const groups: { projectId: string | null; taskIds: string[] }[] = [
+    ...snapshot.projects.map((project) => ({
+      projectId: project.id as string | null,
+      taskIds: snapshot.tasks.filter((t) => t.projectId === project.id).map((t) => t.id),
+    })),
+    {
+      projectId: null,
+      taskIds: snapshot.tasks.filter((t) => t.projectId === null).map((t) => t.id),
+    },
+  ];
 
-    const bounds = bandBounds.get(project.id);
-    if (members.length === 0 || !bounds) {
-      const slot = emptySlot;
-      emptySlot += 200;
-      return {
-        id: project.id,
-        position: { x: ORIGIN.x - FRAME_PADDING, y: slot },
-        width: 300,
-        height: 160,
-      };
+  const positions: { id: string; position: Position }[] = [];
+  const frames: LayoutResult['projects'] = [];
+
+  let top = ORIGIN.y;
+  for (const group of groups) {
+    if (group.taskIds.length === 0) continue;
+
+    const byColumn = new Map<number, string[]>();
+    for (const id of group.taskIds) {
+      const column = depth.get(id) ?? 0;
+      byColumn.set(column, [...(byColumn.get(column) ?? []), id]);
     }
 
-    const minX = Math.min(...members.map((p) => p.x));
-    const maxX = Math.max(...members.map((p) => p.x)) + NODE_WIDTH;
+    let bottom = top;
+    let left = Number.POSITIVE_INFINITY;
+    let right = Number.NEGATIVE_INFINITY;
 
-    return {
+    for (const [column, ids] of byColumn) {
+      const x = columnX.get(column) ?? ORIGIN.x;
+      let y = top;
+      for (const id of [...ids].sort()) {
+        positions.push({ id, position: { x, y } });
+        const size = sizeOf(id);
+        left = Math.min(left, x);
+        right = Math.max(right, x + size.width);
+        y += size.height + ROW_GAP;
+        bottom = Math.max(bottom, y - ROW_GAP);
+      }
+    }
+
+    if (group.projectId !== null) {
+      frames.push({
+        id: group.projectId,
+        position: { x: left - FRAME_PADDING, y: top - FRAME_PADDING },
+        width: right - left + FRAME_PADDING * 2,
+        height: bottom - top + FRAME_PADDING * 2,
+      });
+    }
+
+    // 枠は上下に余白のぶんはみ出す。次のグループはそのぶんも空けて置く。
+    top = bottom + FRAME_PADDING * 2 + GROUP_GAP;
+  }
+
+  /*
+    所属する Task がない枠は、最後尾の空き地へ縦に並べて退ける。
+    他のグループに重ねると、そこにある Task を意図せず取り込んでしまう。
+  */
+  const placed = new Set(frames.map((f) => f.id));
+  for (const project of snapshot.projects) {
+    if (placed.has(project.id)) continue;
+    frames.push({
       id: project.id,
-      position: { x: minX - FRAME_PADDING, y: bounds.minY - FRAME_PADDING },
-      width: maxX - minX + FRAME_PADDING * 2,
-      height: bounds.maxY - bounds.minY + FRAME_PADDING * 2,
-    };
-  });
+      position: { x: ORIGIN.x - FRAME_PADDING, y: top },
+      ...EMPTY_FRAME,
+    });
+    top += EMPTY_FRAME.height + GROUP_GAP;
+  }
+
+  // 元の並び(snapshot.projects の順)へ戻して返す
+  const order = new Map(snapshot.projects.map((p, index) => [p.id, index]));
+  frames.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+
+  return { positions, projects: frames };
 }
