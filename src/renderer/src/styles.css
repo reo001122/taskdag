@@ -313,24 +313,29 @@ body {
 .task-actions {
   display: flex;
   gap: 1px;
-  /* 既定では見せない。子タスクを持たない Task を1行に収めるため。 */
+}
+
+/*
+  既定では見せない。子タスクを持たない Task を1行に収めるため。
+
+  **消すのは束ねている親ではなく、ボタンひとつずつ。** 親を透明にすると、
+  常に見せたいもの(メモの印、折りたたみ中の件数)まで巻き込まれて消える ——
+  子側で opacity を戻しても、親の透明度には勝てない。
+*/
+.task-actions .state-button,
+.child-actions .state-button {
   opacity: 0;
   transition: opacity 0.1s;
 }
-.task:hover .task-actions,
-.task:focus-within .task-actions {
+.task:hover .task-actions .state-button,
+.task:focus-within .task-actions .state-button,
+.child:hover .child-actions .state-button {
   opacity: 1;
 }
 
-.task.is-ready .task-actions {
-  display: flex;
-  gap: 1px;
-  /* 既定では見せない。子タスクを持たない Task を1行に収めるため。 */
-  opacity: 0;
-  transition: opacity 0.1s;
-}
-.task:hover .task-actions,
-.task:focus-within .task-actions {
+/* ホバーを待たずに見せるもの */
+.task-actions .state-button.has-memo,
+.child-actions .state-button.has-memo {
   opacity: 1;
 }
 
@@ -392,13 +397,9 @@ body {
   width: calc(100% - 24px);
 }
 
-/* メモがある Task は、印を常に見えるようにしておく(ホバー待ちにしない) */
+/* メモがあるものは印に色を付ける(FR-10)。見せ続ける指定は上にまとめてある。 */
 .state-button.has-memo {
   color: var(--active);
-  opacity: 1;
-}
-.task-actions .state-button.has-memo {
-  opacity: 1;
 }
 
 .task-children {
@@ -444,10 +445,6 @@ body {
 .child-actions {
   display: flex;
   gap: 2px;
-  opacity: 0;
-}
-.child:hover .child-actions {
-  opacity: 1;
 }
 
 .task-foot {
