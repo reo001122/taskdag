@@ -646,7 +646,13 @@ export function TaskNode({ data }: NodeProps): React.JSX.Element {
   );
 }
 
-/** 枠の名前。掴んで動かす邪魔をしないよう、改名はダブルクリックで始める。 */
+/**
+ * 枠の名前。Task 名と同じくワンクリックで改名に入る。
+ *
+ * フォーカスの扱いも Task 名と同じにしてある。blur を閉じる合図にすると、
+ * 開いた直後に何かがフォーカスを奪うだけで畳まれ、2回クリックしないと
+ * 編集に入れなくなる —— Task 名で実際に起きた。
+ */
 function ProjectName({
   name,
   onRename,
@@ -657,35 +663,51 @@ function ProjectName({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(name);
   const inputRef = useRef<HTMLInputElement>(null);
+  const closingRef = useRef(false);
+
+  const commitRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    commitRef.current = (): void => {
+      setEditing(false);
+      const trimmed = draft.trim();
+      if (trimmed.length > 0 && trimmed !== name) onRename(trimmed);
+    };
+  });
 
   useEffect(() => {
-    if (editing) {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    }
+    if (!editing) return;
+    closingRef.current = false;
+    focusWhenVisible(inputRef.current, 'all');
   }, [editing]);
 
+  useCloseOnOutsidePointerDown(
+    editing,
+    (target) => inputRef.current?.contains(target) ?? false,
+    () => {
+      closingRef.current = true;
+      commitRef.current();
+    },
+  );
+
   if (!editing) {
+    /*
+      ワンクリックで改名に入る。**枠はラベル以外でも掴めるようになったので、
+      ラベルを取っ手として空けておく必要がなくなった。** Task 名と揃う。
+    */
     return (
       <button
         type="button"
-        className="project-name"
-        onDoubleClick={() => {
+        className="project-name nodrag"
+        onClick={() => {
           setDraft(name);
           setEditing(true);
         }}
-        title="ドラッグで移動 / ダブルクリックで改名"
+        title="クリックで改名"
       >
         {name}
       </button>
     );
   }
-
-  const commit = (): void => {
-    setEditing(false);
-    const trimmed = draft.trim();
-    if (trimmed.length > 0 && trimmed !== name) onRename(trimmed);
-  };
 
   return (
     <input
@@ -693,15 +715,17 @@ function ProjectName({
       ref={inputRef}
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
+      onBlur={() => {
+        if (!closingRef.current && document.hasFocus()) inputRef.current?.focus();
+      }}
       onKeyDown={(e) => {
-        // キャンバスのショートカットへ渡さない(上と同じ理由で bubble 側で止める)
+        // キャンバスのショートカットへ渡さない(bubble 側で止める。理由は EditableText)
         e.stopPropagation();
 
         if (e.nativeEvent.isComposing) return;
         if (e.key === 'Enter') {
           e.preventDefault();
-          commit();
+          commitRef.current();
         }
         if (e.key === 'Escape') setEditing(false);
       }}
@@ -777,11 +801,6 @@ export function ProjectFrameNode({ data, selected }: NodeProps): React.JSX.Eleme
         style={{ '--project-color': color } as React.CSSProperties}
       >
         <span className="project-frame-label">
-          {/*
-            ここが枠を掴んで動かす取っ手になる(dragHandle)。
-            Task 名と違いシングルクリックで編集に入らないのは、そうすると
-            掴んだ瞬間に入力欄へ変わってしまい、枠を動かせなくなるため。
-          */}
           <ProjectName name={name} onRename={(next) => onRename(id, next)} />
 
           <button

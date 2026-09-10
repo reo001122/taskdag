@@ -71,6 +71,20 @@ export default {
     const stillOpen = await evaluate(`return !!document.querySelector('.color-picker')`);
     check('色を選ばずに他所を押すとパレットが閉じる', !stillOpen);
 
+    // 名前はワンクリックで改名に入り、そのまま打てる
+    await evaluate(`document.querySelector('.project-name').click(); return 1;`);
+    await waitFor(
+      '入力欄になる',
+      `return !!document.querySelector('.project-frame-label .text-input')`,
+    );
+    const waited = await waitForFocus();
+    check('I-4 Project 名はワンクリックで改名に入る', waited >= 0, { waited });
+    await type('改名A');
+    await key({ key: 'Enter', code: 13 });
+    await wait(400);
+    const renamed = await evaluate(`return document.querySelector('.project-name')?.textContent`);
+    check('I-4b 打った文字がそのまま名前になる', renamed === '改名A', renamed);
+
     // 枠は内側のどこを掴んでも動く。中の Task も一緒に来る。
     const empty = await evaluate(`
       const frame = document.querySelector('.project-frame').getBoundingClientRect();
@@ -82,7 +96,7 @@ export default {
     await drag(empty, { x: empty.x + 60, y: empty.y + 40 });
     await wait(500);
     let after = await spots();
-    check('P-4a 枠の内側のどこを掴んでも枠が動く', moved(before, after, 'プロジェクトA'), {
+    check('P-4a 枠の内側のどこを掴んでも枠が動く', moved(before, after, '改名A'), {
       before,
       after,
     });
@@ -103,7 +117,7 @@ export default {
       before,
       after,
     });
-    check('P-4d そのとき枠は動かない', !moved(before, after, 'プロジェクトA'), { before, after });
+    check('P-4d そのとき枠は動かない', !moved(before, after, '改名A'), { before, after });
 
     /*
       2本指スクロールは移動、Cmd 併用で拡大縮小。

@@ -517,8 +517,7 @@ body {
   padding: 0;
   font: inherit;
   color: inherit;
-  /* ここは掴んで動かす場所。改名はダブルクリック。 */
-  cursor: inherit;
+  cursor: text;
 }
 
 .color-swatch {
