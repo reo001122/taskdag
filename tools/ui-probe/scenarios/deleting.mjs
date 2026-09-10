@@ -124,12 +124,18 @@ export default {
 
       await mouse('mousePressed', cross.x, cross.y);
       await mouse('mouseReleased', cross.x, cross.y);
-      await waitFor('矢印が1本になる', `return document.querySelectorAll('.react-flow__edge').length === 1`);
+      await waitFor(
+        '矢印が1本になる',
+        `return document.querySelectorAll('.react-flow__edge').length === 1`,
+      );
       check('F-6c 印を押すと、その依存だけが外れる', (await edgeCount()) === 1, await edgeCount());
 
       // 続きの検査のために張り直す
       await connect('A', 'B');
-      await waitFor('矢印が2本', `return document.querySelectorAll('.react-flow__edge').length === 2`);
+      await waitFor(
+        '矢印が2本',
+        `return document.querySelectorAll('.react-flow__edge').length === 2`,
+      );
     }
 
     // --- 入力・出力とも複数にすると、繋ぎ直しは行われない(FR-3) ---
