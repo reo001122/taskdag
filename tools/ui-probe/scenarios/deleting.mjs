@@ -71,7 +71,7 @@ export default {
       `);
     const edgeCount = () =>
       evaluate(`return document.querySelectorAll('.react-flow__edge').length`);
-    const escape = async () => {
+    const dismiss = async () => {
       await key({ key: 'Escape', code: 27 });
       await wait(300);
     };
@@ -99,7 +99,7 @@ export default {
       await dialogText(),
     );
 
-    await escape();
+    await dismiss();
     check(
       'F-5a Escape で閉じる',
       !(await evaluate(`return !!document.querySelector('dialog[open]')`)),
@@ -130,7 +130,7 @@ export default {
     check('F-3c なくなる依存関係は4本とも挙がる', removed.length === 4, removed);
 
     // --- 実行すると、提示どおりになる ---
-    await escape();
+    await dismiss();
     await openDeleteFor('B');
     await evaluate(`document.querySelector('dialog[open] .danger').click(); return 1;`);
     await waitFor(
