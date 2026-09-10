@@ -161,6 +161,36 @@ export default {
     check('F-3b そのとき繋ぎ直しの一覧は出さない', added.length === 0, added);
     check('F-3c なくなる依存関係は4本とも挙がる', removed.length === 4, removed);
 
+    /*
+      Delete / Backspace では消えない。
+
+      **この道は Task の削除と依存の削除を一緒くたにしており、確認(FR-1)を
+      迂回する。** 実際、Task 自体は消えないのに、繋がっていた依存だけが
+      黙って消えていた。
+    */
+    await dismiss();
+    await evaluate(`
+      const node = [...document.querySelectorAll('.react-flow__node-task')]
+        .find((n) => n.querySelector('.task-title')?.textContent === 'B');
+      node.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      return 1;
+    `);
+    await wait(300);
+    const edgesBefore = await edgeCount();
+    await key({ key: 'Backspace', code: 8 });
+    await key({ key: 'Delete', code: 46 });
+    await wait(500);
+    check(
+      'F-7a Delete / Backspace では Task が消えない',
+      await evaluate(
+        `return [...document.querySelectorAll('.task-title')].some((t) => t.textContent === 'B')`,
+      ),
+    );
+    check('F-7b そのとき依存も消えない', (await edgeCount()) === edgesBefore, {
+      before: edgesBefore,
+      after: await edgeCount(),
+    });
+
     // --- 実行すると、提示どおりになる ---
     await dismiss();
     await openDeleteFor('B');
