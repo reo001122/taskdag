@@ -709,10 +709,10 @@ body {
 
   **見えている棒より、掴める範囲を広く取る。** 棒を太くすると Task の輪郭が
   うるさくなるが、細いままだと狙って掴めない(実測 5px では足りなかった)。
-  当たり判定だけを 14px に広げ、見える棒は ::after で 5px のまま描く。
+  当たり判定だけを棒の3倍に広げ、見える棒は ::after で 5px のまま描く。
 */
 .react-flow__handle {
-  width: 14px;
+  width: 15px;
   height: 22px;
   border: none;
   border-radius: 0;
@@ -732,13 +732,11 @@ body {
 .react-flow__handle:hover::after {
   background: var(--ready);
 }
-/* 広げたぶん、棒の中心が辺に重なるよう位置を寄せ直す */
-.react-flow__handle-left {
-  left: -7px;
-}
-.react-flow__handle-right {
-  right: -7px;
-}
+/*
+  位置は動かさない。React Flow が transform で辺の中心に置いているので、
+  left / right を足すと**その分だけ外側へずれる**(実測で 7px 外に出ていた)。
+  幅を変えるだけで、当たり判定は辺をまたいで広がる。
+*/
 
 /*
   枠の大きさを変える取っ手。選ばなくても掴めるが、常に濃く出ていると
