@@ -738,6 +738,24 @@ body {
 }
 
 /*
+  全体図。既定のままだと明るい配色が固定で入っており、暗い配色のときに
+  そこだけ白い矩形が浮く。面・枠・中身をこちらの色に合わせる。
+*/
+.react-flow__minimap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.react-flow__minimap-mask {
+  fill: color-mix(in srgb, var(--bg) 70%, transparent);
+  stroke: none;
+}
+.react-flow__minimap-node {
+  fill: var(--border);
+  stroke: none;
+}
+
+/*
   依存を外す × 。線に重ねて置く。
 
   消えている間もポインタを受ける(visibility を切らない)。見えなくなった瞬間に
