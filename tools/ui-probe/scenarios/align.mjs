@@ -166,6 +166,48 @@ export default {
       { belongsBefore, belongsAfter },
     );
 
+    /*
+      枠の大きさを変えたら、それも Undo で戻る(FR-8)。
+
+      所属は枠の中に入っているかで決まる(FR-4)ので、**大きさが戻らないことは
+      所属が戻らないこと**を意味する。見た目の話ではない。
+    */
+    const frameSize = () =>
+      evaluate(`
+        const n = document.querySelector('.react-flow__node-projectFrame');
+        return n ? [Math.round(n.offsetWidth), Math.round(n.offsetHeight)] : null;
+      `);
+    const beforeResize = await frameSize();
+    const grip = await evaluate(`
+      const h = document.querySelector('.react-flow__resize-control.top.right.handle');
+      if (!h) return null;
+      const r = h.getBoundingClientRect();
+      return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+    `);
+    if (grip) {
+      await drag(grip, { x: grip.x - 80, y: grip.y + 60 });
+      await wait(600);
+      const afterResize = await frameSize();
+      check('D-5 枠の大きさを変えられる', String(afterResize) !== String(beforeResize), {
+        beforeResize,
+        afterResize,
+      });
+
+      await evaluate(`
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', metaKey: true, bubbles: true }));
+        return 1;
+      `);
+      await wait(700);
+      check(
+        'D-6 枠の大きさは Undo で元に戻る',
+        String(await frameSize()) === String(beforeResize),
+        {
+          beforeResize,
+          afterUndo: await frameSize(),
+        },
+      );
+    }
+
     // 整列は1回の Undo で戻る(FR-8)
     await evaluate(`
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', metaKey: true, bubbles: true }));
