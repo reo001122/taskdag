@@ -356,17 +356,14 @@ body {
 /*
   ホバーを待たずに見せるもの。
 
-  メモの印は FR-10 が「常に表示する」と決めている —— 中断して戻ってきたときに
-  読み返すためのものなので、探しにいかないと見つからないなら役に立たない。
+  折りたたみ中の件数だけ。畳んだ Task は childTask を持たない Task と見分けが
+  つかず、**中身があること自体が画面から消える**ため(FR-6)。
+
+  メモには印を置かない。本文が名前の下に常に出ているので、印は同じことを
+  二度言うことになる(FR-10)。
 */
-.task-actions .state-button.has-memo,
-.child-actions .state-button.has-memo,
 .task-actions .state-button.is-collapsed {
   opacity: 1;
-}
-.task-actions .state-button.has-memo,
-.child-actions .state-button.has-memo {
-  color: var(--active);
 }
 
 /*
@@ -671,6 +668,7 @@ body {
   gap: 7px;
   cursor: pointer;
 }
+
 .edge-list li.is-dropped {
   border-left-color: var(--border);
   color: var(--text-dim);

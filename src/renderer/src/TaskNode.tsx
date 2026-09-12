@@ -497,7 +497,7 @@ export function TaskNode({ data }: NodeProps): React.JSX.Element {
             )}
             <button
               type="button"
-              className={`state-button${task.memo.length > 0 ? ' has-memo' : ''}`}
+              className="state-button"
               title="メモ"
               onClick={() => setMemoTarget('task')}
             >
@@ -614,7 +614,7 @@ export function TaskNode({ data }: NodeProps): React.JSX.Element {
                       </button>
                       <button
                         type="button"
-                        className={`state-button${child.memo.length > 0 ? ' has-memo' : ''}`}
+                        className="state-button"
                         title="メモ"
                         onClick={() => setMemoTarget(child.id)}
                       >
