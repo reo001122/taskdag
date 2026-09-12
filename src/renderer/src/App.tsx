@@ -358,7 +358,17 @@ export function App(): React.JSX.Element {
       const existing = new Map(current.map((node) => [node.id, node]));
       return built.nodes.map((node) => {
         const before = existing.get(node.id);
-        return before ? { ...before, ...node } : node;
+        if (!before) return node;
+        /*
+          大きさだけは引き継がない。
+
+          枠の大きさを変えると React Flow はノードに width / height を書き込み、
+          以降そちらを style より優先して読む。重ねるときにそれを残すと、
+          **Undo でスナップショットが前の大きさへ戻っても、画面は変形後のまま**
+          になる(実測: 460×340 → 400×295 にしてから Cmd+Z しても 400×295)。
+          幾何はこちらが持っている値が正なので、毎回 style から読ませる。
+        */
+        return { ...before, ...node, width: undefined, height: undefined };
       });
     });
     setEdges(built.edges);
