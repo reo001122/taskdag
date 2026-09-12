@@ -86,7 +86,17 @@ export function executeCommand(
     case 'setTaskCollapsed':
       return run(service.mutate((s) => s.setTaskCollapsed(taskId(command.id), command.collapsed)));
     case 'deleteTask':
-      return run(service.mutate((s) => s.deleteTask(taskId(command.id))));
+      return run(
+        service.mutate((s) =>
+          s.deleteTask(
+            taskId(command.id),
+            command.keepReconnections?.map((edge) => ({
+              from: taskId(edge.from),
+              to: taskId(edge.to),
+            })),
+          ),
+        ),
+      );
 
     case 'createChildTask':
       return run(service.mutate((s) => s.createChildTask(taskId(command.parentId), command.title)));

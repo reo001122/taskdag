@@ -75,7 +75,15 @@ export type Command =
   | { type: 'moveTask'; id: string; position: Position }
   | { type: 'setTaskCollapsed'; id: string; collapsed: boolean }
   | { type: 'setTaskMemo'; id: string; memo: string }
-  | { type: 'deleteTask'; id: string }
+  | {
+      type: 'deleteTask';
+      id: string;
+      /**
+       * 繋ぎ直すエッジを、ここに挙げたものだけに絞る(FR-1 の確認で外せる)。
+       * 省略すると FR-3 の規則どおり全て繋ぎ直す。計画に無い組は無視される。
+       */
+      keepReconnections?: { from: string; to: string }[];
+    }
   | { type: 'createChildTask'; parentId: string; title: string }
   | { type: 'updateChildTaskTitle'; id: string; title: string }
   | { type: 'setChildTaskProgress'; id: string; progress: Progress }
