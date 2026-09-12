@@ -14,14 +14,14 @@
   - 理由: AI経由の操作(MCP)が renderer を通らないため。renderer に書いた瞬間、FR-7.5が破れる。
 - **renderer は「表示」と「操作の発火」のみを担当する。** 状態の正しさを判断してはいけない。
   - 例: 「このエッジを繋ぐと循環するか」を renderer で判定してボタンを無効化するのは可。しかし**判定の実体は必ず main 側のドメイン関数を呼ぶ**こと。renderer 側で判定ロジックを再実装しない。
-- **SQLiteへの書き込みは、ドメイン層を経由するもの以外に存在してはならない。** IPCハンドラやMCPツールから直接SQLを書かない。
+- **SQLiteへの書き込みは、アプリケーション層(`AppService.mutate`)を経由するもの以外に存在してはならない。**
+  IPCハンドラやMCPツールから直接SQLを書かない(FR-7.5、`requirements.md`)。
+  - ドメイン層は外部依存を持たない(`node:sqlite` すら import しない)ため、**ドメインが db を呼ぶことはできない**。
+    配線は逆向きで、両者の上に立つ `app-service.ts` が「ドメインの操作を実行し、生じた差分を db に書き出す」を担う。
+  - 唯一の例外は表示設定(`app_settings`)。タスクグラフのデータではなく Undo の対象外であるため、
+    `ipc/handlers.ts` が `db/settings.ts` を直接呼ぶ。これ以外に db への書き込み経路を作らない。
 
-**実装で判明した補足(Phase 2)**: ドメイン層は外部依存を持たない(`node:sqlite` すら import しない)ため、
-**ドメインが db を呼ぶことはできない**。実際の配線は逆で、両者の上に立つ `app-service.ts` が
-「ドメインの操作を実行し、生じた差分を db に書き出す」を担う。
-したがって下図の `db/` は「domain から呼ばれる」のではなく「app-service から呼ばれる」が正しい。
-
-ディレクトリ構成でこれを表現する:
+ディレクトリ構成:
 
 ```
 src/
@@ -30,14 +30,15 @@ src/
     db/              ← SQLiteアクセス。app-service からのみ呼ばれる
     app-service.ts   ← domain と db の配線。書き込みは必ずここを通る
     ipc/             ← rendererとの境界。app-service を呼ぶだけ
-    mcp/             ← AIとの境界。app-service を呼ぶだけ
+    index.ts         ← Electron の起動
+  preload/           ← contextBridge。判断を書かない
   renderer/
-    components/  ← 表示のみ
-    hooks/
-  shared/        ← main/renderer両方が使う型定義のみ。ロジックは置かない
+    src/             ← 表示と操作の発火のみ
+  shared/            ← main/renderer 両方が使う型定義とログ。ドメインロジックは置かない
 ```
 
-`ipc/` と `mcp/` は「薄い変換層」に留める。両者に同じロジックが書かれ始めたら、それは `domain/` に上げるべきサイン。
+Phase 4 で `src/main/mcp/`(AIとの境界)が加わる。`ipc/` と同じく app-service を呼ぶだけの薄い
+変換層に留める。両者に同じロジックが書かれ始めたら、それは `domain/` に上げるべきサイン。
 
 ## 2. TypeScript
 
