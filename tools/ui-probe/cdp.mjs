@@ -218,9 +218,20 @@ export async function connect(port, { onConsole, expectedUrlPrefix, timeoutMs = 
     });
   };
 
+  /** 窓の大きさを変える。狭いところでの見え方を確かめる用。 */
+  const setViewportSize = async (width, height) => {
+    await send('Emulation.setDeviceMetricsOverride', {
+      width,
+      height,
+      deviceScaleFactor: 2,
+      mobile: false,
+    });
+  };
+
   /** 画面をそのまま撮る。見た目の判断は人に渡すためのもので、自動判定はしない。 */
-  const screenshot = async () =>
-    (await send('Page.captureScreenshot', { format: 'png' })).result?.data;
+  const screenshot = async (clip) =>
+    (await send('Page.captureScreenshot', { format: 'png', ...(clip ? { clip } : {}) })).result
+      ?.data;
 
   return {
     evaluate,
@@ -233,6 +244,7 @@ export async function connect(port, { onConsole, expectedUrlPrefix, timeoutMs = 
     drag,
     wheel,
     emulateColorScheme,
+    setViewportSize,
     screenshot,
     close: () => ws.close(),
   };
