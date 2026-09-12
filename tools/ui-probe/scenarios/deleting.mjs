@@ -71,6 +71,15 @@ export default {
       `);
     const edgeCount = () =>
       evaluate(`return document.querySelectorAll('.react-flow__edge').length`);
+    /** Cmd+Z。削除も、その削除で消えた矢印も、まとめて戻るはず(FR-8)。 */
+    const undo = async () => {
+      await evaluate(`
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', metaKey: true, bubbles: true }));
+        return 1;
+      `);
+      await wait(600);
+    };
+
     const dismiss = async () => {
       await key({ key: 'Escape', code: 27 });
       await wait(300);
@@ -243,5 +252,33 @@ export default {
       (await edgeCount()) === 0,
       await edgeCount(),
     );
+
+    await undo();
+    check(
+      'E-1a 削除を Undo すると Task が戻る',
+      await evaluate(
+        `return [...document.querySelectorAll('.task-title')].some((t) => t.textContent === 'B')`,
+      ),
+    );
+    check('E-1b 繋がっていた矢印も戻る', (await edgeCount()) === 4, await edgeCount());
+
+    /*
+      表示設定は Undo の対象外(FR-6)。タスクグラフのデータではないため。
+      **ここを履歴に積むと、Cmd+Z が「表示を戻す」のか「変更を戻す」のか
+      分からなくなる。**
+    */
+    await evaluate(`document.querySelector('.toolbar input[type=checkbox]').click(); return 1;`);
+    await wait(400);
+    const hiddenOn = await evaluate(
+      `return document.querySelector('.toolbar input[type=checkbox]').checked`,
+    );
+    await undo();
+    const hiddenAfterUndo = await evaluate(
+      `return document.querySelector('.toolbar input[type=checkbox]').checked`,
+    );
+    check('E-5 「完了を非表示」は Undo で戻らない(表示設定のため)', hiddenAfterUndo === hiddenOn, {
+      hiddenOn,
+      hiddenAfterUndo,
+    });
   },
 };

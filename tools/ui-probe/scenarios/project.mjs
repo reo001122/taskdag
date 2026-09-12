@@ -120,6 +120,82 @@ export default {
     check('P-4d そのとき枠は動かない', !moved(before, after, '改名A'), { before, after });
 
     /*
+      所属は「枠の中に Task があるか」だけで決まる(FR-4)。保存はしない。
+
+      **枠を消しても中の Task は残る。** 領域であって入れ物ではないため、
+      枠が消えれば所属が外れるだけ。
+    */
+    const dotColour = (title) =>
+      evaluate(`
+        const wrap = [...document.querySelectorAll('.task-wrap')]
+          .find((w) => w.querySelector('.task-title')?.textContent === ${JSON.stringify(title)});
+        if (!wrap) return 'ない';
+        const dot = wrap.querySelector('.task-grip-dot');
+        return dot.classList.contains('is-unassigned') ? '所属なし' : getComputedStyle(dot).backgroundColor;
+      `);
+
+    const inFrame = await dotColour('中の作業');
+    check('C-1 枠の中に置いた Task は、丸点が枠の色になる', inFrame !== '所属なし', inFrame);
+
+    // 枠の外へ出すと外れる
+    const out = await evaluate(`
+      const task = [...document.querySelectorAll('.react-flow__node')]
+        .find((n) => n.querySelector('.task-title'));
+      const frame = document.querySelector('.react-flow__node-projectFrame').getBoundingClientRect();
+      const r = task.getBoundingClientRect();
+      return {
+        from: { x: Math.round(r.left + 6), y: Math.round(r.top + 6) },
+        to: { x: Math.round(frame.right + 90), y: Math.round(frame.top + 40) },
+      };
+    `);
+    await drag(out.from, out.to);
+    await wait(500);
+    check(
+      'C-2 枠の外へ出すと所属が外れる',
+      (await dotColour('中の作業')) === '所属なし',
+      await dotColour('中の作業'),
+    );
+
+    // 戻す
+    const back = await evaluate(`
+      const task = [...document.querySelectorAll('.react-flow__node')]
+        .find((n) => n.querySelector('.task-title'));
+      const frame = document.querySelector('.react-flow__node-projectFrame').getBoundingClientRect();
+      const r = task.getBoundingClientRect();
+      return {
+        from: { x: Math.round(r.left + 6), y: Math.round(r.top + 6) },
+        to: { x: Math.round(frame.left + 60), y: Math.round(frame.top + 60) },
+      };
+    `);
+    await drag(back.from, back.to);
+    await wait(500);
+    check(
+      'C-3 戻すとまた所属する',
+      (await dotColour('中の作業')) !== '所属なし',
+      await dotColour('中の作業'),
+    );
+
+    // 枠を消しても Task は残る
+    await evaluate(`
+      const label = document.querySelector('.project-frame-label');
+      label.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      [...label.querySelectorAll('.state-button')].find((b) => b.textContent === '×').click();
+      return 1;
+    `);
+    await waitFor('枠が消える', `return !document.querySelector('.project-frame')`);
+    check(
+      'C-5a 枠を消しても中の Task は残る',
+      await evaluate(
+        `return [...document.querySelectorAll('.task-title')].some((t) => t.textContent === '中の作業')`,
+      ),
+    );
+    check(
+      'C-5b そのとき所属だけが外れる',
+      (await dotColour('中の作業')) === '所属なし',
+      await dotColour('中の作業'),
+    );
+
+    /*
       2本指スクロールは移動、Cmd 併用で拡大縮小。
       枠の内側がドラッグで動くようになったぶん、パンの手段をここに移している。
     */
@@ -154,8 +230,8 @@ export default {
     // 余白を掴んで引きずっても、表示は動かない(移動はスクロールに一本化した)
     v = await viewport();
     const blank = await evaluate(`
-      const frame = document.querySelector('.project-frame').getBoundingClientRect();
-      return { x: Math.round(frame.right + 80), y: Math.round(frame.bottom + 80) };
+      const task = document.querySelector('.task').getBoundingClientRect();
+      return { x: Math.round(task.right + 120), y: Math.round(task.bottom + 120) };
     `);
     await drag(blank, { x: blank.x + 120, y: blank.y + 80 });
     await wait(400);

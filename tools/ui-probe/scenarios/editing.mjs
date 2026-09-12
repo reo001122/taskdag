@@ -148,6 +148,21 @@ export default {
       await evaluate(`return document.querySelector('.memo-text')?.textContent ?? null`),
     );
 
+    /*
+      メモは打鍵ごとに履歴へ積まない(FR-10)。**1回の Cmd+Z で書く前へ戻る。**
+      一文字ごとに積むと、履歴が打鍵で埋まって FR-8 が機能しなくなる。
+    */
+    await evaluate(`
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', metaKey: true, bubbles: true }));
+      return 1;
+    `);
+    await wait(600);
+    check(
+      'H-3 メモは1回の Undo で書く前に戻る(打鍵ごとに積まれていない)',
+      (await evaluate(`return document.querySelector('.memo-text')?.textContent ?? null`)) === null,
+      await evaluate(`return document.querySelector('.memo-text')?.textContent ?? null`),
+    );
+
     // Task 名では同じ操作で消えない(FR-1 の確認を迂回しないこと)
     await key({ key: 'Escape', code: 27 });
     await wait(200);
