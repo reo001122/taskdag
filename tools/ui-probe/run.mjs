@@ -55,8 +55,12 @@ async function main() {
     シナリオは並べて走らせる。それぞれ自前のアプリと使い捨ての user-data-dir を
     持ち、CDP のポートも OS が割り当てるので、互いに干渉しない。
     **コミットのたびに走らせるものなので、待ち時間は短いほどよい。**
+
+    ただし**同時に走らせる数は絞る。** 一斉に起動すると、立ち上がり直後に送った
+    キーがどこにも入らないことがある(実測: 6本同時で再発した)。総時間はほとんど
+    変わらないので、取りこぼしのない側を選ぶ。
   */
-  const results = await Promise.all(scenarios.map(runScenario));
+  const results = await inParallel(scenarios, Number(option('jobs', '3')), runScenario);
 
   let failures = 0;
   for (const result of results) {
@@ -107,6 +111,20 @@ function readAssignedPort(child, timeoutMs = 15000) {
       reject(new Error('アプリがポートを名乗る前に終了した'));
     });
   });
+}
+
+/** 最大 limit 本まで同時に走らせ、入力の順で結果を返す。 */
+async function inParallel(items, limit, run) {
+  const results = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await run(items[index]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
 }
 
 /** 終わるまで待つ。素直に終わらなければ落とす。 */
