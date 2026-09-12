@@ -31,10 +31,13 @@ jobs:
   # 実機を操作する確認(tools/ui-probe/)。Electron を起動するため画面が要る。
   # Linux ランナーには無いので xvfb を被せる。
   #
-  # **このジョブはまだ CI 上で走ったことがない**(リモートを持っていないため)。
-  # 最初に push したときに通ることを確認すること。
+  # **まだ CI 上で走ったことがないため、当面は落ちても全体を止めない。**
+  # 落ちたときに「アプリの不具合」と「CI 環境の問題」を切り分けられないうちに
+  # 必須にすると、最初の数回で信用を失う。通ることを何度か確認してから
+  # continue-on-error を外し、必須の検査にする。
   probe:
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
