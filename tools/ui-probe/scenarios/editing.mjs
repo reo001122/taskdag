@@ -103,7 +103,10 @@ export default {
     await key({ key: 'Escape', code: 27 });
     await wait(200);
     await evaluate(`document.querySelector('.task-title').click(); return 1;`);
-    await waitFor('Task 名が入力欄になる', `return !!document.querySelector('.task-head .text-input')`);
+    await waitFor(
+      'Task 名が入力欄になる',
+      `return !!document.querySelector('.task-head .text-input')`,
+    );
     await waitForFocus();
     await key({ key: 'Tab', code: 9 });
     await waitFor('メモの入力欄が開く', `return !!document.querySelector('.memo-input')`);
@@ -126,7 +129,10 @@ export default {
     await key({ key: 'Escape', code: 27 });
     await wait(300);
     await evaluate(`document.querySelector('.task-title').click(); return 1;`);
-    await waitFor('Task 名が入力欄になる', `return !!document.querySelector('.task-head .text-input')`);
+    await waitFor(
+      'Task 名が入力欄になる',
+      `return !!document.querySelector('.task-head .text-input')`,
+    );
     await waitForFocus();
     await key({ key: 'Tab', code: 9 });
     await waitFor('メモの入力欄が開く', `return !!document.querySelector('.memo-input')`);
@@ -136,7 +142,9 @@ export default {
     await wait(400);
     check(
       'メモに打った内容が名前の下に出る',
-      await evaluate(`return document.querySelector('.memo-text')?.textContent === 'あとで読み返す用'`),
+      await evaluate(
+        `return document.querySelector('.memo-text')?.textContent === 'あとで読み返す用'`,
+      ),
       await evaluate(`return document.querySelector('.memo-text')?.textContent ?? null`),
     );
 

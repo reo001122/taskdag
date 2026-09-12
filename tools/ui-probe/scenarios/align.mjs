@@ -102,14 +102,17 @@ export default {
       await wait(450);
     };
 
+    /** 名前は何度も使うので名前付きで持つ(添字に文字列をそのまま書かない)。 */
+    const NAME = { spec: '要件を洗う', screen: '画面を作る', shared: '横断の作業' };
+
     await addProject('設計');
     await addProject('実装');
-    await addTask('要件を洗う');
+    await addTask(NAME.spec);
     // 子タスクで背を伸ばす。**低い Task では見積もりの誤差が余白に吸われて
     // 表に出ない。** 枠が実寸で張られていることを確かめるには、余白より
     // 大きくずれるだけの高さが要る。
-    await addTask('画面を作る', ['一覧', '詳細', '編集', '削除', '検索']);
-    await addTask('横断の作業');
+    await addTask(NAME.screen, ['一覧', '詳細', '編集', '削除', '検索']);
+    await addTask(NAME.shared);
 
     /*
       新しい枠は少しずつずらして置かれるだけなので、作った直後は互いに重なっている。
@@ -121,15 +124,15 @@ export default {
     await evaluate(`document.querySelector('.react-flow__controls-fitview').click(); return 1;`);
     await wait(500);
 
-    await assign('要件を洗う', '設計');
-    await assign('画面を作る', '実装');
+    await assign(NAME.spec, '設計');
+    await assign(NAME.screen, '実装');
 
     const belongsBefore = await belongs();
     check(
       'D-0 前提: 狙った2つの Task が、別々の Project に属している',
-      belongsBefore['要件を洗う'] !== '' &&
-        belongsBefore['画面を作る'] !== '' &&
-        belongsBefore['要件を洗う'] !== belongsBefore['画面を作る'],
+      belongsBefore[NAME.spec] !== '' &&
+        belongsBefore[NAME.screen] !== '' &&
+        belongsBefore[NAME.spec] !== belongsBefore[NAME.screen],
       belongsBefore,
     );
 
