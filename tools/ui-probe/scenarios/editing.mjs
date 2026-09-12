@@ -94,6 +94,52 @@ export default {
     check('空の名前で Backspace を押すと childTask が消える', s.children.length === 2, s.children);
     check('戻った先の名前は消えていない', s.children[1] === null, s.children);
 
+    /*
+      名前からメモへは Tab で移る。
+
+      名前を打ち終えてメモを書きたいたびにマウスへ持ち替えるのでは、
+      書き出しの流れが切れる。
+    */
+    await key({ key: 'Escape', code: 27 });
+    await wait(200);
+    await evaluate(`document.querySelector('.task-title').click(); return 1;`);
+    await waitFor('Task 名が入力欄になる', `return !!document.querySelector('.task-head .text-input')`);
+    await waitForFocus();
+    await key({ key: 'Tab', code: 9 });
+    await waitFor('メモの入力欄が開く', `return !!document.querySelector('.memo-input')`);
+    const onMemo = await evaluate(`
+      const t0 = performance.now();
+      return await new Promise((resolve) => {
+        const tick = () => {
+          if (document.activeElement?.classList?.contains('memo-input')) {
+            return resolve(Math.round(performance.now() - t0));
+          }
+          if (performance.now() - t0 > 2000) return resolve(-1);
+          requestAnimationFrame(tick);
+        };
+        tick();
+      });
+    `);
+    check('名前から Tab でメモの入力へ移る', onMemo >= 0, { waitedMs: onMemo });
+
+    await type('あとで読み返す用');
+    await key({ key: 'Escape', code: 27 });
+    await wait(300);
+    await evaluate(`document.querySelector('.task-title').click(); return 1;`);
+    await waitFor('Task 名が入力欄になる', `return !!document.querySelector('.task-head .text-input')`);
+    await waitForFocus();
+    await key({ key: 'Tab', code: 9 });
+    await waitFor('メモの入力欄が開く', `return !!document.querySelector('.memo-input')`);
+    await waitForFocus();
+    await type('あとで読み返す用');
+    await evaluate(`document.querySelector('.memo-input').blur(); return 1;`);
+    await wait(400);
+    check(
+      'メモに打った内容が名前の下に出る',
+      await evaluate(`return document.querySelector('.memo-text')?.textContent === 'あとで読み返す用'`),
+      await evaluate(`return document.querySelector('.memo-text')?.textContent ?? null`),
+    );
+
     // Task 名では同じ操作で消えない(FR-1 の確認を迂回しないこと)
     await key({ key: 'Escape', code: 27 });
     await wait(200);
