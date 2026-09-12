@@ -658,6 +658,31 @@ body {
   border-left-color: var(--ready);
 }
 
+/* 消える当人。ここだけは、読み飛ばされないように地の文から浮かせる。 */
+.doomed {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* 繋ぎ直しは外せる(FR-1)。外したものは残る側と見分けられるようにする。 */
+.edge-list label {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  cursor: pointer;
+}
+.edge-list li.is-dropped {
+  border-left-color: var(--border);
+  color: var(--text-dim);
+  text-decoration: line-through;
+}
+
+.dialog-hint {
+  margin: 6px 0 0;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
 .dialog-warning {
   margin: 16px 0 0;
   padding: 9px 11px;

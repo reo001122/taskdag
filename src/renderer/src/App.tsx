@@ -591,8 +591,8 @@ export function App(): React.JSX.Element {
           plan={deletePlan}
           snapshot={snapshot}
           onCancel={() => setDeletePlan(null)}
-          onConfirm={() => {
-            send({ type: 'deleteTask', id: deletePlan.taskId });
+          onConfirm={(keepReconnections) => {
+            send({ type: 'deleteTask', id: deletePlan.taskId, keepReconnections });
             setDeletePlan(null);
           }}
         />
@@ -681,11 +681,28 @@ function DeleteDialog({
   plan: DeletePlan;
   snapshot: GraphSnapshot;
   onCancel: () => void;
-  onConfirm: () => void;
+  onConfirm: (keepReconnections: { from: string; to: string }[]) => void;
 }): React.JSX.Element {
   const titleOf = (id: string): string => snapshot.tasks.find((t) => t.id === id)?.title ?? id;
   const target = titleOf(plan.taskId);
   const ref = useRef<HTMLDialogElement>(null);
+
+  /*
+    繋ぎ直しは、外したいものを外せるようにする(FR-1)。
+
+    FR-3 の規則は「繋がっていた相手どうしを繋ぐ」であって、**それがいつも
+    利用者の意図と一致するとは限らない。** 既定は全て繋ぐ —— 規則どおりの
+    結果を、確認の場で削るだけにする。
+  */
+  const key = (edge: { from: string; to: string }): string => `${edge.from}->${edge.to}`;
+  const [dropped, setDropped] = useState<ReadonlySet<string>>(new Set());
+  const toggle = (edge: { from: string; to: string }): void =>
+    setDropped((current) => {
+      const next = new Set(current);
+      if (next.has(key(edge))) next.delete(key(edge));
+      else next.add(key(edge));
+      return next;
+    });
 
   useEffect(() => {
     ref.current?.showModal();
@@ -694,7 +711,9 @@ function DeleteDialog({
   return (
     <dialog className="dialog" ref={ref} onCancel={onCancel} onClose={onCancel}>
       <div>
-        <h2>「{target}」を削除しますか？</h2>
+        <h2>
+          「<span className="doomed">{target}</span>」を削除しますか？
+        </h2>
 
         {plan.removedChildTaskIds.length > 0 && (
           <p className="dialog-lead">
@@ -712,9 +731,14 @@ function DeleteDialog({
             <ul className="edge-list is-removed">
               {plan.removedEdges.map((e) => (
                 <li key={`${e.from}->${e.to}`}>
-                  <span>{titleOf(e.from)}</span>
+                  {/* 消える当人を赤くする。どちら側が居なくなるのかが一目で分かる。 */}
+                  <span className={e.from === plan.taskId ? 'doomed' : undefined}>
+                    {titleOf(e.from)}
+                  </span>
                   <span className="arrow">→</span>
-                  <span>{titleOf(e.to)}</span>
+                  <span className={e.to === plan.taskId ? 'doomed' : undefined}>
+                    {titleOf(e.to)}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -726,13 +750,21 @@ function DeleteDialog({
             <h3 className="dialog-label">つなぎ直される依存関係</h3>
             <ul className="edge-list is-added">
               {plan.addedEdges.map((e) => (
-                <li key={`${e.from}->${e.to}`}>
-                  <span>{titleOf(e.from)}</span>
-                  <span className="arrow">→</span>
-                  <span>{titleOf(e.to)}</span>
+                <li key={key(e)} className={dropped.has(key(e)) ? 'is-dropped' : undefined}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={!dropped.has(key(e))}
+                      onChange={() => toggle(e)}
+                    />
+                    <span>{titleOf(e.from)}</span>
+                    <span className="arrow">→</span>
+                    <span>{titleOf(e.to)}</span>
+                  </label>
                 </li>
               ))}
             </ul>
+            <p className="dialog-hint">外したものは繋ぎ直されません。</p>
           </section>
         ) : (
           plan.removedEdges.length > 0 && (
@@ -744,7 +776,11 @@ function DeleteDialog({
           <button type="button" onClick={onCancel}>
             キャンセル
           </button>
-          <button type="button" className="danger" onClick={onConfirm}>
+          <button
+            type="button"
+            className="danger"
+            onClick={() => onConfirm(plan.addedEdges.filter((e) => !dropped.has(key(e))))}
+          >
             削除
           </button>
         </div>
