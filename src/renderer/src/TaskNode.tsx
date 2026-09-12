@@ -89,7 +89,7 @@ const log = logger('edit');
 /**
  * 入力欄へフォーカスを移す。移るまで数フレーム待つ。
  *
- * **1回呼ぶだけでは足りない。** React Flow はノードの寸法を測り終えるまで
+ * 1回呼ぶだけでは足りない。 React Flow はノードの寸法を測り終えるまで
  * そのノードを `visibility: hidden` にしており、隠れている要素への focus() は
  * 何も起こさずに黙って終わる。Task や childTask を足した直後は、まさにその
  * 瞬間に当たる —— 入力欄は現れるのに、打った文字がどこにも入らなかった。
@@ -172,7 +172,7 @@ function EditableText({
   /**
    * 名前が空の状態で Backspace が押されたときに呼ばれる。渡さなければ何も起きない。
    *
-   * **childTask にだけ渡す。** Task を同じ操作で消せるようにすると、childTask の
+   * childTask にだけ渡す。 Task を同じ操作で消せるようにすると、childTask の
    * 巻き添え削除と依存エッジの再接続が無言で走る。FR-1 がそこに確認を要求している。
    */
   onRemoveWhenEmpty?: () => void;
@@ -481,7 +481,7 @@ export function TaskNode({ data }: NodeProps): React.JSX.Element {
             {children.length > 0 && (
               /*
                 折りたたんでいる間は件数を出す。畳んだ Task は1行の Task と
-                見た目が変わらず、**中身があること自体が画面から消える**。
+                見た目が変わらず、中身があること自体が画面から消える。
                 件数は畳んでいるときだけ出す —— 開いていれば数えられる。
               */
               <button
@@ -646,7 +646,7 @@ export function TaskNode({ data }: NodeProps): React.JSX.Element {
 
       {/*
         接続の端は、取っ手と同じ理由で本体の外側に置く。本体は角を整えるために
-        overflow: hidden にしてあり、中に置くと**外側の半分が切り落とされる**。
+        overflow: hidden にしてあり、中に置くと外側の半分が切り落とされる。
         見た目は縦棒のままなのに掴める幅が実測 2.5px しかなく、狙って掴めない。
       */}
       <Handle type="target" position={HandlePosition.Left} />

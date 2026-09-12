@@ -105,7 +105,7 @@ export async function connect(port, { onConsole, expectedUrlPrefix, timeoutMs = 
   /**
    * 入力欄にフォーカスが移るまで待ち、待った時間(ms)を返す。移らなければ -1。
    *
-   * **打つ前に必ず通すこと。** 入力欄が現れてから実際にフォーカスが着くまでには
+   * 打つ前に必ず通すこと。 入力欄が現れてから実際にフォーカスが着くまでには
    * 間がある(React Flow がノードを測り終えるまで待つため、実測で初回 70ms 前後)。
    * 着く前に打つと、最初の文字が黙って落ちる。
    */
@@ -137,7 +137,7 @@ export async function connect(port, { onConsole, expectedUrlPrefix, timeoutMs = 
   };
 
   /**
-   * 1文字ずつ本物のキーイベントとして送り、**入ったことを確かめる。**
+   * 1文字ずつ本物のキーイベントとして送り、入ったことを確かめる。
    *
    * フォーカスが着いた直後でも、まれに打鍵がどこにも入らないことがある
    * (名前が既定のまま残り、後続の検査がまとめて落ちる形で出た)。
@@ -177,7 +177,7 @@ export async function connect(port, { onConsole, expectedUrlPrefix, timeoutMs = 
    * 実際のマウス入力。React Flow のドラッグは pointer 系を見ているため
    * click() では代替できない。
    *
-   * **buttons を型から決めつけない。** 何も押していない移動を「押したままの移動」
+   * buttons を型から決めつけない。 何も押していない移動を「押したままの移動」
    * として送ると、ホバーが立たない(× が出ない、といった形で出た)。
    * 押している間の移動だけ、呼ぶ側が 1 を渡す。
    */
