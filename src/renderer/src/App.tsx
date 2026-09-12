@@ -472,6 +472,15 @@ export function App(): React.JSX.Element {
           */
           zoomOnScroll={false}
           panOnScroll
+          /*
+            掴んでの平行移動は行わない。スクロールに一本化する。
+
+            枠の内側がドラッグで動くようになった時点で、掴んで動かせる場所は
+            「どこにも属さない余白」だけになっていた。**残しておくと、掴んだ先が
+            余白か枠かで結果が変わる**ことになり、狙いを外したときに何が起きるかが
+            読めない。移動はスクロール、と決め切るほうが手が迷わない。
+          */
+          panOnDrag={false}
           onNodeDragStart={(_event, node) => {
             if (node.type !== 'projectFrame') return;
             const projectId = node.id.replace('project:', '');
