@@ -173,16 +173,16 @@ export async function connect(port, { onConsole, expectedUrlPrefix, timeoutMs = 
     throw new Error(`打った文字が入力欄に入らなかった: ${text}`);
   };
 
-  /** 実際のマウス入力。React Flow のドラッグは pointer 系を見ているため click() では代替できない。 */
-  const mouse = async (type_, x, y, button = 'left') => {
-    await send('Input.dispatchMouseEvent', {
-      type: type_,
-      x,
-      y,
-      button,
-      buttons: type_ === 'mouseReleased' ? 0 : 1,
-      clickCount: 1,
-    });
+  /**
+   * 実際のマウス入力。React Flow のドラッグは pointer 系を見ているため
+   * click() では代替できない。
+   *
+   * **buttons を型から決めつけない。** 何も押していない移動を「押したままの移動」
+   * として送ると、ホバーが立たない(× が出ない、といった形で出た)。
+   * 押している間の移動だけ、呼ぶ側が 1 を渡す。
+   */
+  const mouse = async (type_, x, y, { button = 'left', buttons = 0 } = {}) => {
+    await send('Input.dispatchMouseEvent', { type: type_, x, y, button, buttons, clickCount: 1 });
   };
 
   /** 2本指スクロール。deltaY だけ渡せば縦、modifiers に 4 を渡すと Cmd 併用。 */
@@ -198,16 +198,14 @@ export async function connect(port, { onConsole, expectedUrlPrefix, timeoutMs = 
   };
 
   const drag = async (from, to, steps = 10) => {
-    await mouse('mousePressed', from.x, from.y);
+    await mouse('mousePressed', from.x, from.y, { buttons: 1 });
     for (let i = 1; i <= steps; i += 1) {
-      await mouse(
-        'mouseMoved',
-        from.x + ((to.x - from.x) * i) / steps,
-        from.y + ((to.y - from.y) * i) / steps,
-      );
+      const x = from.x + ((to.x - from.x) * i) / steps;
+      const y = from.y + ((to.y - from.y) * i) / steps;
+      await mouse('mouseMoved', x, y, { buttons: 1 });
       await wait(16);
     }
-    await mouse('mouseReleased', to.x, to.y);
+    await mouse('mouseReleased', to.x, to.y, { buttons: 0 });
   };
 
   /**
