@@ -754,9 +754,11 @@ function DeleteDialog({
                   <label>
                     <input
                       type="checkbox"
+                      className="edge-check"
                       checked={!dropped.has(key(e))}
                       onChange={() => toggle(e)}
                     />
+                    <span className="edge-box" aria-hidden="true" />
                     <span>{titleOf(e.from)}</span>
                     <span className="arrow">→</span>
                     <span>{titleOf(e.to)}</span>

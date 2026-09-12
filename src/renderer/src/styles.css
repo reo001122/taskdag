@@ -669,6 +669,40 @@ body {
   cursor: pointer;
 }
 
+/*
+  入れる・外すの印。OS 既定のチェックボックスは、この面の上だけ別の見た目に
+  なってしまう。Task の状態表示と同じ角丸の四角にして、塗りの有無で示す ——
+  チェックマークは足さない。この画面で問うているのは「残すか外すか」であって、
+  作業が済んだかどうかではない。
+*/
+.edge-check {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.edge-box {
+  flex: none;
+  align-self: center;
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--text-dim);
+  border-radius: 3px;
+  transition:
+    background 0.1s,
+    border-color 0.1s;
+}
+.edge-check:checked + .edge-box {
+  background: var(--ready);
+  border-color: var(--ready);
+}
+.edge-check:focus-visible + .edge-box {
+  outline: 2px solid var(--ready);
+  outline-offset: 2px;
+}
+.edge-list label:hover .edge-box {
+  border-color: var(--text);
+}
 .edge-list li.is-dropped {
   border-left-color: var(--border);
   color: var(--text-dim);
