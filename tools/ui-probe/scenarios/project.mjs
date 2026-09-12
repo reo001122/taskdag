@@ -150,5 +150,19 @@ export default {
     await wait(300);
     next = await viewport();
     check('N-3 ピンチ相当の入力では拡大縮小になる', next.zoom !== v.zoom, { v, next });
+
+    // 余白を掴んで引きずっても、表示は動かない(移動はスクロールに一本化した)
+    v = await viewport();
+    const blank = await evaluate(`
+      const frame = document.querySelector('.project-frame').getBoundingClientRect();
+      return { x: Math.round(frame.right + 80), y: Math.round(frame.bottom + 80) };
+    `);
+    await drag(blank, { x: blank.x + 120, y: blank.y + 80 });
+    await wait(400);
+    next = await viewport();
+    check('N-4 余白を掴んで引きずっても表示は動かない', next.x === v.x && next.y === v.y, {
+      v,
+      next,
+    });
   },
 };
