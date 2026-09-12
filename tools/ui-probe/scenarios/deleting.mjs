@@ -99,6 +99,45 @@ export default {
       await dialogText(),
     );
 
+    /*
+      繋ぎ直しは確認の場で外せる(FR-1)。
+
+      FR-3 の規則は「繋がっていた相手どうしを繋ぐ」であって、それがいつも
+      利用者の意図と一致するとは限らない。外したものが**本当に作られない**ことまで見る。
+    */
+    await evaluate(`
+      document.querySelector('dialog[open] .edge-list.is-added input').click();
+      return 1;
+    `);
+    await wait(200);
+    check(
+      'F-8a 繋ぎ直しを確認の場で外せる',
+      (await evaluate(
+        `return document.querySelector('dialog[open] .edge-list.is-added input').checked`,
+      )) === false,
+    );
+    await evaluate(`document.querySelector('dialog[open] .danger').click(); return 1;`);
+    await waitFor(
+      'B が消える',
+      `return ![...document.querySelectorAll('.task-title')].some((t) => t.textContent === 'B')`,
+    );
+    check('F-8b 外した繋ぎ直しは作られない', (await edgeCount()) === 0, await edgeCount());
+
+    // 消した B を作り直して、続きの検査へ
+    await evaluate(`
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', metaKey: true, bubbles: true }));
+      return 1;
+    `);
+    await waitFor(
+      'B が戻る',
+      `return [...document.querySelectorAll('.task-title')].some((t) => t.textContent === 'B')`,
+    );
+    await waitFor(
+      '矢印が2本に戻る',
+      `return document.querySelectorAll('.react-flow__edge').length === 2`,
+    );
+
+    await openDeleteFor('B');
     await dismiss();
     check(
       'F-5a Escape で閉じる',
