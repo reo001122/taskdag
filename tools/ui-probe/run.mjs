@@ -130,36 +130,54 @@ function stop(child, graceMs = 3000) {
  */
 async function runScenario(scenario) {
   const userDataDir = mkdtempSync(join(tmpdir(), 'taskdag-probe-'));
-  const electron = spawn(
-    electronBinary,
-    [
-      '.',
-      '--remote-debugging-port=0',
-      `--user-data-dir=${userDataDir}`,
-      `--log=${logLevel}`,
-      // 既定では画面に出さない。シナリオを書いている最中だけ --show-window で出す。
-      ...(flag('show-window') ? [] : ['--hidden']),
-    ],
-    { cwd: repoRoot, stdio: ['ignore', showLogs ? 'inherit' : 'ignore', 'pipe'] },
-  );
-  if (showLogs) electron.stderr.pipe(process.stderr);
+
+  /**
+   * アプリを起動して繋ぐ。**同じ user-data-dir で呼び直せる** ——
+   * 再起動後もデータが残っていることを見る検査(FR-7)に要る。
+   */
+  const launch = async () => {
+    const electron = spawn(
+      electronBinary,
+      [
+        '.',
+        '--remote-debugging-port=0',
+        `--user-data-dir=${userDataDir}`,
+        `--log=${logLevel}`,
+        // 既定では画面に出さない。シナリオを書いている最中だけ --show-window で出す。
+        ...(flag('show-window') ? [] : ['--hidden']),
+      ],
+      { cwd: repoRoot, stdio: ['ignore', showLogs ? 'inherit' : 'ignore', 'pipe'] },
+    );
+    if (showLogs) electron.stderr.pipe(process.stderr);
+
+    const port = await readAssignedPort(electron);
+    const connected = await connect(port, {
+      expectedUrlPrefix: `file://${join(repoRoot, 'out', 'renderer')}`,
+      onConsole: showLogs ? (type, text) => console.log(`  renderer.${type} ${text}`) : undefined,
+    });
+    await connected.waitFor('画面が描画される', `return !!document.querySelector('.react-flow')`);
+    return { electron, cdp: connected };
+  };
 
   const checks = [];
   let error = null;
   let cdp = null;
   let shotPath = null;
+  let app = null;
   try {
-    const port = await readAssignedPort(electron);
-    cdp = await connect(port, {
-      expectedUrlPrefix: `file://${join(repoRoot, 'out', 'renderer')}`,
-      onConsole: showLogs ? (type, text) => console.log(`  renderer.${type} ${text}`) : undefined,
-    });
-    await cdp.waitFor('画面が描画される', `return !!document.querySelector('.react-flow')`);
+    ({ electron: app, cdp } = await launch());
 
-    await scenario.run({
-      ...cdp,
-      check: (label, ok, detail) => checks.push({ label, ok: !!ok, detail }),
-    });
+    const check = (label, ok, detail) => checks.push({ label, ok: !!ok, detail });
+
+    /** アプリを閉じて開き直し、新しい操作口を返す。データはそのまま残る。 */
+    const restart = async () => {
+      cdp?.close();
+      await stop(app);
+      ({ electron: app, cdp } = await launch());
+      return { ...cdp, check, restart };
+    };
+
+    await scenario.run({ ...cdp, check, restart });
   } catch (e) {
     error = e;
   } finally {
@@ -180,7 +198,7 @@ async function runScenario(scenario) {
     cdp?.close();
     // 終了を待ってから消す。Electron はまだ user-data-dir へ書いており、
     // 待たずに消すと ENOTEMPTY で落ちる。
-    await stop(electron);
+    await stop(app);
     rmSync(userDataDir, { recursive: true, force: true });
   }
 
