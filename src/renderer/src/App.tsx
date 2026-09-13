@@ -15,6 +15,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import './styles.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type Rect, rectsOverlap } from '../../shared/geometry';
 import type { Command, CommandResult, DeletePlan, GraphSnapshot } from '../../shared/ipc';
 import { PROJECT_COLOR_COUNT, projectColorAt } from './colors';
 import { DependencyEdge, type DependencyEdgeData } from './DependencyEdge';
@@ -77,8 +78,72 @@ export function App(): React.JSX.Element {
   const frameDrag = useRef<{
     nodeId: string;
     origin: { x: number; y: number };
+    size: { width: number; height: number };
+    /** 今の位置では置けない。離したときに戻すかどうかの判断に使う(FR-4)。 */
+    blocked: boolean;
     members: Map<string, { x: number; y: number }>;
   } | null>(null);
+
+  /**
+   * 自分以外の枠の矩形(FR-4)。
+   *
+   * 枠どうしは重ねられない。ドメイン側でも弾くが、それだけだと離した瞬間に
+   * 戻るだけで理由が見えない。動かしている間に示すため、表示側でも同じ式を見る
+   * (判定そのものは shared/geometry.ts に1つだけ置いてある)。
+   */
+  const otherFrames = useCallback(
+    (projectId: string): Rect[] =>
+      (snapshot?.projects ?? [])
+        .filter((p) => p.id !== projectId)
+        .map((p) => ({ x: p.position.x, y: p.position.y, width: p.width, height: p.height })),
+    [snapshot],
+  );
+
+  const wouldOverlap = useCallback(
+    (projectId: string, rect: Rect) =>
+      otherFrames(projectId).some((other) => rectsOverlap(rect, other)),
+    [otherFrames],
+  );
+
+  /** 枠に「置けない」の印を付け外しする。 */
+  const markFrameBlocked = useCallback(
+    (nodeId: string, blocked: boolean) => {
+      setNodes((current) =>
+        current.map((n) =>
+          n.id === nodeId ? { ...n, className: blocked ? 'is-blocked' : undefined } : n,
+        ),
+      );
+    },
+    [setNodes],
+  );
+
+  /**
+   * 枠の寸法をスナップショットの値へ戻す(FR-4)。
+   *
+   * React Flow は大きさを変えると width / height をノードへ書き込み、以降は
+   * style より優先して読む。送らずに戻すときは、そこを落として style を
+   * 読ませ直さないと、画面だけが変形したまま残る。
+   */
+  const restoreFrameSize = useCallback(
+    (projectId: string) => {
+      const project = snapshot?.projects.find((p) => p.id === projectId);
+      if (!project) return;
+      setNodes((current) =>
+        current.map((n) =>
+          n.id === `project:${projectId}`
+            ? {
+                ...n,
+                position: { ...project.position },
+                width: undefined,
+                height: undefined,
+                style: { width: project.width, height: project.height },
+              }
+            : n,
+        ),
+      );
+    },
+    [snapshot, setNodes],
+  );
 
   /**
    * コマンドを送り、結果をそのまま返す。失敗しても投げない。
@@ -255,8 +320,17 @@ export function App(): React.JSX.Element {
         color: projectColorAt(project.colorIndex),
         colorIndex: project.colorIndex,
         onRecolor: (id, colorIndex) => send({ type: 'setProjectColor', id, colorIndex }),
-        onResizeEnd: (id, position, width, height) =>
-          send({ type: 'resizeProject', id, position, width, height }),
+        onResizing: (id: string, rect: Rect) =>
+          markFrameBlocked(`project:${id}`, wouldOverlap(id, rect)),
+        onResizeEnd: (id, position, width, height) => {
+          markFrameBlocked(`project:${id}`, false);
+          // 相手に届く大きさで離したら、送らずに元の寸法へ戻す(FR-4)。
+          if (wouldOverlap(id, { ...position, width, height })) {
+            restoreFrameSize(id);
+            return;
+          }
+          send({ type: 'resizeProject', id, position, width, height });
+        },
         onRename: (id, name) => send({ type: 'renameProject', id, name }),
         onDelete: (id) => send({ type: 'deleteProject', id }),
       };
@@ -339,6 +413,9 @@ export function App(): React.JSX.Element {
     removeEdge,
     onAutoEditConsumed,
     autoEdit,
+    markFrameBlocked,
+    wouldOverlap,
+    restoreFrameSize,
   ]);
 
   /*
@@ -484,9 +561,12 @@ export function App(): React.JSX.Element {
           onNodeDragStart={(_event, node) => {
             if (node.type !== 'projectFrame') return;
             const projectId = node.id.replace('project:', '');
+            const project = snapshot?.projects.find((p) => p.id === projectId);
             frameDrag.current = {
               nodeId: node.id,
               origin: { ...node.position },
+              size: { width: project?.width ?? 0, height: project?.height ?? 0 },
+              blocked: false,
               members: new Map(
                 (snapshot?.tasks ?? [])
                   .filter((t) => t.projectId === projectId)
@@ -499,14 +579,26 @@ export function App(): React.JSX.Element {
             if (!drag || node.id !== drag.nodeId) return;
             const dx = node.position.x - drag.origin.x;
             const dy = node.position.y - drag.origin.y;
+            const projectId = node.id.replace('project:', '');
+            const blocked = wouldOverlap(projectId, {
+              x: node.position.x,
+              y: node.position.y,
+              width: drag.size.width,
+              height: drag.size.height,
+            });
+            drag.blocked = blocked;
             setNodes((current) =>
               current.map((n) => {
+                if (n.id === node.id) {
+                  return { ...n, className: blocked ? 'is-blocked' : undefined };
+                }
                 const start = drag.members.get(n.id);
                 return start ? { ...n, position: { x: start.x + dx, y: start.y + dy } } : n;
               }),
             );
           }}
           onNodeDragStop={(_event, node) => {
+            const drag = frameDrag.current;
             frameDrag.current = null;
             // ドラッグ確定時にだけ送る。中間座標を送ると Undo 履歴が
             // ドラッグの途中経過で埋まる(design/domain-design.md §4)。
@@ -514,6 +606,25 @@ export function App(): React.JSX.Element {
               send({ type: 'moveTask', id: node.id, position: node.position });
             }
             if (node.type === 'projectFrame') {
+              /*
+                置けない場所で離したら、送らずにその場で元へ戻す(FR-4)。
+
+                送って弾かれるのに任せると、返ってきたスナップショットで
+                位置は戻るが、失敗の文言が画面に出る。置けない場所へ運んだのは
+                操作のうちであって、報告すべき失敗ではない。
+              */
+              if (drag?.blocked) {
+                setNodes((current) =>
+                  current.map((n) => {
+                    if (n.id === node.id) {
+                      return { ...n, position: { ...drag.origin }, className: undefined };
+                    }
+                    const start = drag.members.get(n.id);
+                    return start ? { ...n, position: { ...start } } : n;
+                  }),
+                );
+                return;
+              }
               // 枠を動かすと、中に入っている Task も一緒に動く(ドメイン側で処理)
               send({
                 type: 'moveProject',

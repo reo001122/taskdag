@@ -9,7 +9,7 @@ export default {
   name: 'align',
   description: 'D. 整列しても所属が壊れないこと(はみ出さない・枠が重ならない)',
 
-  async run({ evaluate, waitFor, waitForFocus, wait, key, type, drag, check }) {
+  async run({ evaluate, waitFor, waitForFocus, wait, key, type, mouse, drag, check }) {
     const click = (text) =>
       evaluate(
         `[...document.querySelectorAll('.toolbar button')].find((b) => b.textContent.includes(${JSON.stringify(text)})).click(); return 1;`,
@@ -208,6 +208,67 @@ export default {
           beforeResize,
           afterUndo: await frameSize(),
         },
+      );
+    }
+
+    /*
+      枠どうしは重ねられない(FR-4)。
+
+      重ねられると、動かさなかったほうの Task の所属が入れ替わる。整列の直後は
+      枠が離れているので、ここで確かめられる。
+    */
+    const frameGeom = () =>
+      evaluate(`
+        return [...document.querySelectorAll('.react-flow__node-projectFrame')].map((n) => {
+          const r = n.getBoundingClientRect();
+          return {
+            name: n.querySelector('.project-name')?.textContent ?? '?',
+            blocked: n.classList.contains('is-blocked'),
+            rect: [Math.round(r.left), Math.round(r.top), Math.round(r.right), Math.round(r.bottom)],
+          };
+        });
+      `);
+
+    const [frameA, frameB] = await frameGeom();
+    if (frameA && frameB) {
+      // A の内側を掴んで、B の内側へ運ぶ。離さずに途中で見る。
+      const from = { x: frameA.rect[0] + 30, y: frameA.rect[1] + 60 };
+      const onto = { x: frameB.rect[0] + 60, y: frameB.rect[1] + 60 };
+      await mouse('mousePressed', from.x, from.y, { buttons: 1 });
+      for (let i = 1; i <= 10; i += 1) {
+        await mouse(
+          'mouseMoved',
+          from.x + ((onto.x - from.x) * i) / 10,
+          from.y + ((onto.y - from.y) * i) / 10,
+          { buttons: 1 },
+        );
+        await wait(16);
+      }
+      const midDrag = await frameGeom();
+      check(
+        'D-7 重なる位置へ運んでいる間、置けないことが枠に出る',
+        midDrag.some((f) => f.blocked),
+        midDrag.map((f) => [f.name, f.blocked]),
+      );
+
+      await mouse('mouseReleased', onto.x, onto.y, { buttons: 0 });
+      await wait(600);
+
+      const dropped = await frameGeom();
+      check(
+        'D-8 離すと元の位置に戻る(枠は重ならない)',
+        String(dropped[0]?.rect) === String(frameA.rect),
+        { before: frameA.rect, after: dropped[0]?.rect },
+      );
+      check(
+        'D-9 戻ったあと、置けない印は消えている',
+        dropped.every((f) => !f.blocked),
+        dropped.map((f) => [f.name, f.blocked]),
+      );
+      check(
+        'D-10 弾かれても所属は変わらない',
+        JSON.stringify(await belongs()) === JSON.stringify(belongsBefore),
+        { belongsBefore, after: await belongs() },
       );
     }
 

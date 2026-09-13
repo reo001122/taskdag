@@ -505,6 +505,17 @@ body {
 .react-flow__node.dragging .project-frame {
   cursor: grabbing;
 }
+/*
+  そこには置けない、を動かしている間に見せる(FR-4)。
+
+  枠どうしは重ねられない。離した時点で元の位置に戻るので、戻る理由が
+  見えていないと「掴み損ねた」と受け取られる。
+*/
+.react-flow__node.is-blocked .project-frame {
+  border-style: solid;
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
 .project-frame-label {
   position: absolute;
   top: -11px;
