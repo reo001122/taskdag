@@ -271,15 +271,25 @@ body {
   border-radius: 4px;
 }
 
-/* 着手中: 枠を強調し、内側を塗る。今やっているものが一番目に入るように。 */
+/*
+  着手中: 左半分だけ塗る。
+
+  内側を全部塗ると、完了(塗り+チェック)と見分けがつかない。実際に
+  着手中の Task を完了と取り違えた報告が出た。半分だけ塗れば「途中」に読める。
+
+  形は3つとも四角で揃える。完了のチェックが四角に載っているため。
+*/
 .state-toggle.is-in-progress .state-box {
   border-color: var(--active);
 }
 .state-toggle.is-in-progress .state-box::after {
   content: "";
   position: absolute;
-  inset: 2px;
-  border-radius: 2px;
+  top: 1.5px;
+  right: 50%;
+  bottom: 1.5px;
+  left: 1.5px;
+  border-radius: 2px 0 0 2px;
   background: var(--active);
 }
 
@@ -505,6 +515,17 @@ body {
 .react-flow__node.dragging .project-frame {
   cursor: grabbing;
 }
+/*
+  そこには置けない、を動かしている間に見せる(FR-4)。
+
+  枠どうしは重ねられない。離した時点で元の位置に戻るので、戻る理由が
+  見えていないと「掴み損ねた」と受け取られる。
+*/
+.react-flow__node.is-blocked .project-frame {
+  border-style: solid;
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
 .project-frame-label {
   position: absolute;
   top: -11px;
@@ -678,21 +699,33 @@ body {
   opacity: 0;
   pointer-events: none;
 }
+/*
+  繋ぎ直しを外すためのチェックボックス。
+
+  塗るだけだと、押して切り替えられるものだと見た目から分からない。
+  枠は常に出しておき、入っているときだけ内側に離して塗る。
+*/
 .edge-box {
+  position: relative;
   flex: none;
   align-self: center;
   box-sizing: border-box;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   border: 1.5px solid var(--text-dim);
-  border-radius: 3px;
-  transition:
-    background 0.1s,
-    border-color 0.1s;
+  border-radius: 5px;
+  background: var(--surface);
+  transition: border-color 0.12s;
 }
 .edge-check:checked + .edge-box {
-  background: var(--ready);
   border-color: var(--ready);
+}
+.edge-check:checked + .edge-box::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 2px;
+  background: var(--ready);
 }
 .edge-check:focus-visible + .edge-box {
   outline: 2px solid var(--ready);

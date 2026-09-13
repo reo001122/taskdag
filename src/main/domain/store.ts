@@ -26,12 +26,14 @@ import {
   getAllTaskProjects,
   moveProject,
   projectOfTask,
+  rejectAnyOverlap,
   renameProject,
   resizeProject,
   setProjectColor,
+  setProjectRect,
 } from './project';
 import { getAllReadiness, readinessOf } from './readiness';
-import { ok, okVoid, type Result } from './result';
+import { okVoid, type Result } from './result';
 import {
   applyLayout,
   connect,
@@ -330,11 +332,13 @@ export class TaskGraphStore {
 
       let graph = laid.value;
       for (const rect of projectRects) {
-        const resized = resizeProject(graph, rect.id, rect.position, rect.width, rect.height);
-        if (!resized.ok) return resized;
-        graph = resized.value;
+        // 1枚ずつ重なりを見ない。置き直す途中では、まだ動かしていない枠と
+        // 重なっている瞬間があるため(FR-4)。
+        const set = setProjectRect(graph, rect.id, rect.position, rect.width, rect.height);
+        if (!set.ok) return set;
+        graph = set.value;
       }
-      return ok(graph);
+      return rejectAnyOverlap(graph);
     });
   }
 }

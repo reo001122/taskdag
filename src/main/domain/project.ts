@@ -1,4 +1,5 @@
-import { type DomainError, projectNotFound, taskNotFound } from './errors';
+import { type Rect, rectsOverlap } from '../../shared/geometry';
+import { type DomainError, projectNotFound, projectsOverlap, taskNotFound } from './errors';
 import type { IdGenerator } from './ids';
 import {
   type Position,
@@ -71,6 +72,90 @@ export function getAllTaskProjects(graph: TaskGraph): ReadonlyMap<TaskId, Projec
   return result;
 }
 
+/** 枠の矩形。重なり判定は main と renderer で同じ式を使う。 */
+export function rectOfProject(project: Project): Rect {
+  return {
+    x: project.position.x,
+    y: project.position.y,
+    width: project.width,
+    height: project.height,
+  };
+}
+
+/**
+ * 枠どうしが重なっていないか。重なっている組があれば返す(FR-4)。
+ *
+ * 接した線の上に Task の左上が乗った場合は両方に含まれるが、
+ * そのときは面積と id で決着する(projectOfTask)。
+ */
+export function findOverlappingProjects(graph: TaskGraph): readonly [ProjectId, ProjectId] | null {
+  const projects = [...graph.projects.values()];
+  for (let i = 0; i < projects.length; i += 1) {
+    for (let j = i + 1; j < projects.length; j += 1) {
+      const a = projects[i];
+      const b = projects[j];
+      if (!a || !b) continue;
+      if (rectsOverlap(rectOfProject(a), rectOfProject(b))) return [a.id, b.id];
+    }
+  }
+  return null;
+}
+
+/**
+ * 動かした枠が他の枠と重なるなら拒む(FR-4)。
+ *
+ * 重なりを許すと、枠を動かしただけで、動かさなかったほうの Task の所属が
+ * 入れ替わる。所属は位置から導出されるため、見た目の問題ではなくデータが変わる。
+ *
+ * 見るのは動かした1枚と他の枠の関係だけで、グラフ全体は見ない。
+ * 全体で判定すると、DB を直接触るなどして既に2組以上が重なっている状態から
+ * 抜け出せなくなる —— どの枠を引き離しても、別の組が重なったままなので
+ * すべての移動が弾かれる。1枚ずつなら手で直せる(まとめて直すなら整列)。
+ */
+export function rejectOverlapWith(graph: TaskGraph, id: ProjectId): Result<TaskGraph, DomainError> {
+  const moved = graph.projects.get(id);
+  if (!moved) return ok(graph);
+
+  const rect = rectOfProject(moved);
+  for (const other of graph.projects.values()) {
+    if (other.id === id) continue;
+    if (rectsOverlap(rect, rectOfProject(other))) return err(projectsOverlap(id, other.id));
+  }
+  return ok(graph);
+}
+
+/** 整列(FR-6)のように、すべての枠を一度に置き直したあとの確認。 */
+export function rejectAnyOverlap(graph: TaskGraph): Result<TaskGraph, DomainError> {
+  const pair = findOverlappingProjects(graph);
+  return pair ? err(projectsOverlap(pair[0], pair[1])) : ok(graph);
+}
+
+/**
+ * 枠の矩形を置き直す。重なりを見ない。
+ *
+ * 整列(FR-6)専用。整列はすべての枠を一度に置き直すので、1枚ずつ見ると
+ * 途中の状態で重なって弾かれる。最後にまとめて rejectOverlap を通すこと。
+ */
+export function setProjectRect(
+  graph: TaskGraph,
+  id: ProjectId,
+  position: Position,
+  width: number,
+  height: number,
+): Result<TaskGraph, DomainError> {
+  const project = graph.projects.get(id);
+  if (!project) return err(projectNotFound(id));
+
+  const projects = new Map(graph.projects);
+  projects.set(id, {
+    ...project,
+    position,
+    width: Math.max(1, width),
+    height: Math.max(1, height),
+  });
+  return ok({ ...graph, projects });
+}
+
 export function createProject(
   graph: TaskGraph,
   name: string,
@@ -83,7 +168,7 @@ export function createProject(
   const id = projectId(newId());
   const projects = new Map(graph.projects);
   projects.set(id, { id, name, position, width, height, colorIndex });
-  return ok({ ...graph, projects });
+  return rejectOverlapWith({ ...graph, projects }, id);
 }
 
 export function setProjectColor(
@@ -145,7 +230,7 @@ export function moveProject(
     });
   }
 
-  return ok({ ...graph, tasks, projects });
+  return rejectOverlapWith({ ...graph, tasks, projects }, id);
 }
 
 /**
@@ -159,17 +244,9 @@ export function resizeProject(
   width: number,
   height: number,
 ): Result<TaskGraph, DomainError> {
-  const project = graph.projects.get(id);
-  if (!project) return err(projectNotFound(id));
-
-  const projects = new Map(graph.projects);
-  projects.set(id, {
-    ...project,
-    position,
-    width: Math.max(1, width),
-    height: Math.max(1, height),
-  });
-  return ok({ ...graph, projects });
+  const set = setProjectRect(graph, id, position, width, height);
+  if (!set.ok) return set;
+  return rejectOverlapWith(set.value, id);
 }
 
 /**

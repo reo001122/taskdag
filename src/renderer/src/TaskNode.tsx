@@ -766,6 +766,11 @@ export type ProjectNodeData = {
     width: number,
     height: number,
   ) => void;
+  /**
+   * 大きさを変えている最中の矩形。置けるかどうかの提示に使う(FR-4)。
+   * 他の枠の位置を知っているのは App 側なので、判定はそちらに任せる。
+   */
+  onResizing: (id: string, rect: { x: number; y: number; width: number; height: number }) => void;
   onRename: (id: string, name: string) => void;
   onDelete: (id: string) => void;
 };
@@ -780,7 +785,7 @@ export type ProjectNodeData = {
  * ドラッグは Task の移動になる —— 枠が持っていくことはない。
  */
 export function ProjectFrameNode({ data, selected }: NodeProps): React.JSX.Element {
-  const { id, name, color, colorIndex, onRecolor, onResizeEnd, onRename, onDelete } =
+  const { id, name, color, colorIndex, onRecolor, onResizeEnd, onResizing, onRename, onDelete } =
     data as unknown as ProjectNodeData;
   const [pickingColor, setPickingColor] = useState(false);
   const swatchRef = useRef<HTMLButtonElement>(null);
@@ -810,6 +815,9 @@ export function ProjectFrameNode({ data, selected }: NodeProps): React.JSX.Eleme
         minHeight={120}
         isVisible
         handleClassName={selected ? 'is-selected' : undefined}
+        onResize={(_event, params) =>
+          onResizing(id, { x: params.x, y: params.y, width: params.width, height: params.height })
+        }
         onResizeEnd={(_event, params) =>
           onResizeEnd(id, { x: params.x, y: params.y }, params.width, params.height)
         }
