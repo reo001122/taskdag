@@ -11,12 +11,14 @@ import {
   ReactFlowProvider,
   useEdgesState,
   useNodesState,
+  useReactFlow,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import './styles.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { type Rect, rectsOverlap } from '../../shared/geometry';
 import type { Command, CommandResult, DeletePlan, GraphSnapshot } from '../../shared/ipc';
+import { taskHeadUnder, taskUnder } from './childDrag';
 import { PROJECT_COLOR_COUNT, projectColorAt } from './colors';
 import { DependencyEdge, type DependencyEdgeData } from './DependencyEdge';
 import { computeLayout, findFreeProjectSlot, NEW_PROJECT_SIZE, type NodeSize } from './layout';
@@ -37,6 +39,7 @@ const nodeTypes: NodeTypes = { task: TaskNode, projectFrame: ProjectFrameNode };
 
 export function App(): React.JSX.Element {
   const [snapshot, setSnapshot] = useState<GraphSnapshot | null>(null);
+  const { screenToFlowPosition } = useReactFlow();
   const [error, setError] = useState<string | null>(null);
   const [deletePlan, setDeletePlan] = useState<DeletePlan | null>(null);
   const [askProjectName, setAskProjectName] = useState(false);
@@ -75,6 +78,9 @@ export function App(): React.JSX.Element {
    * ここでやっているのは見た目を追従させることだけで、置き去りにすると
    * 「枠だけ動いて中身が残る」という嘘の状態が見えてしまう。
    */
+  /** Task を別の Task の見出しへ運んでいる間、その相手を控える(W-3)。 */
+  const nestTarget = useRef<string | null>(null);
+
   const frameDrag = useRef<{
     nodeId: string;
     origin: { x: number; y: number };
@@ -170,6 +176,27 @@ export function App(): React.JSX.Element {
       void dispatch(command);
     },
     [dispatch],
+  );
+
+  /**
+   * childTask が離された(W-3)。
+   *
+   * 別の Task の上なら、その下へ移す。余白なら独立した Task にして、落とした
+   * 場所に置く —— 所属する Project もそこから導かれる(FR-4)。元の親の上で
+   * 離したときは何もしない。
+   */
+  const onChildDropped = useCallback(
+    (childId: string, at: { x: number; y: number }) => {
+      const onto = taskUnder(at.x, at.y);
+      const child = snapshot?.childTasks.find((c) => c.id === childId);
+      if (onto !== null) {
+        if (child && onto === child.parentId) return;
+        send({ type: 'moveChildTask', id: childId, newParentId: onto });
+        return;
+      }
+      send({ type: 'promoteChildTask', id: childId, position: screenToFlowPosition(at) });
+    },
+    [send, snapshot, screenToFlowPosition],
   );
 
   const refresh = useCallback(async () => {
@@ -368,6 +395,7 @@ export function App(): React.JSX.Element {
           children: ordered,
           projectColor: task.projectId === null ? null : (colorOf.get(task.projectId) ?? null),
           hideCompleted: snapshot.hideCompleted,
+          onChildDropped,
           autoEdit,
           send,
           requestDelete,
@@ -416,6 +444,7 @@ export function App(): React.JSX.Element {
     markFrameBlocked,
     wouldOverlap,
     restoreFrameSize,
+    onChildDropped,
   ]);
 
   /*
@@ -574,7 +603,26 @@ export function App(): React.JSX.Element {
               ),
             };
           }}
-          onNodeDrag={(_event, node) => {
+          onNodeDrag={(event, node) => {
+            if (node.type === 'task') {
+              /*
+                見出しの帯の上に来たときだけ、受け取る相手として光らせる(W-3)。
+                重なっただけで子になると、事故で入れ子になる。
+              */
+              // React Flow はタッチのイベントも渡してくる。座標の取り口が違う。
+              const point = 'clientX' in event ? event : event.touches[0];
+              if (!point) return;
+              const onto = taskHeadUnder(point.clientX, point.clientY, node.id);
+              nestTarget.current = onto;
+              setNodes((current) =>
+                current.map((n) =>
+                  n.type === 'task'
+                    ? { ...n, className: n.id === onto ? 'is-drop-target' : undefined }
+                    : n,
+                ),
+              );
+              return;
+            }
             const drag = frameDrag.current;
             if (!drag || node.id !== drag.nodeId) return;
             const dx = node.position.x - drag.origin.x;
@@ -603,6 +651,16 @@ export function App(): React.JSX.Element {
             // ドラッグ確定時にだけ送る。中間座標を送ると Undo 履歴が
             // ドラッグの途中経過で埋まる(design/domain-design.md §4)。
             if (node.type === 'task') {
+              const onto = nestTarget.current;
+              nestTarget.current = null;
+              setNodes((current) =>
+                current.map((n) => (n.type === 'task' ? { ...n, className: undefined } : n)),
+              );
+              if (onto !== null) {
+                // 相手の下へ入れる。依存は相手へ付け替わる(W-3)。
+                send({ type: 'demoteTaskToChild', id: node.id, newParentId: onto });
+                return;
+              }
               send({ type: 'moveTask', id: node.id, position: node.position });
             }
             if (node.type === 'projectFrame') {
