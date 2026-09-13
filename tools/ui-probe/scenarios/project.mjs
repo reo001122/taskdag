@@ -137,7 +137,13 @@ export default {
     const inFrame = await dotColour('中の作業');
     check('C-1 枠の中に置いた Task は、丸点が枠の色になる', inFrame !== '所属なし', inFrame);
 
-    // 枠の外へ出すと外れる
+    /*
+      枠の外へ出すと外れる。
+
+      出す先は枠の左側にする。 枠は画面より大きく描かれていることがあり、
+      右や下へ出すと Task が窓の外に着地する。そうなると次に掴む座標も窓の外で、
+      マウスの押下が届かず、何も起きないまま「所属が戻らない」と出る。
+    */
     const out = await evaluate(`
       const task = [...document.querySelectorAll('.react-flow__node')]
         .find((n) => n.querySelector('.task-title'));
@@ -145,7 +151,7 @@ export default {
       const r = task.getBoundingClientRect();
       return {
         from: { x: Math.round(r.left + 6), y: Math.round(r.top + 6) },
-        to: { x: Math.round(frame.right + 90), y: Math.round(frame.top + 40) },
+        to: { x: Math.round(Math.max(20, frame.left - 100)), y: Math.round(frame.top + 40) },
       };
     `);
     await drag(out.from, out.to);
