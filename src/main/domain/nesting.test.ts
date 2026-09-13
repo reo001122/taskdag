@@ -3,6 +3,9 @@ import { demoteTaskToChild, moveChildTask, promoteChildTask } from './nesting';
 import { buildGraph, C, T } from './test-helpers';
 import { sequentialIds } from './test-ids';
 
+/** 末尾へ。位置を問わない検査では、表示の数を持ち出さずにこれを渡す。 */
+const END = Number.POSITIVE_INFINITY;
+
 /** 親Taskの childTask のタイトルを、並び順に並べて返す。 */
 const titlesOf = (graph: ReturnType<typeof buildGraph>, parent: string) =>
   (graph.tasks.get(T(parent))?.childTaskIds ?? []).map((id) => graph.childTasks.get(id)?.title);
@@ -14,7 +17,7 @@ const edgesOf = (graph: ReturnType<typeof buildGraph>) =>
 describe('Task を childTask にする(W-3)', () => {
   it('W-3: Task が消えて、相手の childTask として末尾に付く', () => {
     const graph = buildGraph({ tasks: { A: { children: ['既にある'] }, T: {} } });
-    const result = demoteTaskToChild(graph, T('T'), T('A'), sequentialIds());
+    const result = demoteTaskToChild(graph, T('T'), T('A'), END, sequentialIds());
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.tasks.has(T('T'))).toBe(false);
@@ -25,7 +28,7 @@ describe('Task を childTask にする(W-3)', () => {
     const graph = buildGraph({
       tasks: { A: {}, T: { progress: 'in_progress', memo: '途中まで' } },
     });
-    const result = demoteTaskToChild(graph, T('T'), T('A'), sequentialIds());
+    const result = demoteTaskToChild(graph, T('T'), T('A'), END, sequentialIds());
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const moved = [...result.value.childTasks.values()].find((c) => c.title === 'T');
@@ -41,7 +44,7 @@ describe('Task を childTask にする(W-3)', () => {
         ['T', 'Y'],
       ],
     });
-    const result = demoteTaskToChild(graph, T('T'), T('A'), sequentialIds());
+    const result = demoteTaskToChild(graph, T('T'), T('A'), END, sequentialIds());
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(edgesOf(result.value)).toEqual(['A→Y', 'X→A']);
@@ -49,7 +52,7 @@ describe('Task を childTask にする(W-3)', () => {
 
   it('W-3: 新しい親との間の依存は落とす(自己ループになるため)', () => {
     const graph = buildGraph({ tasks: { A: {}, T: {} }, edges: [['A', 'T']] });
-    const result = demoteTaskToChild(graph, T('T'), T('A'), sequentialIds());
+    const result = demoteTaskToChild(graph, T('T'), T('A'), END, sequentialIds());
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(edgesOf(result.value)).toEqual([]);
@@ -63,7 +66,7 @@ describe('Task を childTask にする(W-3)', () => {
         ['X', 'A'],
       ],
     });
-    const result = demoteTaskToChild(graph, T('T'), T('A'), sequentialIds());
+    const result = demoteTaskToChild(graph, T('T'), T('A'), END, sequentialIds());
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(edgesOf(result.value)).toEqual(['X→A']);
@@ -78,7 +81,7 @@ describe('Task を childTask にする(W-3)', () => {
         ['X', 'T'],
       ],
     });
-    const result = demoteTaskToChild(graph, T('T'), T('A'), sequentialIds());
+    const result = demoteTaskToChild(graph, T('T'), T('A'), END, sequentialIds());
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(edgesOf(result.value)).toEqual(['A→X']);
@@ -88,15 +91,35 @@ describe('Task を childTask にする(W-3)', () => {
     const graph = buildGraph({
       tasks: { A: { children: ['A の手順'] }, T: { children: ['手順1', '手順2'] } },
     });
-    const result = demoteTaskToChild(graph, T('T'), T('A'), sequentialIds());
+    const result = demoteTaskToChild(graph, T('T'), T('A'), END, sequentialIds());
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(titlesOf(result.value, 'A')).toEqual(['A の手順', 'T', '手順1', '手順2']);
   });
 
+  it('W-3: 指定した位置に入る', () => {
+    const graph = buildGraph({
+      tasks: { A: { children: ['先', '後'] }, T: {} },
+    });
+    const result = demoteTaskToChild(graph, T('T'), T('A'), 1, sequentialIds());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(titlesOf(result.value, 'A')).toEqual(['先', 'T', '後']);
+  });
+
+  it('W-3: childTask を持っていたら、その位置にまとめて入る', () => {
+    const graph = buildGraph({
+      tasks: { A: { children: ['先', '後'] }, T: { children: ['手順1', '手順2'] } },
+    });
+    const result = demoteTaskToChild(graph, T('T'), T('A'), 1, sequentialIds());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(titlesOf(result.value, 'A')).toEqual(['先', 'T', '手順1', '手順2', '後']);
+  });
+
   it('W-3: 自分自身の下には入れられない', () => {
     const graph = buildGraph({ tasks: { A: {} } });
-    const result = demoteTaskToChild(graph, T('A'), T('A'), sequentialIds());
+    const result = demoteTaskToChild(graph, T('A'), T('A'), END, sequentialIds());
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.type).toBe('cannot_nest_into_itself');
   });
@@ -139,7 +162,7 @@ describe('childTask を別の Task へ移す(W-3)', () => {
     const graph = buildGraph({
       tasks: { A: { children: [{ id: 'c1' }, { id: 'c2' }] }, B: { children: [{ id: 'b1' }] } },
     });
-    const result = moveChildTask(graph, C('c1'), T('B'));
+    const result = moveChildTask(graph, C('c1'), T('B'), END);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(titlesOf(result.value, 'A')).toEqual(['c2']);
@@ -147,11 +170,34 @@ describe('childTask を別の Task へ移す(W-3)', () => {
     expect(result.value.childTasks.get(C('c1'))?.parentId).toBe(T('B'));
   });
 
-  it('W-3: 同じ親へ移しても何も変わらない', () => {
-    const graph = buildGraph({ tasks: { A: { children: [{ id: 'c1' }, { id: 'c2' }] } } });
-    const result = moveChildTask(graph, C('c1'), T('A'));
+  it('W-3: 移す先の、指定した位置に入る', () => {
+    const graph = buildGraph({
+      tasks: { A: { children: [{ id: 'c1' }] }, B: { children: [{ id: 'b1' }, { id: 'b2' }] } },
+    });
+    const result = moveChildTask(graph, C('c1'), T('B'), 1);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(titlesOf(result.value, 'A')).toEqual(['c1', 'c2']);
+    expect(titlesOf(result.value, 'B')).toEqual(['b1', 'c1', 'b2']);
+  });
+
+  it('W-3: 同じ親の中で動かすと並べ替えになる', () => {
+    const graph = buildGraph({
+      tasks: { A: { children: [{ id: 'c1' }, { id: 'c2' }, { id: 'c3' }] } },
+    });
+    const result = moveChildTask(graph, C('c1'), T('A'), 2);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // 表示の並びで「c3 の手前」。自分が抜けるぶん後ろがずれるのを吸収する。
+    expect(titlesOf(result.value, 'A')).toEqual(['c2', 'c1', 'c3']);
+  });
+
+  it('W-3: 同じ親で、元の位置へ戻すと並びは変わらない', () => {
+    const graph = buildGraph({
+      tasks: { A: { children: [{ id: 'c1' }, { id: 'c2' }, { id: 'c3' }] } },
+    });
+    const result = moveChildTask(graph, C('c2'), T('A'), 1);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(titlesOf(result.value, 'A')).toEqual(['c1', 'c2', 'c3']);
   });
 });

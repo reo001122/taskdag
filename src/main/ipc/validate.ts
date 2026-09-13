@@ -168,7 +168,12 @@ export function parseCommand(raw: unknown): Result<Command, string> {
       if (!isNonEmptyString(raw.newParentId)) {
         return err('"newParentId" must be a non-empty string');
       }
-      return ok({ type, id: id.value, newParentId: raw.newParentId });
+      // index は「表示の並びで何番目の手前か」。負や小数のまま通すと、
+      // 並びの計算が想定外の場所へ入れる。
+      if (typeof raw.index !== 'number' || !Number.isInteger(raw.index) || raw.index < 0) {
+        return err('"index" must be a non-negative integer');
+      }
+      return ok({ type, id: id.value, newParentId: raw.newParentId, index: raw.index });
     }
 
     case 'promoteChildTask': {

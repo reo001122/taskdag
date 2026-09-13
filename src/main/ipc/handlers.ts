@@ -119,7 +119,9 @@ export function executeCommand(
 
     case 'demoteTaskToChild':
       return run(
-        service.mutate((s) => s.demoteTaskToChild(taskId(command.id), taskId(command.newParentId))),
+        service.mutate((s) =>
+          s.demoteTaskToChild(taskId(command.id), taskId(command.newParentId), command.index),
+        ),
       );
 
     case 'promoteChildTask':
@@ -130,7 +132,7 @@ export function executeCommand(
     case 'moveChildTask':
       return run(
         service.mutate((s) =>
-          s.moveChildTask(childTaskId(command.id), taskId(command.newParentId)),
+          s.moveChildTask(childTaskId(command.id), taskId(command.newParentId), command.index),
         ),
       );
 

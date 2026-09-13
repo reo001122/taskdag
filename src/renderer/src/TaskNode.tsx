@@ -1,7 +1,7 @@
 import { Handle, Position as HandlePosition, type NodeProps, NodeResizer } from '@xyflow/react';
 import { useEffect, useRef, useState } from 'react';
 import type { ChildTaskSnapshot, Command, Progress, TaskSnapshot } from '../../shared/ipc';
-import { startChildDrag } from './childDrag';
+import { type DropPoint, startChildDrag } from './childDrag';
 import { PROJECT_COLORS } from './colors';
 import { logger } from './log';
 
@@ -31,8 +31,8 @@ export type TaskNodeData = {
   onChildChainAdd: (parentId: string) => void;
   /** 名前を空にして Backspace が押された。その childTask を消す。 */
   onChildRemoveWhileEditing: (childId: string) => void;
-  /** childTask が掴まれて、画面上のその点で離された(W-3)。 */
-  onChildDropped: (childId: string, at: { x: number; y: number }) => void;
+  /** childTask が掴まれて、画面上のその点で離された(W-3)。to は入る先。 */
+  onChildDropped: (childId: string, at: { x: number; y: number }, to: DropPoint | null) => void;
 };
 
 /**
@@ -551,6 +551,7 @@ export function TaskNode({ data }: NodeProps): React.JSX.Element {
               return (
                 <div
                   key={child.id}
+                  data-child-id={child.id}
                   className={`child${child.progress === 'done' ? ' is-done' : ''}`}
                 >
                   <div className="child-row">
@@ -563,7 +564,7 @@ export function TaskNode({ data }: NodeProps): React.JSX.Element {
                       className="child-grip nodrag"
                       title="ドラッグして、別の Task の下へ移す / 独立させる"
                       onPointerDown={(e) =>
-                        startChildDrag(e, task.id, (at) => onChildDropped(child.id, at))
+                        startChildDrag(e, child, (at, to) => onChildDropped(child.id, at, to))
                       }
                     />
                     <StateToggle

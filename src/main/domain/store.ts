@@ -267,8 +267,8 @@ export class TaskGraphStore {
   // --- コマンド: Task と childTask の入れ替え(W-3) ---------------------------
 
   /** Task を、別の Task の childTask にする。依存は新しい親へ付け替わる。 */
-  demoteTaskToChild(id: TaskId, newParentId: TaskId): Result<void, DomainError> {
-    return this.#run((g) => demoteTaskToChild(g, id, newParentId, this.#newId));
+  demoteTaskToChild(id: TaskId, newParentId: TaskId, index: number): Result<void, DomainError> {
+    return this.#run((g) => demoteTaskToChild(g, id, newParentId, index, this.#newId));
   }
 
   /** childTask を、独立した Task にする。依存は引き継がない。 */
@@ -277,8 +277,8 @@ export class TaskGraphStore {
   }
 
   /** childTask を別の Task の下へ移す。 */
-  moveChildTask(id: ChildTaskId, newParentId: TaskId): Result<void, DomainError> {
-    return this.#run((g) => moveChildTask(g, id, newParentId));
+  moveChildTask(id: ChildTaskId, newParentId: TaskId, index: number): Result<void, DomainError> {
+    return this.#run((g) => moveChildTask(g, id, newParentId, index));
   }
 
   // --- コマンド: エッジ / Project / レイアウト -------------------------------

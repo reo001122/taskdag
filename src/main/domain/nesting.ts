@@ -43,6 +43,7 @@ export function demoteTaskToChild(
   graph: TaskGraph,
   id: TaskId,
   newParentId: TaskId,
+  index: number,
   newId: IdGenerator,
 ): Result<TaskGraph, DomainError> {
   if (id === newParentId) return err(cannotNestIntoItself(id));
@@ -75,9 +76,14 @@ export function demoteTaskToChild(
   // 2. T を消し、A の並びの末尾に足す。
   const tasks = new Map(graph.tasks);
   tasks.delete(id);
+  const at = clamp(index, parent.childTaskIds.length);
   tasks.set(newParentId, {
     ...parent,
-    childTaskIds: [...parent.childTaskIds, ...moved.map((c) => c.id)],
+    childTaskIds: [
+      ...parent.childTaskIds.slice(0, at),
+      ...moved.map((c) => c.id),
+      ...parent.childTaskIds.slice(at),
+    ],
   });
 
   // 3. 依存を A へ付け替える。
@@ -150,11 +156,18 @@ export function promoteChildTask(
   return ok({ ...graph, tasks, childTasks });
 }
 
-/** childTask を別の Task の下へ移す。並びの末尾に付く。 */
+/**
+ * childTask を、指定の位置へ移す。移す先は別の Task でも、元と同じでもよい。
+ *
+ * index は「今 画面に並んでいる順で、何番目の手前に入れるか」。同じ親の中で
+ * 動かすときは、自分を取り除いたぶんだけ後ろがずれるので、そのぶんを引く。
+ * 呼ぶ側が表示から読んだ数をそのまま渡せるようにするため、ここで吸収する。
+ */
 export function moveChildTask(
   graph: TaskGraph,
   id: ChildTaskId,
   newParentId: TaskId,
+  index: number,
 ): Result<TaskGraph, DomainError> {
   const child = graph.childTasks.get(id);
   if (!child) return err(childTaskNotFound(id));
@@ -162,14 +175,34 @@ export function moveChildTask(
   if (!from) return err(taskNotFound(child.parentId));
   const to = graph.tasks.get(newParentId);
   if (!to) return err(taskNotFound(newParentId));
-  if (child.parentId === newParentId) return ok(graph);
+
+  const sameParent = child.parentId === newParentId;
+  const wasAt = from.childTaskIds.indexOf(id);
+  const remaining = (sameParent ? from : to).childTaskIds.filter((c) => c !== id);
+  const at = clamp(sameParent && wasAt < index ? index - 1 : index, remaining.length);
 
   const tasks = new Map(graph.tasks);
-  tasks.set(from.id, { ...from, childTaskIds: from.childTaskIds.filter((c) => c !== id) });
-  tasks.set(to.id, { ...to, childTaskIds: [...to.childTaskIds, id] });
+  if (sameParent) {
+    tasks.set(to.id, {
+      ...to,
+      childTaskIds: [...remaining.slice(0, at), id, ...remaining.slice(at)],
+    });
+  } else {
+    tasks.set(from.id, { ...from, childTaskIds: from.childTaskIds.filter((c) => c !== id) });
+    tasks.set(to.id, {
+      ...to,
+      childTaskIds: [...remaining.slice(0, at), id, ...remaining.slice(at)],
+    });
+  }
 
   const childTasks = new Map(graph.childTasks);
   childTasks.set(id, { ...child, parentId: newParentId });
 
   return ok({ ...graph, tasks, childTasks });
+}
+
+/** 0 と length の間へ収める。表示から読んだ数をそのまま受けるため。 */
+function clamp(index: number, length: number): number {
+  if (!Number.isFinite(index)) return length;
+  return Math.max(0, Math.min(Math.trunc(index), length));
 }

@@ -96,9 +96,9 @@ export type Command =
     分解してみたら独立した作業だった、逆に独立させていたが別の作業の一手順
     だった、というのは書き出している最中に起きる。書き直しではなく移動でやる。
   */
-  | { type: 'demoteTaskToChild'; id: string; newParentId: string }
+  | { type: 'demoteTaskToChild'; id: string; newParentId: string; index: number }
   | { type: 'promoteChildTask'; id: string; position: Position }
-  | { type: 'moveChildTask'; id: string; newParentId: string }
+  | { type: 'moveChildTask'; id: string; newParentId: string; index: number }
   | { type: 'connect'; from: string; to: string }
   | { type: 'disconnect'; id: string }
   | {

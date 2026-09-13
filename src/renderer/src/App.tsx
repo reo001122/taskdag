@@ -18,7 +18,7 @@ import './styles.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { type Rect, rectsOverlap } from '../../shared/geometry';
 import type { Command, CommandResult, DeletePlan, GraphSnapshot } from '../../shared/ipc';
-import { taskHeadUnder, taskUnder } from './childDrag';
+import { clearDropFeedback, type DropPoint, findDropPoint, showDropFeedback } from './childDrag';
 import { PROJECT_COLOR_COUNT, projectColorAt } from './colors';
 import { DependencyEdge, type DependencyEdgeData } from './DependencyEdge';
 import { computeLayout, findFreeProjectSlot, NEW_PROJECT_SIZE, type NodeSize } from './layout';
@@ -78,8 +78,8 @@ export function App(): React.JSX.Element {
    * ここでやっているのは見た目を追従させることだけで、置き去りにすると
    * 「枠だけ動いて中身が残る」という嘘の状態が見えてしまう。
    */
-  /** Task を別の Task の見出しへ運んでいる間、その相手を控える(W-3)。 */
-  const nestTarget = useRef<string | null>(null);
+  /** Task を別の Task へ運んでいる間、入る先を控える(W-3)。 */
+  const nestTarget = useRef<DropPoint | null>(null);
 
   const frameDrag = useRef<{
     nodeId: string;
@@ -185,18 +185,37 @@ export function App(): React.JSX.Element {
    * 場所に置く —— 所属する Project もそこから導かれる(FR-4)。元の親の上で
    * 離したときは何もしない。
    */
+  /**
+   * 「どの行の手前か」を、ドメインが扱う並びの位置に直す(W-3)。
+   *
+   * 完了を非表示にしている間、画面に出ている行とドメイン側の並びは食い違う。
+   * 画面から数えた数をそのまま渡すと、隠れている行のぶんだけずれる。
+   */
+  const indexOfDrop = useCallback(
+    (to: DropPoint): number => {
+      const parent = snapshot?.tasks.find((t) => t.id === to.taskId);
+      if (!parent) return 0;
+      if (to.beforeChildId === null) return parent.childTaskIds.length;
+      const at = parent.childTaskIds.indexOf(to.beforeChildId);
+      return at < 0 ? parent.childTaskIds.length : at;
+    },
+    [snapshot],
+  );
+
   const onChildDropped = useCallback(
-    (childId: string, at: { x: number; y: number }) => {
-      const onto = taskUnder(at.x, at.y);
-      const child = snapshot?.childTasks.find((c) => c.id === childId);
-      if (onto !== null) {
-        if (child && onto === child.parentId) return;
-        send({ type: 'moveChildTask', id: childId, newParentId: onto });
+    (childId: string, at: { x: number; y: number }, to: DropPoint | null) => {
+      if (to !== null) {
+        send({
+          type: 'moveChildTask',
+          id: childId,
+          newParentId: to.taskId,
+          index: indexOfDrop(to),
+        });
         return;
       }
       send({ type: 'promoteChildTask', id: childId, position: screenToFlowPosition(at) });
     },
-    [send, snapshot, screenToFlowPosition],
+    [send, indexOfDrop, screenToFlowPosition],
   );
 
   const refresh = useCallback(async () => {
@@ -612,15 +631,12 @@ export function App(): React.JSX.Element {
               // React Flow はタッチのイベントも渡してくる。座標の取り口が違う。
               const point = 'clientX' in event ? event : event.touches[0];
               if (!point) return;
-              const onto = taskHeadUnder(point.clientX, point.clientY, node.id);
+              const onto = findDropPoint(point.clientX, point.clientY, {
+                except: node.id,
+                onlyHead: true,
+              });
               nestTarget.current = onto;
-              setNodes((current) =>
-                current.map((n) =>
-                  n.type === 'task'
-                    ? { ...n, className: n.id === onto ? 'is-drop-target' : undefined }
-                    : n,
-                ),
-              );
+              showDropFeedback(onto);
               return;
             }
             const drag = frameDrag.current;
@@ -653,12 +669,15 @@ export function App(): React.JSX.Element {
             if (node.type === 'task') {
               const onto = nestTarget.current;
               nestTarget.current = null;
-              setNodes((current) =>
-                current.map((n) => (n.type === 'task' ? { ...n, className: undefined } : n)),
-              );
+              clearDropFeedback();
               if (onto !== null) {
                 // 相手の下へ入れる。依存は相手へ付け替わる(W-3)。
-                send({ type: 'demoteTaskToChild', id: node.id, newParentId: onto });
+                send({
+                  type: 'demoteTaskToChild',
+                  id: node.id,
+                  newParentId: onto.taskId,
+                  index: indexOfDrop(onto),
+                });
                 return;
               }
               send({ type: 'moveTask', id: node.id, position: node.position });
