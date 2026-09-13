@@ -26,14 +26,3 @@ GitHub issue を作成する。
 ## Skill が「関連する ticket を取得する」と言うとき
 
 `gh issue view <number> --comments` を実行する。
-
-## Wayfinding での運用
-
-`/wayfinder` が使う。**map** は1つの issue で、**child** issue がチケットになる。
-
-- **Map**: `wayfinder:map` ラベルの単一 issue。Notes / Decisions-so-far / Fog を本文に持つ。`gh issue create --label wayfinder:map`。
-- **Child ticket**: map に GitHub の sub-issue としてリンクされた issue(`gh api` の sub-issues エンドポイント)。sub-issue が使えない場合は、map 本文のタスクリストに追加し、child 本文の先頭に `Part of #<map>` と書く。ラベルは `wayfinder:<type>`(`research`/`prototype`/`grilling`/`task`)。claim されたら、実装者にアサインする。
-- **ブロッキング**: GitHub の**ネイティブな issue dependencies**を正とする(UI 上でも見える)。`gh api --method POST repos/<owner>/<repo>/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>` でエッジを追加する。`<blocker-db-id>` はブロッカーの数値の**database id**(`gh api repos/<owner>/<repo>/issues/<n> --jq .id`。`#number` や `node_id` ではない)。GitHub は `issue_dependencies_summary.blocked_by`(開いているブロッカーのみ、リアルタイムのゲート)を返す。dependencies が使えない環境では、child 本文先頭の `Blocked by: #<n>, #<n>` にフォールバックする。すべてのブロッカーが閉じたら unblocked。
-- **Frontier query**: map の開いている child(`gh issue list --state open`、map の sub-issue / タスクリストに絞る)を一覧し、開いているブロッカーがあるもの(`issue_dependencies_summary.blocked_by > 0`、または `Blocked by` 行に開いている issue がある)や assignee があるものを除く。map の順で最初のものが選ばれる。
-- **Claim**: `gh issue edit <n> --add-assignee @me`。そのセッションの最初の書き込み。
-- **解決**: `gh issue comment <n> --body "<answer>"` の後 `gh issue close <n>`、そして map の Decisions-so-far にコンテキストへのポインタ(gist + リンク)を追記する。
