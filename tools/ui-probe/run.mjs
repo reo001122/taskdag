@@ -93,8 +93,17 @@ async function main() {
 function readAssignedPort(child, timeoutMs = 15000) {
   return new Promise((resolve, reject) => {
     let buffer = '';
+    /*
+      起動できなかったときは、Electron が stderr に理由を書いている
+      (共有ライブラリが無い、サンドボックスの設定が違う、など)。
+      それを捨てて「終了した」とだけ伝えると、手元で再現できない環境
+      —— CI のような —— で原因に辿り着けない。読んだぶんを添えて返す。
+    */
+    const withOutput = (message) =>
+      new Error(buffer.trim() ? `${message}\n--- アプリの出力 ---\n${buffer.trim()}` : message);
+
     const timer = setTimeout(
-      () => reject(new Error(`CDP のポートを ${timeoutMs}ms 以内に名乗らなかった`)),
+      () => reject(withOutput(`CDP のポートを ${timeoutMs}ms 以内に名乗らなかった`)),
       timeoutMs,
     );
     const onData = (chunk) => {
@@ -106,9 +115,9 @@ function readAssignedPort(child, timeoutMs = 15000) {
       resolve(Number(found[1]));
     };
     child.stderr.on('data', onData);
-    child.once('exit', () => {
+    child.once('exit', (code, signal) => {
       clearTimeout(timer);
-      reject(new Error('アプリがポートを名乗る前に終了した'));
+      reject(withOutput(`アプリがポートを名乗る前に終了した(code=${code} signal=${signal})`));
     });
   });
 }
@@ -130,6 +139,9 @@ async function inParallel(items, limit, run) {
 /** 終わるまで待つ。素直に終わらなければ落とす。 */
 function stop(child, graceMs = 3000) {
   return new Promise((resolve) => {
+    // 起動に失敗すると child が無いまま後片付けに来る。ここで落ちると、
+    // 起動できなかった本当の理由が TypeError に置き換わって見えなくなる。
+    if (!child) return resolve();
     if (child.exitCode !== null) return resolve();
     const timer = setTimeout(() => child.kill('SIGKILL'), graceMs);
     child.on('close', () => {
