@@ -1,6 +1,9 @@
-> **この文書は英語のままにしています。** 引用元がすべて英語の一次情報(Hacker News、
-> GitHub Issues/Discussions、各ツールの公式ドキュメント)であり、訳すと引用としての
+> **この文書は英語のままにしています。** 引用元が英語(Hacker News、GitHub の
+> Issues/Discussions、各ツールの公式ドキュメントなど)であり、訳すと引用としての
 > 正確さが落ちるためです。他の設計文書は日本語です。
+
+> **Surveyed 2026-09-06.** External products change; statements about what a given tool
+> does or does not do describe that date. Check the cited sources before relying on them.
 
 # Scope
 
