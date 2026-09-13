@@ -70,7 +70,9 @@ async function main() {
       console.log(`  ${c.ok ? '✓' : '✗'} ${c.label}${detail}`);
     }
     if (result.error) console.log(`  ! ${result.error.message}`);
+    if (result.layout) console.log(`  画面の状態: ${JSON.stringify(result.layout)}`);
     if (result.shotPath) console.log(`  画面: ${result.shotPath}`);
+    if (result.shotError) console.log(`  画面を撮れなかった: ${result.shotError}`);
     failures += result.checks.filter((c) => !c.ok).length + (result.error ? 1 : 0);
   }
 
@@ -193,6 +195,8 @@ async function runScenario(scenario) {
   let error = null;
   let cdp = null;
   let shotPath = null;
+  let shotError = null;
+  let layout = null;
   let app = null;
   try {
     ({ electron: app, cdp } = await launch());
@@ -217,12 +221,39 @@ async function runScenario(scenario) {
       まず見られるようにしておく。人が見るためのもので、自動判定はしない。
     */
     if (cdp && (error || checks.some((c) => !c.ok))) {
+      /*
+        画面から読める数値も残す。
+
+        画像は取りに行く手間がかかるうえ、撮れないこともある(実際 CI で
+        撮れなかった)。窓の大きさとノードの位置はログにそのまま出るので、
+        手元と違う環境で何が起きたかを、これだけで絞り込めることがある。
+      */
+      try {
+        layout = await cdp.evaluate(`
+          const round = (n) => Math.round(n);
+          return {
+            窓: [innerWidth, innerHeight, devicePixelRatio],
+            ノード: [...document.querySelectorAll('.react-flow__node')].map((n) => {
+              const r = n.getBoundingClientRect();
+              return {
+                名: n.querySelector('.task-title,.project-name')?.textContent ?? '?',
+                位置: [round(r.left), round(r.top), round(r.width), round(r.height)],
+              };
+            }),
+            矢印: document.querySelectorAll('.react-flow__edge').length,
+          };
+        `);
+      } catch (e) {
+        layout = { 読めなかった: e.message };
+      }
+
       try {
         const png = await cdp.screenshot();
         shotPath = join(repoRoot, `ui-probe-${scenario.name}.png`);
         writeFileSync(shotPath, Buffer.from(png, 'base64'));
-      } catch {
+      } catch (e) {
         shotPath = null;
+        shotError = e.message;
       }
     }
     cdp?.close();
@@ -232,7 +263,7 @@ async function runScenario(scenario) {
     rmSync(userDataDir, { recursive: true, force: true });
   }
 
-  return { scenario, checks, error, shotPath };
+  return { scenario, checks, error, shotPath, shotError, layout };
 }
 
 await main();
