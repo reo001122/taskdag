@@ -271,15 +271,25 @@ body {
   border-radius: 4px;
 }
 
-/* 着手中: 枠を強調し、内側を塗る。今やっているものが一番目に入るように。 */
+/*
+  着手中: 円の左半分だけ塗る。
+
+  内側を全部塗ると、完了(塗り+チェック)と見分けがつかない。実際に
+  着手中の Task を完了と取り違えた報告が出た。半分だけ塗れば「途中」に読める。
+*/
 .state-toggle.is-in-progress .state-box {
   border-color: var(--active);
+  /* 四角から円にすることで、形でも未着手・完了と分かれる。 */
+  border-radius: 50%;
 }
 .state-toggle.is-in-progress .state-box::after {
   content: "";
   position: absolute;
-  inset: 2px;
-  border-radius: 2px;
+  top: 1.5px;
+  right: 50%;
+  bottom: 1.5px;
+  left: 1.5px;
+  border-radius: 5px 0 0 5px;
   background: var(--active);
 }
 
