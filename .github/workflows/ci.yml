@@ -64,8 +64,15 @@ jobs:
           sudo chown root:root node_modules/electron/dist/chrome-sandbox
           sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
 
+      # --show-window を渡す。既定では画面に出さないが、出さないままだと
+      # ウィンドウが一度も合成されず、フレームが進まない。requestAnimationFrame が
+      # 発火しないため、入力欄へのフォーカス(rAF で再試行している)が移らず、
+      # 接続のドラッグも取りこぼし、Page.captureScreenshot は応答を返さない。
+      #
+      # 手元で隠しているのは、コミットのたびに画面が割り込まないようにするため。
+      # CI には割り込まれる人がいないので、出して構わない。実際の使われ方にも近い。
       - name: Drive the app
-        run: xvfb-run -a npm run probe
+        run: xvfb-run -a npm run probe -- --show-window
 
       - name: Keep the screen from a failed scenario
         if: failure()
