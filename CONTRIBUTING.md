@@ -97,6 +97,13 @@ npm run probe
 まとめて手で走らせるなら `npm run verify`。急ぎで飛ばすなら `git commit --no-verify`
 ですが、飛ばしたぶんは CI で落ちます。
 
+## Issue の管理
+
+Issue は GitHub Issues で管理します(`gh` CLI 経由)。トリアージには5つのラベルを使います:
+`needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix`。
+
+規約の詳細は `docs/agents/issue-tracker.md` と `docs/agents/triage-labels.md` にあります。
+
 ## コミット
 
 Conventional Commits(`feat:`, `fix:`, `refactor:`, `docs:`, `chore:`)、英語、1コミット
