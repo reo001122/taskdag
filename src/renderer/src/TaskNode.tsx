@@ -2,6 +2,7 @@ import { Handle, Position as HandlePosition, type NodeProps, NodeResizer } from 
 import { useEffect, useRef, useState } from 'react';
 import type { ChildTaskSnapshot, Command, Progress, TaskSnapshot } from '../../shared/ipc';
 import { PROJECT_COLORS } from './colors';
+import { logger } from './log';
 
 /**
  * Task のカスタムノード(FR-2, FR-5, FR-6)
@@ -20,16 +21,27 @@ export type TaskNodeData = {
   /** 所属先の色。Project ごとに決まる。属していなければ null。 */
   projectColor: string | null;
   hideCompleted: boolean;
-  /** 作成直後の子タスクを、追加と同時に編集状態にするための目印。 */
-  autoEditLastChild: boolean;
-  /** 作成直後の Task を、追加と同時に編集状態にするための目印。 */
-  autoEditTitle: boolean;
+  /** 追加・削除の直後に編集へ入れる相手。Task と childTask のどちらの id も入る。 */
+  autoEdit: AutoEdit;
   send: (command: Command) => void;
   requestDelete: (id: string) => void;
   onAutoEditConsumed: () => void;
   /** 入力中に Shift+Enter が押された。確定して、続けてもう1件足す。 */
   onChildChainAdd: (parentId: string) => void;
+  /** 名前を空にして Backspace が押された。その childTask を消す。 */
+  onChildRemoveWhileEditing: (childId: string) => void;
 };
+
+/**
+ * カーソルの置き方。
+ *
+ * 足したばかりの項目は仮の名前が入っているので全選択(打てば置き換わる)。
+ * 消した先で1つ上へ戻ったときは末尾に置く —— 全選択だと、次の1打で
+ * 前の項目の名前まで消える。
+ */
+export type Caret = 'all' | 'end';
+
+export type AutoEdit = { id: string; caret: Caret } | null;
 
 /** 未着手 → 着手中 → 完了 → 未着手 と巡回する。 */
 const nextProgress = (current: Progress): Progress =>
@@ -72,21 +84,98 @@ function StateToggle({
   );
 }
 
+const log = logger('edit');
+
+/**
+ * 入力欄へフォーカスを移す。移るまで数フレーム待つ。
+ *
+ * 1回呼ぶだけでは足りない。 React Flow はノードの寸法を測り終えるまで
+ * そのノードを `visibility: hidden` にしており、隠れている要素への focus() は
+ * 何も起こさずに黙って終わる。Task や childTask を足した直後は、まさにその
+ * 瞬間に当たる —— 入力欄は現れるのに、打った文字がどこにも入らなかった。
+ *
+ * 取れたか(document.activeElement)を見て、駄目なら次のフレームで試す。
+ * 要素が消えていれば諦める。
+ */
+function focusWhenVisible(
+  el: HTMLInputElement | HTMLTextAreaElement | null,
+  caret: Caret,
+  framesLeft = 20,
+): void {
+  if (!el || !document.contains(el)) return;
+
+  el.focus();
+  if (document.activeElement === el) {
+    if (caret === 'all') el.select();
+    else el.setSelectionRange(el.value.length, el.value.length);
+    return;
+  }
+
+  if (framesLeft <= 0) {
+    log.warn('入力欄にフォーカスできなかった');
+    return;
+  }
+  requestAnimationFrame(() => focusWhenVisible(el, caret, framesLeft - 1));
+}
+
+/**
+ * 開いている間、外側が押されたら閉じる。
+ *
+ * blur を閉じる合図にすると、フォーカスを奪われただけで畳まれてしまう。
+ * 押された場所を見るなら、フォーカスがどこへ行ったかに依存しない。
+ *
+ * 判定と後始末は毎レンダー詰め替えた ref 越しに呼ぶ。リスナは登録した時点の
+ * クロージャを掴んだままなので、直接呼ぶと古い値を見る。
+ */
+function useCloseOnOutsidePointerDown(
+  active: boolean,
+  isInside: (target: Node) => boolean,
+  onOutside: () => void,
+): void {
+  const latest = useRef({ isInside, onOutside });
+  useEffect(() => {
+    latest.current = { isInside, onOutside };
+  });
+
+  useEffect(() => {
+    if (!active) return;
+    const onPointerDown = (event: PointerEvent): void => {
+      if (latest.current.isInside(event.target as Node)) return;
+      latest.current.onOutside();
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+  }, [active]);
+}
+
 function EditableText({
   value,
   className,
   startEditing: startInEditMode = false,
+  caret = 'all',
   onCommit,
   onEditEnd,
   onCommitAndAdd,
+  onCommitAndMemo,
+  onRemoveWhenEmpty,
 }: {
   value: string;
   className: string;
   startEditing?: boolean;
+  caret?: Caret;
   onCommit: (next: string) => void;
   onEditEnd?: () => void;
   /** Shift+Enter で確定したときに呼ばれる。確定して、続けて次の項目を足す用。 */
   onCommitAndAdd?: () => void;
+  /** Tab が押されたときに呼ばれる。確定して、メモの入力へ移る用。 */
+  onCommitAndMemo?: () => void;
+  /**
+   * 名前が空の状態で Backspace が押されたときに呼ばれる。渡さなければ何も起きない。
+   *
+   * childTask にだけ渡す。 Task を同じ操作で消せるようにすると、childTask の
+   * 巻き添え削除と依存エッジの再接続が無言で走る。FR-1 がそこに確認を要求している。
+   */
+  onRemoveWhenEmpty?: () => void;
 }): React.JSX.Element {
   const [editing, setEditing] = useState(startInEditMode);
   const [draft, setDraft] = useState(value);
@@ -110,32 +199,36 @@ function EditableText({
     };
   });
 
+  /*
+    追加された直後に編集へ入る。
+
+    マウント時の初期値だけを見ていたのでは間に合わない。子タスクを足す経路では
+    スナップショットの反映が先に描画され、目印が立つのはその後になるため、
+    「もう出来上がっている入力欄に、後から目印が届く」形になる。
+  */
+  useEffect(() => {
+    if (!startInEditMode) return;
+    log.debug('追加直後の目印が届いた。編集に入る', { value });
+    setEditing(true);
+  }, [startInEditMode, value]);
+
   // autoFocus 属性はスクリーンリーダーの読み上げ位置を突然動かすため使わない。
   // 編集に切り替わった時点で明示的にフォーカスする。
   useEffect(() => {
     if (!editing) return;
     closingRef.current = false;
-    inputRef.current?.focus();
-    inputRef.current?.select();
-  }, [editing]);
+    focusWhenVisible(inputRef.current, caret);
+  }, [editing, caret]);
 
-  /*
-    編集を閉じるのは「入力欄の外が押されたとき」だけにする。
-
-    blur で閉じていたときは、開いた直後に何かがフォーカスを奪うだけで編集が
-    畳まれ、結果として2回クリックしないと編集に入れなかった。何がフォーカスを
-    奪うかを突き止めるより、フォーカスの行き先を見るのをやめるほうが確実に済む。
-  */
-  useEffect(() => {
-    if (!editing) return;
-    const onPointerDown = (event: PointerEvent): void => {
-      if (inputRef.current?.contains(event.target as Node)) return;
+  // 編集を閉じるのは、入力欄の外が押されたときだけ。
+  useCloseOnOutsidePointerDown(
+    editing,
+    (target) => inputRef.current?.contains(target) ?? false,
+    () => {
       closingRef.current = true;
       finishRef.current(false);
-    };
-    document.addEventListener('pointerdown', onPointerDown, true);
-    return () => document.removeEventListener('pointerdown', onPointerDown, true);
-  }, [editing]);
+    },
+  );
 
   const begin = (): void => {
     setDraft(value);
@@ -199,6 +292,26 @@ function EditableText({
           // 分解を一気に書き出す間、ボタンへ手を戻さずに済む。
           finishRef.current(e.shiftKey);
         }
+        /*
+          Tab は「次の欄へ」。名前の次にあるのはメモなので、そこへ移る。
+
+          名前を打ち終えてメモを書きたいたびにマウスへ持ち替えるのでは、
+          書き出しの流れが切れる。Tab 本来の意味から外れてもいない。
+        */
+        if (e.key === 'Tab' && !e.shiftKey && onCommitAndMemo) {
+          e.preventDefault();
+          finishRef.current(false);
+          onCommitAndMemo();
+        }
+
+        // 空の名前で Backspace は「この項目を取り消す」。Shift+Enter で
+        // 行き過ぎたぶんを、手をキーボードに置いたまま戻せるようにする。
+        if (e.key === 'Backspace' && draft === '' && onRemoveWhenEmpty) {
+          e.preventDefault();
+          setEditing(false);
+          onEditEnd?.();
+          onRemoveWhenEmpty();
+        }
         if (e.key === 'Escape') {
           setEditing(false);
           onEditEnd?.();
@@ -243,10 +356,7 @@ function Memo({
   }, [memo]);
 
   useEffect(() => {
-    if (editing) {
-      ref.current?.focus();
-      ref.current?.select();
-    }
+    if (editing) focusWhenVisible(ref.current, 'all');
   }, [editing]);
 
   const finish = (): void => {
@@ -302,12 +412,12 @@ export function TaskNode({ data }: NodeProps): React.JSX.Element {
     children,
     projectColor,
     hideCompleted,
-    autoEditLastChild,
-    autoEditTitle,
+    autoEdit,
     send,
     requestDelete,
     onAutoEditConsumed,
     onChildChainAdd,
+    onChildRemoveWhileEditing,
   } = data as unknown as TaskNodeData;
 
   const isDone = task.progress === 'done';
@@ -335,8 +445,8 @@ export function TaskNode({ data }: NodeProps): React.JSX.Element {
 
   return (
     /*
-      取っ手は角からはみ出すため、本体の外側に置く。本体の中に置くと
-      overflow: hidden で切り落とされ、かといって visible にすると
+      取っ手と接続の端は、角や辺からはみ出すため本体の外側に置く。本体の中に
+      置くと overflow: hidden で切り落とされ、かといって visible にすると
       ヘッダの背景が親の丸い角を上書きして枠線が途切れる。
     */
     <div
@@ -346,8 +456,6 @@ export function TaskNode({ data }: NodeProps): React.JSX.Element {
       }
     >
       <div className={className}>
-        <Handle type="target" position={HandlePosition.Left} />
-
         <div className="task-head">
           <StateToggle
             progress={task.progress}
@@ -359,29 +467,37 @@ export function TaskNode({ data }: NodeProps): React.JSX.Element {
           <EditableText
             value={task.title}
             className="task-title"
-            startEditing={autoEditTitle}
+            startEditing={autoEdit?.id === task.id}
+            caret={autoEdit?.caret}
             onEditEnd={onAutoEditConsumed}
             onCommit={(title) => send({ type: 'updateTaskTitle', id: task.id, title })}
             // Shift+Enter で、Task 名を打ち終えた勢いのまま分解に入れる
             onCommitAndAdd={() => onChildChainAdd(task.id)}
+            // Tab で、そのままメモへ
+            onCommitAndMemo={() => setMemoTarget('task')}
           />
 
           <span className="task-actions nodrag">
             {children.length > 0 && (
+              /*
+                折りたたんでいる間は件数を出す。畳んだ Task は1行の Task と
+                見た目が変わらず、中身があること自体が画面から消える。
+                件数は畳んでいるときだけ出す —— 開いていれば数えられる。
+              */
               <button
                 type="button"
-                className="state-button"
-                title={task.collapsed ? `展開 (${children.length})` : '折りたたむ'}
+                className={`state-button${task.collapsed ? ' is-collapsed' : ''}`}
+                title={task.collapsed ? `展開 (${children.length} 件)` : '折りたたむ'}
                 onClick={() =>
                   send({ type: 'setTaskCollapsed', id: task.id, collapsed: !task.collapsed })
                 }
               >
-                {task.collapsed ? '▸' : '▾'}
+                {task.collapsed ? `▸ ${children.length}` : '▾'}
               </button>
             )}
             <button
               type="button"
-              className={`state-button${task.memo.length > 0 ? ' has-memo' : ''}`}
+              className="state-button"
               title="メモ"
               onClick={() => setMemoTarget('task')}
             >
@@ -448,7 +564,8 @@ export function TaskNode({ data }: NodeProps): React.JSX.Element {
                     <EditableText
                       value={child.title}
                       className="child-title"
-                      startEditing={autoEditLastChild && isLast}
+                      startEditing={autoEdit?.id === child.id}
+                      caret={autoEdit?.caret}
                       onEditEnd={onAutoEditConsumed}
                       onCommit={(title) =>
                         send({ type: 'updateChildTaskTitle', id: child.id, title })
@@ -456,6 +573,10 @@ export function TaskNode({ data }: NodeProps): React.JSX.Element {
                       // Shift+Enter で確定したら、続けてもう1件足す。
                       // 分解は一気に書き出したいので、都度ボタンへ手を戻したくない。
                       onCommitAndAdd={() => onChildChainAdd(task.id)}
+                      // Tab で、そのままメモへ
+                      onCommitAndMemo={() => setMemoTarget(child.id)}
+                      // 名前を空にして Backspace で、この項目を取り消す
+                      onRemoveWhenEmpty={() => onChildRemoveWhileEditing(child.id)}
                     />
 
                     <span className="child-actions nodrag">
@@ -493,7 +614,7 @@ export function TaskNode({ data }: NodeProps): React.JSX.Element {
                       </button>
                       <button
                         type="button"
-                        className={`state-button${child.memo.length > 0 ? ' has-memo' : ''}`}
+                        className="state-button"
                         title="メモ"
                         onClick={() => setMemoTarget(child.id)}
                       >
@@ -521,9 +642,15 @@ export function TaskNode({ data }: NodeProps): React.JSX.Element {
             })}
           </div>
         )}
-
-        <Handle type="source" position={HandlePosition.Right} />
       </div>
+
+      {/*
+        接続の端は、取っ手と同じ理由で本体の外側に置く。本体は角を整えるために
+        overflow: hidden にしてあり、中に置くと外側の半分が切り落とされる。
+        見た目は縦棒のままなのに掴める幅が実測 2.5px しかなく、狙って掴めない。
+      */}
+      <Handle type="target" position={HandlePosition.Left} />
+      <Handle type="source" position={HandlePosition.Right} />
 
       {/*
         左上の頂点に重なる丸点。どの Project に属しているかの印。
@@ -539,7 +666,13 @@ export function TaskNode({ data }: NodeProps): React.JSX.Element {
   );
 }
 
-/** 枠の名前。掴んで動かす邪魔をしないよう、改名はダブルクリックで始める。 */
+/**
+ * 枠の名前。Task 名と同じくワンクリックで改名に入る。
+ *
+ * フォーカスの扱いも Task 名と同じにしてある。blur を閉じる合図にすると、
+ * 開いた直後に何かがフォーカスを奪うだけで畳まれ、2回クリックしないと
+ * 編集に入れなくなる —— Task 名で実際に起きた。
+ */
 function ProjectName({
   name,
   onRename,
@@ -550,35 +683,51 @@ function ProjectName({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(name);
   const inputRef = useRef<HTMLInputElement>(null);
+  const closingRef = useRef(false);
+
+  const commitRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    commitRef.current = (): void => {
+      setEditing(false);
+      const trimmed = draft.trim();
+      if (trimmed.length > 0 && trimmed !== name) onRename(trimmed);
+    };
+  });
 
   useEffect(() => {
-    if (editing) {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    }
+    if (!editing) return;
+    closingRef.current = false;
+    focusWhenVisible(inputRef.current, 'all');
   }, [editing]);
 
+  useCloseOnOutsidePointerDown(
+    editing,
+    (target) => inputRef.current?.contains(target) ?? false,
+    () => {
+      closingRef.current = true;
+      commitRef.current();
+    },
+  );
+
   if (!editing) {
+    /*
+      ワンクリックで改名に入る。**枠はラベル以外でも掴めるようになったので、
+      ラベルを取っ手として空けておく必要がなくなった。** Task 名と揃う。
+    */
     return (
       <button
         type="button"
-        className="project-name"
-        onDoubleClick={() => {
+        className="project-name nodrag"
+        onClick={() => {
           setDraft(name);
           setEditing(true);
         }}
-        title="ドラッグで移動 / ダブルクリックで改名"
+        title="クリックで改名"
       >
         {name}
       </button>
     );
   }
-
-  const commit = (): void => {
-    setEditing(false);
-    const trimmed = draft.trim();
-    if (trimmed.length > 0 && trimmed !== name) onRename(trimmed);
-  };
 
   return (
     <input
@@ -586,15 +735,17 @@ function ProjectName({
       ref={inputRef}
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
+      onBlur={() => {
+        if (!closingRef.current && document.hasFocus()) inputRef.current?.focus();
+      }}
       onKeyDown={(e) => {
-        // キャンバスのショートカットへ渡さない(上と同じ理由で bubble 側で止める)
+        // キャンバスのショートカットへ渡さない(bubble 側で止める。理由は EditableText)
         e.stopPropagation();
 
         if (e.nativeEvent.isComposing) return;
         if (e.key === 'Enter') {
           e.preventDefault();
-          commit();
+          commitRef.current();
         }
         if (e.key === 'Escape') setEditing(false);
       }}
@@ -625,20 +776,40 @@ export type ProjectNodeData = {
  * これはタグの見た目ではなく、領域そのもの。中に入っている Task が
  * この Project に属することになる。
  *
- * 枠の内側はクリックを透過させる(pointer-events: none)。透過させないと、
- * 枠の上にある Task を掴めなくなる。掴めるのはラベルと、リサイズの取っ手だけ。
+ * 枠はどこを掴んでも動く。中の Task は手前にいるので、Task の上から始めた
+ * ドラッグは Task の移動になる —— 枠が持っていくことはない。
  */
 export function ProjectFrameNode({ data, selected }: NodeProps): React.JSX.Element {
   const { id, name, color, colorIndex, onRecolor, onResizeEnd, onRename, onDelete } =
     data as unknown as ProjectNodeData;
   const [pickingColor, setPickingColor] = useState(false);
+  const swatchRef = useRef<HTMLButtonElement>(null);
+  const pickerRef = useRef<HTMLSpanElement>(null);
+
+  // 色を選ばずに他所を押したときも閉じる。開いたままだと下の Task が隠れる。
+  // 見本のボタン自身は「内側」に含める —— 含めないと、閉じた直後に
+  // そのボタンの onClick がもう一度開いてしまう。
+  useCloseOnOutsidePointerDown(
+    pickingColor,
+    (target) =>
+      (swatchRef.current?.contains(target) ?? false) ||
+      (pickerRef.current?.contains(target) ?? false),
+    () => setPickingColor(false),
+  );
 
   return (
     <>
+      {/*
+        大きさを変える取っ手は常に置いておく。選んでから掴む2手にすると、
+        「掴めない」と受け取られる —— 取っ手が出ていないことが、選択されて
+        いないせいだと分かるのは、仕組みを知っている側だけ。
+        選んでいない間は薄く出し、ホバーで濃くする(styles.css)。
+      */}
       <NodeResizer
         minWidth={140}
         minHeight={120}
-        isVisible={selected}
+        isVisible
+        handleClassName={selected ? 'is-selected' : undefined}
         onResizeEnd={(_event, params) =>
           onResizeEnd(id, { x: params.x, y: params.y }, params.width, params.height)
         }
@@ -650,21 +821,17 @@ export function ProjectFrameNode({ data, selected }: NodeProps): React.JSX.Eleme
         style={{ '--project-color': color } as React.CSSProperties}
       >
         <span className="project-frame-label">
-          {/*
-            ここが枠を掴んで動かす取っ手になる(dragHandle)。
-            Task 名と違いシングルクリックで編集に入らないのは、そうすると
-            掴んだ瞬間に入力欄へ変わってしまい、枠を動かせなくなるため。
-          */}
           <ProjectName name={name} onRename={(next) => onRename(id, next)} />
 
           <button
             type="button"
+            ref={swatchRef}
             className="color-swatch nodrag"
             title="色を変える"
             onClick={() => setPickingColor((v) => !v)}
           />
           {pickingColor && (
-            <span className="color-picker nodrag">
+            <span className="color-picker nodrag" ref={pickerRef}>
               {PROJECT_COLORS.map((swatch, index) => (
                 <button
                   key={swatch}

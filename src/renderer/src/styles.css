@@ -24,6 +24,8 @@
   --project: #8b8b84;
 
   --danger: #b42318;
+  /* 危険なボタンの上に載せる文字色。地の色に合わせて反転させる。 */
+  --danger-ink: #ffffff;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -43,6 +45,7 @@
     --project: #6f6f78;
 
     --danger: #f87171;
+    --danger-ink: #2b0f0f;
   }
 }
 
@@ -297,6 +300,15 @@ body {
   transform: rotate(45deg);
 }
 
+/* 折りたたみ中の件数。数字が入るので、記号だけのときより少し広く取る。 */
+.state-button.is-collapsed {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
 .state-button {
   font-size: 10px;
   line-height: 1;
@@ -313,24 +325,42 @@ body {
 .task-actions {
   display: flex;
   gap: 1px;
-  /* 既定では見せない。子タスクを持たない Task を1行に収めるため。 */
+}
+
+/*
+  既定では見せない。子タスクを持たない Task を1行に収めるため。
+
+  消すのは束ねている親ではなく、ボタンひとつずつ。親を透明にすると、常に
+  見せたいもの(折りたたみ中の件数)まで巻き込まれる。
+*/
+.task-actions .state-button,
+.child-actions .state-button {
   opacity: 0;
   transition: opacity 0.1s;
 }
-.task:hover .task-actions,
-.task:focus-within .task-actions {
+/*
+  キーボードで辿り着いたときだけ、ホバーなしでも見せる。
+
+  :focus-within ではなく :focus-visible を使う。前者はマウスで押したボタンの
+  フォーカスも拾うため、カーソルを離しても出たままになる。
+*/
+.task:hover .task-actions .state-button,
+.child:hover .child-actions .state-button,
+.task:has(:focus-visible) .task-actions .state-button,
+.child:has(:focus-visible) .child-actions .state-button {
   opacity: 1;
 }
 
-.task.is-ready .task-actions {
-  display: flex;
-  gap: 1px;
-  /* 既定では見せない。子タスクを持たない Task を1行に収めるため。 */
-  opacity: 0;
-  transition: opacity 0.1s;
-}
-.task:hover .task-actions,
-.task:focus-within .task-actions {
+/*
+  ホバーを待たずに見せるもの。
+
+  折りたたみ中の件数だけ。畳んだ Task は childTask を持たない Task と見分けが
+  つかず、中身があること自体が画面から消えるため(FR-6)。
+
+  メモには印を置かない。本文が名前の下に常に出ているので、印は同じことを
+  二度言うことになる(FR-10)。
+*/
+.task-actions .state-button.is-collapsed {
   opacity: 1;
 }
 
@@ -392,15 +422,6 @@ body {
   width: calc(100% - 24px);
 }
 
-/* メモがある Task は、印を常に見えるようにしておく(ホバー待ちにしない) */
-.state-button.has-memo {
-  color: var(--active);
-  opacity: 1;
-}
-.task-actions .state-button.has-memo {
-  opacity: 1;
-}
-
 .task-children {
   border-top: 1px solid var(--border);
   padding: 4px 0;
@@ -444,10 +465,6 @@ body {
 .child-actions {
   display: flex;
   gap: 2px;
-  opacity: 0;
-}
-.child:hover .child-actions {
-  opacity: 1;
 }
 
 .task-foot {
@@ -481,9 +498,12 @@ body {
   border-radius: 12px;
   width: 100%;
   height: 100%;
-  /* 内側はクリックを透過させる。透過させないと枠の上の Task を掴めない。
-     掴めるのはラベルと、リサイズの取っ手だけ。 */
-  pointer-events: none;
+  /* 枠はどこを掴んでも動く。中の Task は手前にいるので、Task の上から
+     始めたドラッグは Task の移動になる。 */
+  cursor: grab;
+}
+.react-flow__node.dragging .project-frame {
+  cursor: grabbing;
 }
 .project-frame-label {
   position: absolute;
@@ -497,12 +517,7 @@ body {
   color: var(--project-color, var(--project));
   font-size: 11px;
   letter-spacing: 0.03em;
-  /* ここが枠を掴んで動かす取っ手になる */
-  pointer-events: auto;
   cursor: grab;
-}
-.project-frame-label:active {
-  cursor: grabbing;
 }
 
 .project-name {
@@ -512,8 +527,7 @@ body {
   padding: 0;
   font: inherit;
   color: inherit;
-  /* ここは掴んで動かす場所。改名はダブルクリック。 */
-  cursor: inherit;
+  cursor: text;
 }
 
 .color-swatch {
@@ -568,47 +582,301 @@ body {
   background: var(--surface);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 16px 18px;
-  width: min(440px, 90vw);
+  border-radius: 14px;
+  padding: 22px 24px 18px;
+  width: min(460px, 92vw);
   max-height: 80vh;
   overflow: auto;
+  /* 枠線だけでは、暗い背景の上で面が立たない。影で持ち上げる。 */
+  box-shadow:
+    0 20px 50px rgb(0 0 0 / 45%),
+    0 2px 8px rgb(0 0 0 / 30%);
 }
 .dialog::backdrop {
-  background: rgb(0 0 0 / 35%);
+  background: rgb(0 0 0 / 55%);
+  backdrop-filter: blur(2px);
 }
+
 .dialog h2 {
-  margin: 0 0 10px;
-  font-size: 14px;
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.5;
 }
-.dialog ul {
-  margin: 4px 0 10px;
-  padding-left: 18px;
+.dialog-lead {
+  margin: 0 0 4px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.dialog-section {
+  margin-top: 16px;
+}
+.dialog-label {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   color: var(--text-dim);
 }
-.dialog li {
-  margin: 2px 0;
+
+/*
+  依存の一覧。既定の中黒は行頭を下げるだけで、なくなるのか増えるのかを
+  区別しない。左の色帯でそれを示す。
+*/
+.edge-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
+.edge-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 4px 10px;
+  border-left: 2px solid var(--border);
+  border-radius: 0 5px 5px 0;
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  font-size: 13px;
+}
+.edge-list .arrow {
+  color: var(--text-dim);
+}
+.edge-list.is-removed li {
+  border-left-color: var(--danger);
+  color: var(--text-dim);
+}
+.edge-list.is-added li {
+  border-left-color: var(--ready);
+}
+
+/* 消える当人。ここだけは、読み飛ばされないように地の文から浮かせる。 */
+.doomed {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* 繋ぎ直しは外せる(FR-1)。外したものは残る側と見分けられるようにする。 */
+.edge-list label {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  cursor: pointer;
+}
+
+/*
+  入れる・外すの印。OS 既定のチェックボックスは、この面の上だけ別の見た目に
+  なってしまう。Task の状態表示と同じ角丸の四角にして、塗りの有無で示す ——
+  チェックマークは足さない。この画面で問うているのは「残すか外すか」であって、
+  作業が済んだかどうかではない。
+*/
+.edge-check {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.edge-box {
+  flex: none;
+  align-self: center;
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--text-dim);
+  border-radius: 3px;
+  transition:
+    background 0.1s,
+    border-color 0.1s;
+}
+.edge-check:checked + .edge-box {
+  background: var(--ready);
+  border-color: var(--ready);
+}
+.edge-check:focus-visible + .edge-box {
+  outline: 2px solid var(--ready);
+  outline-offset: 2px;
+}
+.edge-list label:hover .edge-box {
+  border-color: var(--text);
+}
+.edge-list li.is-dropped {
+  border-left-color: var(--border);
+  color: var(--text-dim);
+  text-decoration: line-through;
+}
+
+.dialog-hint {
+  margin: 6px 0 0;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.dialog-warning {
+  margin: 16px 0 0;
+  padding: 9px 11px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .dialog .actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  margin-top: 12px;
-}
-.dialog .danger {
-  color: #fff;
-  background: var(--danger);
-  border-color: var(--danger);
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
 }
 
-/* 接続点。左上の丸点と紛らわしくないよう、丸ではなく縦棒にする。 */
+/* 既定のままだと OS のボタンがそのまま出て、暗い面から浮いてしまう。 */
+.dialog button {
+  font: inherit;
+  padding: 7px 15px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+.dialog button:hover {
+  border-color: var(--text-dim);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+.dialog button:focus-visible {
+  outline: 2px solid var(--ready);
+  outline-offset: 2px;
+}
+.dialog .danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--danger-ink);
+  font-weight: 500;
+}
+.dialog .danger:hover {
+  background: color-mix(in srgb, var(--danger) 85%, var(--text));
+  border-color: color-mix(in srgb, var(--danger) 85%, var(--text));
+}
+
+.dialog .text-input.wide {
+  width: 100%;
+  margin-top: 4px;
+  padding: 7px 10px;
+}
+
+/*
+  全体図。既定のままだと明るい配色が固定で入っており、暗い配色のときに
+  そこだけ白い矩形が浮く。面・枠・中身をこちらの色に合わせる。
+*/
+.react-flow__minimap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.react-flow__minimap-mask {
+  fill: color-mix(in srgb, var(--bg) 70%, transparent);
+  stroke: none;
+}
+.react-flow__minimap-node {
+  fill: var(--border);
+  stroke: none;
+}
+
+/*
+  依存を外す × 。線に重ねて置く。
+
+  消えている間もポインタを受ける(visibility を切らない)。見えなくなった瞬間に
+  掴めなくなると、線から × へカーソルを移す途中で消えて押せなくなる。
+*/
+.edge-remove {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: all;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.edge-remove.is-shown,
+.edge-remove:focus-visible {
+  opacity: 1;
+}
+.edge-remove:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/*
+  接続点。左上の丸点と紛らわしくないよう、丸ではなく縦棒にする。
+
+  見た目は細い縦棒のまま、操作領域だけを棒の3倍に広げる。棒を太くすると
+  Task の輪郭がうるさくなり、細いままでは狙って掴めないため。
+*/
 .react-flow__handle {
+  width: 15px;
+  height: 22px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+.react-flow__handle::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 50%;
   width: 5px;
-  height: 18px;
+  transform: translateX(-50%);
   border-radius: 2px;
   background: var(--border);
-  border: none;
 }
-.react-flow__handle:hover {
+.react-flow__handle:hover::after {
   background: var(--ready);
+}
+/*
+  位置は動かさない。React Flow が transform で辺の中心に置いているので、
+  left / right を足すとその分だけ外側へずれる(実測で 7px 外に出ていた)。
+  幅を変えるだけで、当たり判定は辺をまたいで広がる。
+*/
+
+/*
+  枠の大きさを変える取っ手。選ばなくても掴めるが、常に濃く出ていると
+  枠が賑やかになるので、ホバーまでは薄く置く。
+*/
+.react-flow__resize-control.handle {
+  opacity: 0.35;
+  transition: opacity 0.1s;
+}
+.react-flow__node:hover .react-flow__resize-control.handle,
+.react-flow__resize-control.handle.is-selected {
+  opacity: 1;
+}
+/* 既定の青ではなく枠と同じ色にする。選択の跡ではなく、枠の一部として見せる。 */
+.react-flow__resize-control.handle {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--project-color, var(--project));
+  border: 1px solid var(--surface);
+}
+
+/*
+  辺の取っ手は線を描かない。枠には既に点線の輪郭があるので、その内側に
+  もう1本の実線が出ると、枠が二重に見える。掴める範囲はそのまま残す。
+*/
+.react-flow__resize-control.line {
+  border-color: transparent;
 }

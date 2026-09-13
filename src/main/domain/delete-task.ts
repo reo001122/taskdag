@@ -74,14 +74,40 @@ function reconnections(
   return pairs;
 }
 
+/**
+ * Task を削除する(FR-1)。
+ *
+ * keep を渡すと、再接続をそこに挙がったものだけに絞れる。 FR-3 の規則で
+ * 繋ぎ直される先が、いつもユーザーの意図と一致するとは限らないため、
+ * 確認の場で外せるようにしてある(FR-1)。
+ *
+ * 絞り込みにしかならない。 keep に計画外の組を書いても無視する ——
+ * この入口から任意のエッジを作れてしまうと、循環しないことの保証
+ * (design/domain-design.md §3.2)が崩れる。
+ *
+ * 省略したときは計画どおり全て繋ぎ直す。確認の場を持たない経路
+ * (MCP 経由の削除、FR-1)はこちらを通る。
+ */
 export function deleteTask(
   graph: TaskGraph,
   id: TaskId,
   newId: IdGenerator,
+  keep?: readonly { readonly from: TaskId; readonly to: TaskId }[],
 ): Result<TaskGraph, DomainError> {
   const planned = planDeleteTask(graph, id);
   if (!planned.ok) return planned;
-  return ok(applyDeleteTask(graph, planned.value, newId));
+
+  const plan =
+    keep === undefined
+      ? planned.value
+      : {
+          ...planned.value,
+          addedEdges: planned.value.addedEdges.filter((edge) =>
+            keep.some((k) => k.from === edge.from && k.to === edge.to),
+          ),
+        };
+
+  return ok(applyDeleteTask(graph, plan, newId));
 }
 
 export function applyDeleteTask(

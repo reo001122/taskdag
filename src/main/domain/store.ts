@@ -227,8 +227,12 @@ export class TaskGraphStore {
     return this.#run((g) => setTaskCollapsed(g, id, collapsed));
   }
 
-  deleteTask(id: TaskId): Result<void, DomainError> {
-    return this.#run((g) => deleteTask(g, id, this.#newId));
+  /** keep を渡すと、再接続をそこに挙がったものだけに絞る(FR-1)。 */
+  deleteTask(
+    id: TaskId,
+    keep?: readonly { readonly from: TaskId; readonly to: TaskId }[],
+  ): Result<void, DomainError> {
+    return this.#run((g) => deleteTask(g, id, this.#newId, keep));
   }
 
   // --- コマンド: childTask --------------------------------------------------

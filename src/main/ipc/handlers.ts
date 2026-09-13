@@ -2,6 +2,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { IpcMain } from 'electron';
 import type { Command, CommandResult, DeletePlan, GraphSnapshot } from '../../shared/ipc';
 import { IPC } from '../../shared/ipc';
+import type { Logger } from '../../shared/log';
 import type { AppService } from '../app-service';
 import { getHideCompleted, setHideCompleted } from '../db/settings';
 import { type DomainError, describeDomainError } from '../domain/errors';
@@ -85,7 +86,17 @@ export function executeCommand(
     case 'setTaskCollapsed':
       return run(service.mutate((s) => s.setTaskCollapsed(taskId(command.id), command.collapsed)));
     case 'deleteTask':
-      return run(service.mutate((s) => s.deleteTask(taskId(command.id))));
+      return run(
+        service.mutate((s) =>
+          s.deleteTask(
+            taskId(command.id),
+            command.keepReconnections?.map((edge) => ({
+              from: taskId(edge.from),
+              to: taskId(edge.to),
+            })),
+          ),
+        ),
+      );
 
     case 'createChildTask':
       return run(service.mutate((s) => s.createChildTask(taskId(command.parentId), command.title)));
@@ -170,11 +181,32 @@ export function executeCommand(
   }
 }
 
+/**
+ * 作成コマンドが対象とする集合の id。実行の前後で比べて、作られた id を割り出す。
+ *
+ * main はコマンドを1件ずつ同期実行するため、この前後は必ず1コマンド分だけ離れている
+ * (design/tech-stack.md「書き込みが構造的に直列化される」)。renderer 側で
+ * スナップショットの差分を取ると、この保証がないので取り違える。
+ */
+function idsCreatedBy(service: AppService, command: Command): Set<string> | null {
+  switch (command.type) {
+    case 'createTask':
+      return service.query((s) => new Set<string>(s.graph.tasks.keys()));
+    case 'createChildTask':
+      return service.query((s) => new Set<string>(s.graph.childTasks.keys()));
+    case 'createProject':
+      return service.query((s) => new Set<string>(s.graph.projects.keys()));
+    default:
+      return null;
+  }
+}
+
 export function registerIpc(
   ipcMain: IpcMain,
   service: AppService,
   db: DatabaseSync,
   dbPath: string,
+  log: Logger,
 ): void {
   const snapshot = (): GraphSnapshot => buildSnapshot(service, db, dbPath);
 
@@ -182,12 +214,28 @@ export function registerIpc(
 
   ipcMain.handle(IPC.command, (_event, raw: unknown): CommandResult => {
     const parsed = parseCommand(raw);
-    if (!parsed.ok) return { ok: false, error: parsed.error, snapshot: snapshot() };
+    if (!parsed.ok) {
+      // ここを通るのは renderer か MCP クライアント側の不具合。握りつぶすと
+      // 「操作しても何も起きない」としか見えないので、必ず残す。
+      log.warn('コマンドを検証で弾いた', { error: parsed.error, raw });
+      return { ok: false, error: parsed.error, snapshot: snapshot() };
+    }
+
+    log.debug('コマンド', parsed.value);
+
+    const before = idsCreatedBy(service, parsed.value);
 
     const result = executeCommand(service, db, parsed.value);
-    return result.ok
-      ? { ok: true, snapshot: snapshot() }
-      : { ok: false, error: result.error, snapshot: snapshot() };
+    if (!result.ok) {
+      log.info('コマンドをドメインが拒否した', { type: parsed.value.type, error: result.error });
+      return { ok: false, error: result.error, snapshot: snapshot() };
+    }
+
+    const after = before === null ? null : idsCreatedBy(service, parsed.value);
+    const createdId =
+      before === null || after === null ? null : ([...after].find((id) => !before.has(id)) ?? null);
+
+    return { ok: true, snapshot: snapshot(), createdId };
   });
 
   // 接続ドラッグ開始時に一度だけ呼ばれる。副作用を持たない。

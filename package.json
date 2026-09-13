@@ -6,12 +6,15 @@
   "license": "MIT",
   "private": true,
   "scripts": {
+    "prepare": "git config core.hooksPath .githooks || true",
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
     "test:watch": "vitest",
+    "probe": "node tools/ui-probe/run.mjs",
+    "verify": "npm run typecheck && npm run check && npm test && npm run probe",
     "check": "biome ci .",
     "fix": "biome check --write ."
   },

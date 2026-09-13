@@ -110,7 +110,28 @@ export function parseCommand(raw: unknown): Result<Command, string> {
       return ok({ type, id: id.value, collapsed: raw.collapsed });
     }
 
-    case 'deleteTask':
+    case 'deleteTask': {
+      const id = needId();
+      if (!id.ok) return id;
+      if (raw.keepReconnections === undefined) return ok({ type, id: id.value });
+
+      if (!Array.isArray(raw.keepReconnections)) {
+        return err('"keepReconnections" must be an array');
+      }
+      const keep: { from: string; to: string }[] = [];
+      for (const entry of raw.keepReconnections) {
+        if (typeof entry !== 'object' || entry === null) {
+          return err('"keepReconnections" must contain objects');
+        }
+        const { from, to } = entry as Record<string, unknown>;
+        if (!isNonEmptyString(from) || !isNonEmptyString(to)) {
+          return err('"keepReconnections" entries need non-empty "from" and "to"');
+        }
+        keep.push({ from, to });
+      }
+      return ok({ type, id: id.value, keepReconnections: keep });
+    }
+
     case 'deleteChildTask':
     case 'disconnect':
     case 'deleteProject': {

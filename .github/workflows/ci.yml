@@ -27,3 +27,37 @@ jobs:
 
       - name: Test
         run: npm test
+
+  # 実機を操作する確認(tools/ui-probe/)。Electron を起動するため画面が要る。
+  # Linux ランナーには無いので xvfb を被せる。
+  #
+  # **まだ CI 上で走ったことがないため、当面は落ちても全体を止めない。**
+  # 落ちたときに「アプリの不具合」と「CI 環境の問題」を切り分けられないうちに
+  # 必須にすると、最初の数回で信用を失う。通ることを何度か確認してから
+  # continue-on-error を外し、必須の検査にする。
+  probe:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install a virtual display
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Drive the app
+        run: xvfb-run -a npm run probe
+
+      - name: Keep the screen from a failed scenario
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-probe-screens
+          path: ui-probe-*.png
+          if-no-files-found: ignore

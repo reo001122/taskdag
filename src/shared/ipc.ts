@@ -75,7 +75,15 @@ export type Command =
   | { type: 'moveTask'; id: string; position: Position }
   | { type: 'setTaskCollapsed'; id: string; collapsed: boolean }
   | { type: 'setTaskMemo'; id: string; memo: string }
-  | { type: 'deleteTask'; id: string }
+  | {
+      type: 'deleteTask';
+      id: string;
+      /**
+       * 繋ぎ直すエッジを、ここに挙げたものだけに絞る(FR-1 の確認で外せる)。
+       * 省略すると FR-3 の規則どおり全て繋ぎ直す。計画に無い組は無視される。
+       */
+      keepReconnections?: { from: string; to: string }[];
+    }
   | { type: 'createChildTask'; parentId: string; title: string }
   | { type: 'updateChildTaskTitle'; id: string; title: string }
   | { type: 'setChildTaskProgress'; id: string; progress: Progress }
@@ -122,7 +130,19 @@ export type Command =
  * Result で失敗を返している意味が、戻り値を読まないだけで失われる。
  */
 export type CommandResult =
-  | { ok: true; snapshot: GraphSnapshot }
+  | {
+      ok: true;
+      snapshot: GraphSnapshot;
+      /**
+       * 作成コマンドが作った要素の id。作成以外では null。
+       *
+       * renderer 側でスナップショットの差分から割り出すと、作成が2件同時に
+       * 飛んだときに取り違える —— 2件目の応答には両方が含まれ、どちらが
+       * 自分の作ったものか区別できない。main はコマンドを1件ずつ実行するので、
+       * その前後を比べれば一意に決まる。
+       */
+      createdId: string | null;
+    }
   | { ok: false; error: string; snapshot: GraphSnapshot };
 
 export const IPC = {

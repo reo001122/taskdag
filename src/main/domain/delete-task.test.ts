@@ -111,6 +111,46 @@ describe('deleteTask — 依存エッジの再接続ルール(FR-3)', () => {
   });
 });
 
+describe('deleteTask — 繋ぎ直しの絞り込み(FR-1)', () => {
+  /** A→B, B→C1, B→C2 の B を消すと、既定では A→C1 と A→C2 ができる。 */
+  const branching = () =>
+    buildGraph({
+      tasks: { A: {}, B: {}, C1: {}, C2: {} },
+      edges: [
+        ['A', 'B'],
+        ['B', 'C1'],
+        ['B', 'C2'],
+      ],
+    });
+
+  it('FR-1: keep に挙げた組だけを繋ぎ直す', () => {
+    const result = deleteTask(branching(), T('B'), sequentialIds(), [
+      { from: T('A'), to: T('C1') },
+    ]);
+    if (!result.ok) throw new Error('expected delete to succeed');
+    expect(edgePairs(result.value)).toEqual(['A->C1']);
+  });
+
+  it('FR-1: keep が空なら1本も繋ぎ直さない', () => {
+    const result = deleteTask(branching(), T('B'), sequentialIds(), []);
+    if (!result.ok) throw new Error('expected delete to succeed');
+    expect(edgePairs(result.value)).toEqual([]);
+  });
+
+  it('FR-1: 省略したときは計画どおり全て繋ぎ直す(確認を持たない経路のため)', () => {
+    expect(edgePairs(afterDelete(branching(), T('B')))).toEqual(['A->C1', 'A->C2']);
+  });
+
+  it('FR-3: 計画に無い組を keep に書いても作られない(絞り込みにしかならない)', () => {
+    const result = deleteTask(branching(), T('B'), sequentialIds(), [
+      { from: T('C1'), to: T('A') },
+      { from: T('A'), to: T('C2') },
+    ]);
+    if (!result.ok) throw new Error('expected delete to succeed');
+    expect(edgePairs(result.value)).toEqual(['A->C2']);
+  });
+});
+
 describe('deleteTask — Task と childTask の削除(FR-1)', () => {
   it('Task を削除するとそのchildTaskも削除される', () => {
     const graph = buildGraph({

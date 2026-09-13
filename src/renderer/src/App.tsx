@@ -2,6 +2,7 @@ import {
   Background,
   Controls,
   type Edge,
+  type EdgeTypes,
   MarkerType,
   MiniMap,
   type Node,
@@ -14,10 +15,22 @@ import {
 import '@xyflow/react/dist/style.css';
 import './styles.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Command, DeletePlan, GraphSnapshot } from '../../shared/ipc';
+import type { Command, CommandResult, DeletePlan, GraphSnapshot } from '../../shared/ipc';
 import { PROJECT_COLOR_COUNT, projectColorAt } from './colors';
-import { computeLayout } from './layout';
-import { ProjectFrameNode, type ProjectNodeData, TaskNode, type TaskNodeData } from './TaskNode';
+import { DependencyEdge, type DependencyEdgeData } from './DependencyEdge';
+import { computeLayout, type NodeSize } from './layout';
+import { logger } from './log';
+import {
+  type AutoEdit,
+  ProjectFrameNode,
+  type ProjectNodeData,
+  TaskNode,
+  type TaskNodeData,
+} from './TaskNode';
+
+const log = logger('graph');
+
+const edgeTypes: EdgeTypes = { dependency: DependencyEdge };
 
 const nodeTypes: NodeTypes = { task: TaskNode, projectFrame: ProjectFrameNode };
 
@@ -28,12 +41,13 @@ export function App(): React.JSX.Element {
   const [askProjectName, setAskProjectName] = useState(false);
 
   /**
-   * 追加した直後の要素を、そのまま編集状態にするための目印。
+   * 直後に編集へ入れる相手。Task と childTask のどちらの id も入る。
+   *
    * 作ってから名前を打つまでを1続きの操作にする —— 毎回、仮の名前を
-   * 消してから入力させるのは、分解の勢いを削ぐ。
+   * 消してから入力させるのは、分解の勢いを削ぐ。消したときにも使う:
+   * 1つ上へ戻して、手をキーボードに置いたまま続けられるようにする。
    */
-  const [autoEditTaskId, setAutoEditTaskId] = useState<string | null>(null);
-  const [autoEditChildOf, setAutoEditChildOf] = useState<string | null>(null);
+  const [autoEdit, setAutoEdit] = useState<AutoEdit>(null);
 
   /**
    * React Flow に描画を任せるための状態。
@@ -66,14 +80,21 @@ export function App(): React.JSX.Element {
     members: Map<string, { x: number; y: number }>;
   } | null>(null);
 
-  /** コマンドを送り、更新後のスナップショットを返す。失敗しても投げない。 */
-  const dispatch = useCallback(async (command: Command): Promise<GraphSnapshot | null> => {
+  /**
+   * コマンドを送り、結果をそのまま返す。失敗しても投げない。
+   *
+   * 成否まで返すのは、成功したときにしか続けてはいけない後処理があるため。
+   * スナップショットは失敗時にも返る(現在の状態)ので、それだけを見ていると
+   * 起きなかった変更を前提に画面を動かしてしまう。
+   */
+  const dispatch = useCallback(async (command: Command): Promise<CommandResult | null> => {
     try {
       const result = await window.api.send(command);
       setSnapshot(result.snapshot);
       setError(result.ok ? null : result.error);
-      return result.snapshot;
+      return result;
     } catch (e) {
+      log.error('コマンドを送れなかった', { command, cause: e });
       setError(e instanceof Error ? e.message : String(e));
       return null;
     }
@@ -91,6 +112,7 @@ export function App(): React.JSX.Element {
       setSnapshot(await window.api.getGraph());
       setError(null);
     } catch (e) {
+      log.error('グラフを読めなかった', e);
       setError(e instanceof Error ? e.message : String(e));
     }
   }, []);
@@ -99,28 +121,71 @@ export function App(): React.JSX.Element {
     void refresh();
   }, [refresh]);
 
-  /** Task を作り、そのまま名前の入力に入る。 */
+  /**
+   * Task を作り、そのまま名前の入力に入る。
+   *
+   * 作った id は main が返す。ここでスナップショットの差分から割り出すと、
+   * 作成が2件同時に飛んだときに1つ前を掴む(shared/ipc.ts の createdId)。
+   */
   const addTask = useCallback(
     (position: { x: number; y: number }) => {
       void (async () => {
-        const before = new Set(snapshot?.tasks.map((t) => t.id) ?? []);
-        const next = await dispatch({ type: 'createTask', title: '新しいタスク', position });
-        const created = next?.tasks.find((t) => !before.has(t.id));
-        if (created) setAutoEditTaskId(created.id);
-      })();
-    },
-    [dispatch, snapshot],
-  );
-
-  /** 子タスクを1件足し、そのまま名前の入力に入る。Enter で連続して足せる。 */
-  const addChild = useCallback(
-    (parentId: string) => {
-      void (async () => {
-        await dispatch({ type: 'createChildTask', parentId, title: '項目' });
-        setAutoEditChildOf(parentId);
+        const result = await dispatch({ type: 'createTask', title: '新しいタスク', position });
+        log.debug('Task を作った', { id: result?.ok ? result.createdId : null });
+        if (result?.ok && result.createdId !== null) {
+          setAutoEdit({ id: result.createdId, caret: 'all' });
+        }
       })();
     },
     [dispatch],
+  );
+
+  /** childTask を1件足し、そのまま名前の入力に入る。Shift+Enter で連続して足せる。 */
+  const addChild = useCallback(
+    (parentId: string) => {
+      void (async () => {
+        const result = await dispatch({ type: 'createChildTask', parentId, title: '項目' });
+        log.debug('childTask を作った', { id: result?.ok ? result.createdId : null });
+        if (result?.ok && result.createdId !== null) {
+          setAutoEdit({ id: result.createdId, caret: 'all' });
+        }
+      })();
+    },
+    [dispatch],
+  );
+
+  /**
+   * 編集中の childTask を消し、1つ上の名前へ戻る(FR-2)。
+   *
+   * 上がなければフォーカスは移さない。親の Task 名へ送ると、次の項目の名前を
+   * Task 名に打ち込んでしまう事故が起きる —— 見た目がほとんど同じ入力欄で、
+   * 意味だけが違うため。
+   *
+   * 戻り先は、削除が成功したうえで、削除後もまだ在ることを確かめてから決める。
+   * 戻り先を選ぶのは削除前のグラフだが、その間に別の操作(将来は AI からのものも)が
+   * 割り込めば、選んだ相手はもう別の位置にいるか、消えている。分からないときは
+   * 動かさないほうがよい —— 違う項目にフォーカスすると、次の1打がそこへ入る。
+   */
+  const removeChildWhileEditing = useCallback(
+    (childId: string) => {
+      void (async () => {
+        const parent = snapshot?.tasks.find((t) => t.childTaskIds.includes(childId));
+        const siblings = parent?.childTaskIds ?? [];
+        const previous = siblings[siblings.indexOf(childId) - 1] ?? null;
+
+        const result = await dispatch({ type: 'deleteChildTask', id: childId });
+        if (!result?.ok) {
+          log.warn('childTask を消せなかった', { childId });
+          return;
+        }
+
+        const stillThere =
+          previous !== null && result.snapshot.childTasks.some((c) => c.id === previous);
+        log.debug('空の childTask を消した', { childId, backTo: stillThere ? previous : null });
+        setAutoEdit(stillThere ? { id: previous, caret: 'end' } : null);
+      })();
+    },
+    [dispatch, snapshot],
   );
 
   // Cmd+Z / Cmd+Shift+Z(FR-8)。AI が行った操作もこれで戻せる。
@@ -142,8 +207,32 @@ export function App(): React.JSX.Element {
   }, []);
 
   const onAutoEditConsumed = useCallback(() => {
-    setAutoEditTaskId(null);
-    setAutoEditChildOf(null);
+    setAutoEdit(null);
+  }, []);
+
+  /** 依存を1本外す(FR-3)。線の上の × から呼ばれる。 */
+  const removeEdge = useCallback(
+    (id: string) => {
+      send({ type: 'disconnect', id });
+    },
+    [send],
+  );
+
+  /**
+   * 描かれている Task の実寸(FR-6 の整列で使う)。
+   *
+   * 決め打ちの見積もりでは足りない。 子タスクやメモで背が伸びるため、
+   * 固定値で枠を張ると中身がはみ出し、所属(位置から導かれる)が壊れる。
+   * offsetWidth / offsetHeight はキャンバスの拡大縮小の影響を受けないので、
+   * そのままレイアウトの座標系で使える。
+   */
+  const measureTasks = useCallback((): Map<string, NodeSize> => {
+    const sizes = new Map<string, NodeSize>();
+    for (const el of document.querySelectorAll<HTMLElement>('.react-flow__node-task[data-id]')) {
+      const id = el.dataset.id;
+      if (id) sizes.set(id, { width: el.offsetWidth, height: el.offsetHeight });
+    }
+    return sizes;
   }, []);
 
   const built = useMemo(() => {
@@ -176,8 +265,8 @@ export function App(): React.JSX.Element {
         type: 'projectFrame',
         position: project.position,
         data: data as never,
-        // ラベルだけを掴んで動かす。枠の内側は Task を掴めるよう透過させている。
-        dragHandle: '.project-frame-label',
+        // dragHandle は指定しない。枠の内側のどこを掴んでも動く。
+        // 中の Task は手前(zIndex 0)にいるので、今までどおり個別に掴める。
         // Task より背面に置く
         zIndex: -1,
         style: { width: project.width, height: project.height },
@@ -205,12 +294,12 @@ export function App(): React.JSX.Element {
           children: ordered,
           projectColor: task.projectId === null ? null : (colorOf.get(task.projectId) ?? null),
           hideCompleted: snapshot.hideCompleted,
-          autoEditTitle: autoEditTaskId === task.id,
-          autoEditLastChild: autoEditChildOf === task.id,
+          autoEdit,
           send,
           requestDelete,
           onAutoEditConsumed,
           onChildChainAdd: addChild,
+          onChildRemoveWhileEditing: removeChildWhileEditing,
         };
         return {
           id: task.id,
@@ -227,13 +316,18 @@ export function App(): React.JSX.Element {
     // 結果として残るエッジは「まだ実際にブロックしているもの」だけになる(FR-6)。
     const visibleEdges: Edge[] = snapshot.edges
       .filter((e) => !hidden.has(e.from) && !hidden.has(e.to))
-      .map((e) => ({
-        id: e.id,
-        source: e.from,
-        target: e.to,
-        // 向きが依存の向きそのもの。線だけでは「どちらが先か」が伝わらない。
-        markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18 },
-      }));
+      .map((e) => {
+        const data: DependencyEdgeData = { onRemove: removeEdge };
+        return {
+          id: e.id,
+          source: e.from,
+          target: e.to,
+          type: 'dependency',
+          data: data as never,
+          // 向きが依存の向きそのもの。線だけでは「どちらが先か」が伝わらない。
+          markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18 },
+        };
+      });
 
     return { nodes: [...frames, ...taskNodes], edges: visibleEdges };
   }, [
@@ -241,13 +335,42 @@ export function App(): React.JSX.Element {
     send,
     requestDelete,
     addChild,
+    removeChildWhileEditing,
+    removeEdge,
     onAutoEditConsumed,
-    autoEditTaskId,
-    autoEditChildOf,
+    autoEdit,
   ]);
 
+  /*
+    作り直したノードを、既にあるものへ重ねる。丸ごと差し替えない。
+
+    React Flow はノードを差し替えられると、そのノードの measured(測った寸法)を
+    受け取り直す。こちらが作る側は寸法を知らないので undefined になり、
+    測り直しが終わるまでの1フレーム、そのノードは visibility: hidden にされる。
+    グラフが変わるたびに画面がちらつく原因がこれだった(実測: 削除時に 333H222…)。
+    端点の寸法が無い間はエッジも描かれないので、矢印も同じ1フレーム消える。
+
+    重ねれば measured がそのまま残る。React Flow が持たせている選択状態も
+    巻き添えで消えなくなる。
+  */
   useEffect(() => {
-    setNodes(built.nodes);
+    setNodes((current) => {
+      const existing = new Map(current.map((node) => [node.id, node]));
+      return built.nodes.map((node) => {
+        const before = existing.get(node.id);
+        if (!before) return node;
+        /*
+          大きさだけは引き継がない。
+
+          枠の大きさを変えると React Flow はノードに width / height を書き込み、
+          以降そちらを style より優先して読む。重ねるときにそれを残すと、
+          Undo でスナップショットが前の大きさへ戻っても、画面は変形後のまま
+          になる(実測: 460×340 → 400×295 にしてから Cmd+Z しても 400×295)。
+          幾何はこちらが持っている値が正なので、毎回 style から読ませる。
+        */
+        return { ...before, ...node, width: undefined, height: undefined };
+      });
+    });
     setEdges(built.edges);
   }, [built, setNodes, setEdges]);
 
@@ -283,7 +406,8 @@ export function App(): React.JSX.Element {
           disabled={!snapshot || snapshot.tasks.length === 0}
           onClick={() => {
             if (!snapshot) return;
-            const layout = computeLayout(snapshot);
+            const layout = computeLayout(snapshot, measureTasks());
+            log.debug('整列した', { tasks: layout.positions.length });
             send({ type: 'applyLayout', ...layout });
           }}
           title="依存関係にそって並べ直す。手動で置いた位置は上書きされる"
@@ -318,6 +442,19 @@ export function App(): React.JSX.Element {
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          /*
+            Delete / Backspace による削除を無効にする。
+
+            React Flow の既定では、選んだノードやエッジをこのキーで消せる。
+            **Task がそれで消えると、削除前に何が起きるかを見せる約束(FR-1)を
+            迂回する。** 実際には Task 自体は消えず(こちらがコマンドを送らないため
+            次のスナップショットで戻る)、繋がっていた依存だけが黙って消えていた。
+
+            Task は × から(確認つき)、依存は線の上の × から、childTask は名前を
+            空にした Backspace から。どれも対象がはっきりしている経路にまとめる。
+          */
+          deleteKeyCode={null}
           fitView
           minZoom={0.2}
           /*
@@ -326,6 +463,24 @@ export function App(): React.JSX.Element {
             触れなくなる。枠は常に Task の背面(zIndex: -1)にいるべきもの。
           */
           elevateNodesOnSelect={false}
+          /*
+            2本指スクロールは拡大縮小ではなく移動に割り当てる。
+
+            枠の内側がドラッグで移動できるようになったぶん、ドラッグでパンできる
+            余白が減った。地図や図を扱う道具では、スクロール=移動・ピンチ=拡大が
+            広く使われている慣習でもある。拡大縮小はピンチと Cmd+スクロールに残る。
+          */
+          zoomOnScroll={false}
+          panOnScroll
+          /*
+            掴んでの平行移動は行わない。スクロールに一本化する。
+
+            枠の内側がドラッグで動くようになった時点で、掴んで動かせる場所は
+            「どこにも属さない余白」だけになっていた。**残しておくと、掴んだ先が
+            余白か枠かで結果が変わる**ことになり、狙いを外したときに何が起きるかが
+            読めない。移動はスクロール、と決め切るほうが手が迷わない。
+          */
+          panOnDrag={false}
           onNodeDragStart={(_event, node) => {
             if (node.type !== 'projectFrame') return;
             const projectId = node.id.replace('project:', '');
@@ -436,8 +591,8 @@ export function App(): React.JSX.Element {
           plan={deletePlan}
           snapshot={snapshot}
           onCancel={() => setDeletePlan(null)}
-          onConfirm={() => {
-            send({ type: 'deleteTask', id: deletePlan.taskId });
+          onConfirm={(keepReconnections) => {
+            send({ type: 'deleteTask', id: deletePlan.taskId, keepReconnections });
             setDeletePlan(null);
           }}
         />
@@ -526,11 +681,28 @@ function DeleteDialog({
   plan: DeletePlan;
   snapshot: GraphSnapshot;
   onCancel: () => void;
-  onConfirm: () => void;
+  onConfirm: (keepReconnections: { from: string; to: string }[]) => void;
 }): React.JSX.Element {
   const titleOf = (id: string): string => snapshot.tasks.find((t) => t.id === id)?.title ?? id;
   const target = titleOf(plan.taskId);
   const ref = useRef<HTMLDialogElement>(null);
+
+  /*
+    繋ぎ直しは、外したいものを外せるようにする(FR-1)。
+
+    FR-3 の規則は「繋がっていた相手どうしを繋ぐ」であって、**それがいつも
+    利用者の意図と一致するとは限らない。** 既定は全て繋ぐ —— 規則どおりの
+    結果を、確認の場で削るだけにする。
+  */
+  const key = (edge: { from: string; to: string }): string => `${edge.from}->${edge.to}`;
+  const [dropped, setDropped] = useState<ReadonlySet<string>>(new Set());
+  const toggle = (edge: { from: string; to: string }): void =>
+    setDropped((current) => {
+      const next = new Set(current);
+      if (next.has(key(edge))) next.delete(key(edge));
+      else next.add(key(edge));
+      return next;
+    });
 
   useEffect(() => {
     ref.current?.showModal();
@@ -539,39 +711,66 @@ function DeleteDialog({
   return (
     <dialog className="dialog" ref={ref} onCancel={onCancel} onClose={onCancel}>
       <div>
-        <h2>「{target}」を削除しますか？</h2>
+        <h2>
+          「<span className="doomed">{target}</span>」を削除しますか？
+        </h2>
 
         {plan.removedChildTaskIds.length > 0 && (
-          <p>子タスク {plan.removedChildTaskIds.length} 件も一緒に削除されます。</p>
+          <p className="dialog-lead">
+            子タスク {plan.removedChildTaskIds.length} 件も一緒に削除されます。
+          </p>
         )}
 
+        {/*
+          なくなるものと、代わりにできるものを、色で見分けられるようにする。
+          再接続の規則は条件で変わる(FR-3)ので、読み比べる場面が必ず来る。
+        */}
         {plan.removedEdges.length > 0 && (
-          <>
-            <div>なくなる依存関係:</div>
-            <ul>
+          <section className="dialog-section">
+            <h3 className="dialog-label">なくなる依存関係</h3>
+            <ul className="edge-list is-removed">
               {plan.removedEdges.map((e) => (
                 <li key={`${e.from}->${e.to}`}>
-                  {titleOf(e.from)} → {titleOf(e.to)}
+                  {/* 消える当人を赤くする。どちら側が居なくなるのかが一目で分かる。 */}
+                  <span className={e.from === plan.taskId ? 'doomed' : undefined}>
+                    {titleOf(e.from)}
+                  </span>
+                  <span className="arrow">→</span>
+                  <span className={e.to === plan.taskId ? 'doomed' : undefined}>
+                    {titleOf(e.to)}
+                  </span>
                 </li>
               ))}
             </ul>
-          </>
+          </section>
         )}
 
         {plan.addedEdges.length > 0 ? (
-          <>
-            <div>つなぎ直される依存関係:</div>
-            <ul>
+          <section className="dialog-section">
+            <h3 className="dialog-label">つなぎ直される依存関係</h3>
+            <ul className="edge-list is-added">
               {plan.addedEdges.map((e) => (
-                <li key={`${e.from}->${e.to}`}>
-                  {titleOf(e.from)} → {titleOf(e.to)}
+                <li key={key(e)} className={dropped.has(key(e)) ? 'is-dropped' : undefined}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      className="edge-check"
+                      checked={!dropped.has(key(e))}
+                      onChange={() => toggle(e)}
+                    />
+                    <span className="edge-box" aria-hidden="true" />
+                    <span>{titleOf(e.from)}</span>
+                    <span className="arrow">→</span>
+                    <span>{titleOf(e.to)}</span>
+                  </label>
                 </li>
               ))}
             </ul>
-          </>
+            <p className="dialog-hint">外したものは繋ぎ直されません。</p>
+          </section>
         ) : (
           plan.removedEdges.length > 0 && (
-            <p className="error">つなぎ直しは行われません。上の依存関係は失われます。</p>
+            <p className="dialog-warning">つなぎ直しは行われません。上の依存関係は失われます。</p>
           )
         )}
 
@@ -579,7 +778,11 @@ function DeleteDialog({
           <button type="button" onClick={onCancel}>
             キャンセル
           </button>
-          <button type="button" className="danger" onClick={onConfirm}>
+          <button
+            type="button"
+            className="danger"
+            onClick={() => onConfirm(plan.addedEdges.filter((e) => !dropped.has(key(e))))}
+          >
             削除
           </button>
         </div>
