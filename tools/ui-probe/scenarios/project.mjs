@@ -85,12 +85,30 @@ export default {
     const renamed = await evaluate(`return document.querySelector('.project-name')?.textContent`);
     check('I-4b 打った文字がそのまま名前になる', renamed === '改名A', renamed);
 
-    // 枠は内側のどこを掴んでも動く。中の Task も一緒に来る。
+    /*
+      枠は内側のどこを掴んでも動く。中の Task も一緒に来る。
+
+      掴む点は、窓の内側にあることを確かめてから決める。 枠は画面の端から
+      はみ出していることがあり(整列や fitView の結果は窓の大きさと
+      devicePixelRatio で変わる)、はみ出した側の座標を掴むとマウスがどこにも
+      届かない。実際、CI では枠の左端が -47 にあって掴めなかった。
+
+      elementFromPoint で、狙った先が本当に枠かどうかも見る。
+    */
     const empty = await evaluate(`
       const frame = document.querySelector('.project-frame').getBoundingClientRect();
       const task = document.querySelector('.task').getBoundingClientRect();
-      // Task に当たらない、枠の内側の一点
-      return { x: Math.round(frame.left + 40), y: Math.round(task.bottom + 60) };
+      const onFrame = (x, y) => {
+        if (x < 4 || y < 4 || x > innerWidth - 4 || y > innerHeight - 4) return false;
+        const el = document.elementFromPoint(x, y);
+        return !!el?.closest('.project-frame') && !el?.closest('.task');
+      };
+      for (const x of [frame.left + 40, frame.left + 120, (frame.left + frame.right) / 2, frame.right - 40]) {
+        for (const y of [task.bottom + 60, task.bottom + 20, frame.bottom - 30, frame.top + 20]) {
+          if (onFrame(Math.round(x), Math.round(y))) return { x: Math.round(x), y: Math.round(y) };
+        }
+      }
+      throw new Error('枠の内側に掴める点が見つからない');
     `);
     let before = await spots();
     await drag(empty, { x: empty.x + 60, y: empty.y + 40 });
@@ -149,10 +167,26 @@ export default {
         .find((n) => n.querySelector('.task-title'));
       const frame = document.querySelector('.react-flow__node-projectFrame').getBoundingClientRect();
       const r = task.getBoundingClientRect();
-      return {
-        from: { x: Math.round(r.left + 6), y: Math.round(r.top + 6) },
-        to: { x: Math.round(Math.max(20, frame.left - 100)), y: Math.round(frame.top + 40) },
-      };
+      // 窓の内側で、かつ枠の外にある点を探す。枠は窓より大きいことも、
+      // 端からはみ出していることもあるので、四方を順に当たる。
+      const outside = (x, y) =>
+        x > 16 && y > 16 && x < innerWidth - 16 && y < innerHeight - 16 &&
+        (x < frame.left || x > frame.right || y < frame.top || y > frame.bottom);
+      const candidates = [
+        [frame.left - 100, frame.top + 40],
+        [frame.right + 100, frame.top + 40],
+        [frame.left + 60, frame.bottom + 80],
+        [frame.left + 60, frame.top - 80],
+      ];
+      for (const [x, y] of candidates) {
+        if (outside(Math.round(x), Math.round(y))) {
+          return {
+            from: { x: Math.round(r.left + 6), y: Math.round(r.top + 6) },
+            to: { x: Math.round(x), y: Math.round(y) },
+          };
+        }
+      }
+      throw new Error('枠の外で、窓の内側にある点が見つからない');
     `);
     await drag(out.from, out.to);
     await wait(500);
