@@ -214,3 +214,31 @@ describe('枠どうしは重ならない(FR-4)', () => {
     expect(graph.tasks.get(T('inside'))?.position).toEqual({ x: 20, y: 20 });
   });
 });
+
+describe('既に重なっている状態から抜けられる(FR-4)', () => {
+  /**
+   * DB を直に触るなどして、2組が重なったまま読み込まれた場合。
+   * 全体で判定すると、どれを動かしても別の組が重なったままで弾かれ、
+   * 手で直せなくなる。
+   */
+  const twoOverlappingPairs = () =>
+    buildGraph({
+      projects: {
+        p1: { name: 'AAA', x: 0, y: 0, w: 100, h: 100 },
+        p2: { name: 'BBB', x: 50, y: 0, w: 100, h: 100 },
+        p3: { name: 'CCC', x: 400, y: 0, w: 100, h: 100 },
+        p4: { name: 'DDD', x: 450, y: 0, w: 100, h: 100 },
+      },
+    });
+
+  it('FR-4: 他の組が重なったままでも、1枚を空いている場所へは動かせる', () => {
+    const result = moveProject(twoOverlappingPairs(), P('p1'), { x: 0, y: 800 });
+    expect(result.ok).toBe(true);
+  });
+
+  it('FR-4: それでも、動かした先が他の枠と重なるなら弾く', () => {
+    const result = moveProject(twoOverlappingPairs(), P('p1'), { x: 400, y: 0 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.type).toBe('projects_overlap');
+  });
+});

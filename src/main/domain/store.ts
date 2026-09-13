@@ -26,7 +26,7 @@ import {
   getAllTaskProjects,
   moveProject,
   projectOfTask,
-  rejectOverlappingProjects,
+  rejectAnyOverlap,
   renameProject,
   resizeProject,
   setProjectColor,
@@ -338,7 +338,7 @@ export class TaskGraphStore {
         if (!set.ok) return set;
         graph = set.value;
       }
-      return rejectOverlappingProjects(graph);
+      return rejectAnyOverlap(graph);
     });
   }
 }

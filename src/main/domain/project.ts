@@ -102,13 +102,30 @@ export function findOverlappingProjects(graph: TaskGraph): readonly [ProjectId, 
 }
 
 /**
- * 枠が重なる結果になる変更を拒む(FR-4)。
+ * 動かした枠が他の枠と重なるなら拒む(FR-4)。
  *
  * 重なりを許すと、枠を動かしただけで、動かさなかったほうの Task の所属が
- * 入れ替わる。所属は位置から導出されるため、これは見た目の問題ではなく
- * データが変わることを意味する。
+ * 入れ替わる。所属は位置から導出されるため、見た目の問題ではなくデータが変わる。
+ *
+ * 見るのは動かした1枚と他の枠の関係だけで、グラフ全体は見ない。
+ * 全体で判定すると、DB を直接触るなどして既に2組以上が重なっている状態から
+ * 抜け出せなくなる —— どの枠を引き離しても、別の組が重なったままなので
+ * すべての移動が弾かれる。1枚ずつなら手で直せる(まとめて直すなら整列)。
  */
-export function rejectOverlappingProjects(graph: TaskGraph): Result<TaskGraph, DomainError> {
+export function rejectOverlapWith(graph: TaskGraph, id: ProjectId): Result<TaskGraph, DomainError> {
+  const moved = graph.projects.get(id);
+  if (!moved) return ok(graph);
+
+  const rect = rectOfProject(moved);
+  for (const other of graph.projects.values()) {
+    if (other.id === id) continue;
+    if (rectsOverlap(rect, rectOfProject(other))) return err(projectsOverlap(id, other.id));
+  }
+  return ok(graph);
+}
+
+/** 整列(FR-6)のように、すべての枠を一度に置き直したあとの確認。 */
+export function rejectAnyOverlap(graph: TaskGraph): Result<TaskGraph, DomainError> {
   const pair = findOverlappingProjects(graph);
   return pair ? err(projectsOverlap(pair[0], pair[1])) : ok(graph);
 }
@@ -151,7 +168,7 @@ export function createProject(
   const id = projectId(newId());
   const projects = new Map(graph.projects);
   projects.set(id, { id, name, position, width, height, colorIndex });
-  return rejectOverlappingProjects({ ...graph, projects });
+  return rejectOverlapWith({ ...graph, projects }, id);
 }
 
 export function setProjectColor(
@@ -213,7 +230,7 @@ export function moveProject(
     });
   }
 
-  return rejectOverlappingProjects({ ...graph, tasks, projects });
+  return rejectOverlapWith({ ...graph, tasks, projects }, id);
 }
 
 /**
@@ -229,7 +246,7 @@ export function resizeProject(
 ): Result<TaskGraph, DomainError> {
   const set = setProjectRect(graph, id, position, width, height);
   if (!set.ok) return set;
-  return rejectOverlappingProjects(set.value);
+  return rejectOverlapWith(set.value, id);
 }
 
 /**
