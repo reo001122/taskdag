@@ -38,6 +38,8 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     continue-on-error: true
+    # 手元では20秒で終わる。止まったまま既定の6時間を回さないための上限。
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 

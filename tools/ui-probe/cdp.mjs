@@ -36,6 +36,8 @@ export async function connect(port, { onConsole, expectedUrlPrefix, timeoutMs = 
   const page = await findPage(port, timeoutMs, expectedUrlPrefix);
   const ws = new WebSocket(page.webSocketDebuggerUrl);
   const pending = new Map();
+  /** 応答を待っている呼び出しを、接続が閉じたときに起こすための控え。 */
+  const pendingRejects = new Map();
   let nextId = 0;
 
   ws.addEventListener('message', (event) => {
@@ -53,15 +55,54 @@ export async function connect(port, { onConsole, expectedUrlPrefix, timeoutMs = 
     }
   });
 
+  /*
+    待ち続けない。
+
+    CDP は、応答が返らないことがある —— 対象のページが消えた、描画側が
+    止まっている、そもそも繋がっていない。時間切れを置かないと、その場合に
+    プロセスが黙って止まったままになる。実際に CI で起き、job が終わらなかった。
+    落ちるのは構わない。何を待っていたかが分かる形で落ちればよい。
+  */
   await new Promise((resolve, reject) => {
-    ws.addEventListener('open', resolve);
-    ws.addEventListener('error', () => reject(new Error('CDP へ接続できなかった')));
+    const timer = setTimeout(
+      () => reject(new Error(`CDP の接続が ${timeoutMs}ms 以内に開かなかった`)),
+      timeoutMs,
+    );
+    const settle = (fn, value) => {
+      clearTimeout(timer);
+      fn(value);
+    };
+    ws.addEventListener('open', () => settle(resolve));
+    ws.addEventListener('error', () => settle(reject, new Error('CDP へ接続できなかった')));
+    ws.addEventListener('close', () => settle(reject, new Error('CDP の接続が開く前に閉じた')));
   });
 
-  const send = (method, params = {}) =>
-    new Promise((resolve) => {
+  // 接続が閉じたら、応答を待っているものをすべて起こす。
+  ws.addEventListener('close', () => {
+    for (const [id, reject] of pendingRejects) {
+      pending.delete(id);
+      reject(new Error('CDP の接続が閉じた(アプリが終了した可能性がある)'));
+    }
+    pendingRejects.clear();
+  });
+
+  const send = (method, params = {}, callTimeoutMs = timeoutMs) =>
+    new Promise((resolve, reject) => {
       const id = ++nextId;
-      pending.set(id, resolve);
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        pendingRejects.delete(id);
+        reject(new Error(`${method} の応答が ${callTimeoutMs}ms 以内に返らなかった`));
+      }, callTimeoutMs);
+      pending.set(id, (message) => {
+        clearTimeout(timer);
+        pendingRejects.delete(id);
+        resolve(message);
+      });
+      pendingRejects.set(id, (e) => {
+        clearTimeout(timer);
+        reject(e);
+      });
       ws.send(JSON.stringify({ id, method, params }));
     });
 
