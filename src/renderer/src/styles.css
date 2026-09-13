@@ -699,21 +699,44 @@ body {
   opacity: 0;
   pointer-events: none;
 }
+/*
+  繋ぎ直しを外すためのチェックボックス。
+
+  塗るだけだと、押して切り替えられるものだと見た目から分からない。
+  入っているときはチェックを載せ、入っていないときも枠を残して窪みを出す。
+*/
 .edge-box {
+  position: relative;
   flex: none;
   align-self: center;
   box-sizing: border-box;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   border: 1.5px solid var(--text-dim);
-  border-radius: 3px;
+  border-radius: 5px;
+  background: var(--surface);
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 8%);
   transition:
-    background 0.1s,
-    border-color 0.1s;
+    background 0.12s,
+    border-color 0.12s,
+    box-shadow 0.12s;
 }
 .edge-check:checked + .edge-box {
   background: var(--ready);
   border-color: var(--ready);
+  box-shadow: none;
+}
+/* 入っているときのチェック。 */
+.edge-check:checked + .edge-box::after {
+  content: "";
+  position: absolute;
+  top: 1.5px;
+  left: 5px;
+  width: 3.5px;
+  height: 8px;
+  border: solid var(--surface);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
 }
 .edge-check:focus-visible + .edge-box {
   outline: 2px solid var(--ready);
