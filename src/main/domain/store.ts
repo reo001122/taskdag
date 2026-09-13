@@ -20,6 +20,7 @@ import type {
   TaskGraph,
   TaskId,
 } from './model';
+import { demoteTaskToChild, moveChildTask, promoteChildTask } from './nesting';
 import {
   createProject,
   deleteProject,
@@ -261,6 +262,23 @@ export class TaskGraphStore {
 
   reorderChildTask(id: ChildTaskId, newIndex: number): Result<void, DomainError> {
     return this.#run((g) => reorderChildTask(g, id, newIndex));
+  }
+
+  // --- コマンド: Task と childTask の入れ替え(W-3) ---------------------------
+
+  /** Task を、別の Task の childTask にする。依存は新しい親へ付け替わる。 */
+  demoteTaskToChild(id: TaskId, newParentId: TaskId): Result<void, DomainError> {
+    return this.#run((g) => demoteTaskToChild(g, id, newParentId, this.#newId));
+  }
+
+  /** childTask を、独立した Task にする。依存は引き継がない。 */
+  promoteChildTask(id: ChildTaskId, position: Position): Result<void, DomainError> {
+    return this.#run((g) => promoteChildTask(g, id, position, this.#newId));
+  }
+
+  /** childTask を別の Task の下へ移す。 */
+  moveChildTask(id: ChildTaskId, newParentId: TaskId): Result<void, DomainError> {
+    return this.#run((g) => moveChildTask(g, id, newParentId));
   }
 
   // --- コマンド: エッジ / Project / レイアウト -------------------------------
