@@ -125,6 +125,7 @@ Undo 履歴を破棄する。**DB を唯一の正とする。**
 | `design/decisions.md` | 却下した案と、各判断が何を犠牲にしたか |
 | `research/` | 一次情報にあたった調査。事実・根拠・未解決の問いを分ける |
 | `CONTRIBUTING.md` | 外部の人が変更を提案するために必要なこと(内容の一部は他文書と重複してよい) |
+| `docs/agents/*.md` | エージェント向けSkillが既存文書(`requirements.md`・`design/decisions.md`など)をどう読み替えるか |
 
 ### ここに置かないもの
 
