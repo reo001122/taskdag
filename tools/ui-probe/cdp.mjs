@@ -203,7 +203,25 @@ export async function connect(port, { onConsole, expectedUrlPrefix, timeoutMs = 
         return 1;
       `);
 
+    /*
+      打つ前に、入力欄がフォーカスを持っていることを確かめる。
+
+      フォーカスが移るまでには間がある(React Flow がノードを測り終えるのを
+      待つため)。移る前に打つと、キーは body へ行って黙って消える。value が
+      無い相手には何度打っても入らないので、3回とも空振りして終わる。
+      待ちを入れず素通りしていたのを、ここで止める。
+    */
+    const focusedField = async (timeout = 2000) => {
+      const deadline = Date.now() + timeout;
+      while (Date.now() < deadline) {
+        if ((await valueOfFocused()) !== null) return true;
+        await wait(25);
+      }
+      return false;
+    };
+
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      if (!(await focusedField())) continue;
       for (const ch of text) {
         await send('Input.dispatchKeyEvent', { type: 'keyDown', text: ch, key: ch });
         await send('Input.dispatchKeyEvent', { type: 'keyUp', key: ch });
@@ -211,7 +229,17 @@ export async function connect(port, { onConsole, expectedUrlPrefix, timeoutMs = 
       if ((await valueOfFocused()) === text) return;
       await clearFocused();
     }
-    throw new Error(`打った文字が入力欄に入らなかった: ${text}`);
+
+    // どこに打っていたのかを添える。「入らなかった」だけでは次に調べようがない。
+    const where = await evaluate(`
+      const el = document.activeElement;
+      return {
+        tag: el?.tagName ?? null,
+        class: el?.className?.toString?.().slice(0, 40) ?? null,
+        value: el && 'value' in el ? el.value : null,
+      };
+    `);
+    throw new Error(`打った文字が入力欄に入らなかった: ${text} — ${JSON.stringify(where)}`);
   };
 
   /**
