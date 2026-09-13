@@ -18,7 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Command, CommandResult, DeletePlan, GraphSnapshot } from '../../shared/ipc';
 import { PROJECT_COLOR_COUNT, projectColorAt } from './colors';
 import { DependencyEdge, type DependencyEdgeData } from './DependencyEdge';
-import { computeLayout, type NodeSize } from './layout';
+import { computeLayout, findFreeProjectSlot, NEW_PROJECT_SIZE, type NodeSize } from './layout';
 import { logger } from './log';
 import {
   type AutoEdit,
@@ -561,7 +561,6 @@ export function App(): React.JSX.Element {
           onCancel={() => setAskProjectName(false)}
           onSubmit={(name) => {
             setAskProjectName(false);
-            // 既存の枠と重ならないよう、少しずつずらして置く
             const existing = snapshot?.projects ?? [];
             // まだ使われていない色を優先する。全部使い切っていたら先頭へ戻る。
             const used = new Set(existing.map((p) => p.colorIndex));
@@ -573,13 +572,19 @@ export function App(): React.JSX.Element {
               }
               colorIndex = existing.length % PROJECT_COLOR_COUNT;
             }
-            const n = existing.length;
+            // 枠どうしは重ねられない(FR-4)ので、空いている場所を探して置く。
             send({
               type: 'createProject',
               name,
-              position: { x: 60 + n * 40, y: 60 + n * 40 },
-              width: 460,
-              height: 340,
+              position: findFreeProjectSlot(
+                existing.map((p) => ({
+                  x: p.position.x,
+                  y: p.position.y,
+                  width: p.width,
+                  height: p.height,
+                })),
+              ),
+              ...NEW_PROJECT_SIZE,
               colorIndex,
             });
           }}

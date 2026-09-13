@@ -1,3 +1,4 @@
+import { type Rect, rectsOverlap } from '../../shared/geometry';
 import type { GraphSnapshot, Position } from '../../shared/ipc';
 
 /**
@@ -176,4 +177,34 @@ export function computeLayout(
   frames.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
 
   return { positions, projects: frames };
+}
+
+/** 新しい Project の枠の大きさ。 */
+export const NEW_PROJECT_SIZE = { width: 460, height: 340 };
+
+/**
+ * 新しい枠を置ける場所を探す(FR-4)。
+ *
+ * 枠どうしは重ねられないので、空いている場所を選ばないと作成そのものが弾かれる。
+ * 左上から格子状に、行方向へ順に見ていき、どの枠にも重ならない最初の桝を返す。
+ * 3列で折り返すのは、横へ一直線に伸びて画面の外へ出ていくのを避けるため。
+ */
+export function findFreeProjectSlot(existing: readonly Rect[]): Position {
+  const stepX = NEW_PROJECT_SIZE.width + GROUP_GAP;
+  const stepY = NEW_PROJECT_SIZE.height + GROUP_GAP;
+  const columns = 3;
+
+  for (let n = 0; n < 200; n += 1) {
+    const candidate: Rect = {
+      x: ORIGIN.x + (n % columns) * stepX,
+      y: ORIGIN.y + Math.floor(n / columns) * stepY,
+      ...NEW_PROJECT_SIZE,
+    };
+    if (!existing.some((rect) => rectsOverlap(candidate, rect))) {
+      return { x: candidate.x, y: candidate.y };
+    }
+  }
+
+  // 200 桝すべて埋まっている。最後の桝の下に置く(そこも重なるなら作成が弾かれる)。
+  return { x: ORIGIN.x, y: ORIGIN.y + Math.ceil(200 / columns) * stepY };
 }
