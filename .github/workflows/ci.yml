@@ -51,6 +51,17 @@ jobs:
       - name: Install a virtual display
         run: sudo apt-get update && sudo apt-get install -y xvfb
 
+      # Chromium のサンドボックス補助バイナリは root 所有 + setuid でないと動かず、
+      # そうでない場合 Electron は起動せずに落ちる(サンドボックス無しで動くより
+      # 止まるほうを選ぶ)。npm ci で展開した直後は runner ユーザーの所有になっている。
+      #
+      # --no-sandbox を渡して回避しない。利用者の手元と違う構成でアプリを動かすと、
+      # probe が確かめている「実際に起きること」の意味が薄れる。
+      - name: Let Electron use its sandbox
+        run: |
+          sudo chown root:root node_modules/electron/dist/chrome-sandbox
+          sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
+
       - name: Drive the app
         run: xvfb-run -a npm run probe
 
