@@ -154,3 +154,63 @@ describe('resizeProject — 中身は動かない', () => {
     expect(result.value.tasks.get(T('inside'))?.position).toEqual({ x: 20, y: 20 });
   });
 });
+
+describe('枠どうしは重ならない(FR-4)', () => {
+  /** (0,0) と (200,0) に 100x100 の枠を2枚。間は 100 空いている。 */
+  const twoFrames = () =>
+    buildGraph({
+      projects: {
+        p1: { name: 'AAA', x: 0, y: 0, w: 100, h: 100 },
+        p2: { name: 'BBB', x: 200, y: 0, w: 100, h: 100 },
+      },
+    });
+
+  it('FR-4: 重なる位置へは動かせない', () => {
+    const result = moveProject(twoFrames(), P('p1'), { x: 150, y: 0 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.type).toBe('projects_overlap');
+  });
+
+  it('FR-4: 重ならない位置へは動かせる', () => {
+    const result = moveProject(twoFrames(), P('p1'), { x: 0, y: 300 });
+    expect(result.ok).toBe(true);
+  });
+
+  it('FR-4: 相手に届く大きさへは変えられない', () => {
+    const result = resizeProject(twoFrames(), P('p1'), { x: 0, y: 0 }, 250, 100);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.type).toBe('projects_overlap');
+  });
+
+  it('FR-4: 辺が接するだけなら重なりとしない', () => {
+    const result = moveProject(twoFrames(), P('p1'), { x: 100, y: 0 });
+    expect(result.ok).toBe(true);
+  });
+
+  it('FR-4: 既にある枠に重なる位置には作れない', () => {
+    const result = createProject(
+      twoFrames(),
+      'CCC',
+      { x: 50, y: 50 },
+      100,
+      100,
+      0,
+      sequentialIds(),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.type).toBe('projects_overlap');
+  });
+
+  it('FR-4: 動かせなかったとき、中の Task も動かない', () => {
+    const graph = buildGraph({
+      projects: {
+        p1: { name: 'AAA', x: 0, y: 0, w: 100, h: 100 },
+        p2: { name: 'BBB', x: 200, y: 0, w: 100, h: 100 },
+      },
+      tasks: { inside: { position: { x: 20, y: 20 } } },
+    });
+    const result = moveProject(graph, P('p1'), { x: 150, y: 0 });
+    expect(result.ok).toBe(false);
+    expect(graph.tasks.get(T('inside'))?.position).toEqual({ x: 20, y: 20 });
+  });
+});

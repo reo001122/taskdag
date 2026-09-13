@@ -14,7 +14,8 @@ export type DomainError =
   | { readonly type: 'would_create_cycle'; readonly from: TaskId; readonly to: TaskId }
   | { readonly type: 'edge_already_exists'; readonly from: TaskId; readonly to: TaskId }
   | { readonly type: 'self_loop'; readonly id: TaskId }
-  | { readonly type: 'index_out_of_range'; readonly index: number; readonly length: number };
+  | { readonly type: 'index_out_of_range'; readonly index: number; readonly length: number }
+  | { readonly type: 'projects_overlap'; readonly a: ProjectId; readonly b: ProjectId };
 
 export const taskNotFound = (id: TaskId): DomainError => ({ type: 'task_not_found', id });
 export const childTaskNotFound = (id: ChildTaskId): DomainError => ({
@@ -34,6 +35,11 @@ export const edgeAlreadyExists = (from: TaskId, to: TaskId): DomainError => ({
   to,
 });
 export const selfLoop = (id: TaskId): DomainError => ({ type: 'self_loop', id });
+export const projectsOverlap = (a: ProjectId, b: ProjectId): DomainError => ({
+  type: 'projects_overlap',
+  a,
+  b,
+});
 export const indexOutOfRange = (index: number, length: number): DomainError => ({
   type: 'index_out_of_range',
   index,
@@ -64,5 +70,7 @@ export function describeDomainError(error: DomainError): string {
       return `Task ${error.id} cannot depend on itself.`;
     case 'index_out_of_range':
       return `Index ${error.index} is out of range (0..${error.length - 1}).`;
+    case 'projects_overlap':
+      return `Projects ${error.a} and ${error.b} would overlap. Frames must not overlap.`;
   }
 }
