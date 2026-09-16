@@ -123,6 +123,32 @@ React Flow の `isValidConnection` から呼び出せるよう、**副作用の�
 | `|P| > 1` かつ `|S| > 1` | 再接続しない |
 | `|P| = 0` または `|S| = 0` | 再接続しない(繋ぐ相手が存在しない) |
 
+```mermaid
+flowchart LR
+  subgraph one["先行1・後続1 — 繋ぐ"]
+    direction LR
+    p1["P1"] --> t1(["T"]) --> s1["S1"]
+    p1 -. "再接続" .-> s1
+  end
+  subgraph fan["先行2・後続1 — 全て繋ぐ"]
+    direction LR
+    p2["P1"] --> t2(["T"]) --> s2["S1"]
+    p3["P2"] --> t2
+    p2 -. "再接続" .-> s2
+    p3 -. "再接続" .-> s2
+  end
+  subgraph none["先行2・後続2 — 繋がない"]
+    direction LR
+    p4["P1"] --> t3(["T"]) --> s3["S1"]
+    p5["P2"] --> t3
+    t3 --> s4["S2"]
+  end
+```
+
+破線が再接続で作られるエッジ。少なくとも一方が単数のときだけ繋ぐ。両方が複数の場合に
+総当たりで繋ぐと、組み合わせが `|P| × |S|` に増え、ユーザーの意図とも一致しないため繋がない
+(失われる依存は削除前に提示する。FR-1)。
+
 再接続で作るエッジが既存エッジと重複する場合は、**新規作成せず既存を維持する**(INV-4、冪等)。
 
 削除は以下を1つの不可分な操作として行う:
@@ -155,6 +181,24 @@ readiness(graph, T):
   incoming が空                                → 'ready'
   incoming の全ての from が progress === 'done' → 'ready'
   それ以外                                      → 'blocked'
+```
+
+```mermaid
+flowchart LR
+  subgraph r1["入力なし → ready"]
+    direction LR
+    a1(["T"])
+  end
+  subgraph r2["全ての from が done → ready"]
+    direction LR
+    b1["A: done"] --> b3(["T"])
+    b2["B: done"] --> b3
+  end
+  subgraph r3["1つでも未done → blocked"]
+    direction LR
+    c1["A: done"] --> c3(["T"])
+    c2["B: not_done"] --> c3
+  end
 ```
 
 - **永続化しない**(コーディング規約 4項)。常に導出する。
@@ -193,6 +237,19 @@ projectOfTask(graph, T):
   同面積なら id の小さいもの
   含むものがなければ null
 ```
+
+```mermaid
+flowchart TD
+  T(["Task の左上の点"]) --> Q{"含む枠の数"}
+  Q -- "0枚" --> N["null — どこにも属さない"]
+  Q -- "1枚" --> P["その Project に属する"]
+  Q -- "2枚以上" --> R["面積が最小、同面積なら id 順"]
+  C(["ChildTask"]) -. "親の位置で判定" .-> T
+```
+
+枠どうしは重ならない(D-11)ため、通常たどるのは「0枚」か「1枚」の経路である。
+「2枚以上」は DB を手で編集した場合のための規則であり、`task_project` ビューと同じ順序に
+しておくために決められている。
 
 - **判定は Task の左上の点で行う。** 中心点のほうが直感には近いが、それには描画サイズが
   必要で、サイズは表示側の都合であってドメインが知るべきものではない。
