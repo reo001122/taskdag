@@ -16,13 +16,14 @@ import {
 import '@xyflow/react/dist/style.css';
 import './styles.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { type Rect, rectsOverlap } from '../../shared/geometry';
+import { type Rect, rectIntersection, rectsOverlap } from '../../shared/geometry';
 import type { Command, CommandResult, DeletePlan, GraphSnapshot } from '../../shared/ipc';
 import { clearDropFeedback, type DropPoint, findDropPoint, showDropFeedback } from './childDrag';
 import { PROJECT_COLOR_COUNT, projectColorAt } from './colors';
 import { DependencyEdge, type DependencyEdgeData } from './DependencyEdge';
 import { computeLayout, findFreeProjectSlot, NEW_PROJECT_SIZE, type NodeSize } from './layout';
 import { logger } from './log';
+import { clearOverlapMarks, showOverlapMarks } from './overlapMark';
 import {
   type AutoEdit,
   ProjectFrameNode,
@@ -39,7 +40,7 @@ const nodeTypes: NodeTypes = { task: TaskNode, projectFrame: ProjectFrameNode };
 
 export function App(): React.JSX.Element {
   const [snapshot, setSnapshot] = useState<GraphSnapshot | null>(null);
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, flowToScreenPosition } = useReactFlow();
   const [error, setError] = useState<string | null>(null);
   const [deletePlan, setDeletePlan] = useState<DeletePlan | null>(null);
   const [askProjectName, setAskProjectName] = useState(false);
@@ -111,16 +112,46 @@ export function App(): React.JSX.Element {
     [otherFrames],
   );
 
-  /** 枠に「置けない」の印を付け外しする。 */
+  /**
+   * 置けないことを示す(FR-4)。
+   *
+   * 枠には形だけの印を付け(破線を実線にする)、重なっている領域には斜線を引く。
+   * 色で示さないのは、7色どの Project でも読める必要があるため。
+   *
+   * 斜線は画面座標で描く。判定はキャンバス座標で行うので、そのまま変換して渡す。
+   * 別々に計算すると、弾く範囲と示す範囲がずれる。
+   */
   const markFrameBlocked = useCallback(
-    (nodeId: string, blocked: boolean) => {
+    (nodeId: string, rect: Rect | null) => {
+      const projectId = nodeId.replace('project:', '');
+      const overlaps =
+        rect === null
+          ? []
+          : otherFrames(projectId)
+              .map((other) => rectIntersection(rect, other))
+              .filter((r): r is Rect => r !== null);
+
+      showOverlapMarks(
+        overlaps.map((r) => {
+          const topLeft = flowToScreenPosition({ x: r.x, y: r.y });
+          const bottomRight = flowToScreenPosition({ x: r.x + r.width, y: r.y + r.height });
+          return {
+            x: topLeft.x,
+            y: topLeft.y,
+            width: bottomRight.x - topLeft.x,
+            height: bottomRight.y - topLeft.y,
+          };
+        }),
+      );
+
+      const blocked = overlaps.length > 0;
       setNodes((current) =>
         current.map((n) =>
           n.id === nodeId ? { ...n, className: blocked ? 'is-blocked' : undefined } : n,
         ),
       );
     },
-    [setNodes],
+    [setNodes, otherFrames, flowToScreenPosition],
   );
 
   /**
@@ -366,10 +397,9 @@ export function App(): React.JSX.Element {
         color: projectColorAt(project.colorIndex),
         colorIndex: project.colorIndex,
         onRecolor: (id, colorIndex) => send({ type: 'setProjectColor', id, colorIndex }),
-        onResizing: (id: string, rect: Rect) =>
-          markFrameBlocked(`project:${id}`, wouldOverlap(id, rect)),
+        onResizing: (id: string, rect: Rect) => markFrameBlocked(`project:${id}`, rect),
         onResizeEnd: (id, position, width, height) => {
-          markFrameBlocked(`project:${id}`, false);
+          markFrameBlocked(`project:${id}`, null);
           // 相手に届く大きさで離したら、送らずに元の寸法へ戻す(FR-4)。
           if (wouldOverlap(id, { ...position, width, height })) {
             restoreFrameSize(id);
@@ -647,18 +677,16 @@ export function App(): React.JSX.Element {
             const dx = node.position.x - drag.origin.x;
             const dy = node.position.y - drag.origin.y;
             const projectId = node.id.replace('project:', '');
-            const blocked = wouldOverlap(projectId, {
+            const rect = {
               x: node.position.x,
               y: node.position.y,
               width: drag.size.width,
               height: drag.size.height,
-            });
-            drag.blocked = blocked;
+            };
+            drag.blocked = wouldOverlap(projectId, rect);
+            markFrameBlocked(node.id, rect);
             setNodes((current) =>
               current.map((n) => {
-                if (n.id === node.id) {
-                  return { ...n, className: blocked ? 'is-blocked' : undefined };
-                }
                 const start = drag.members.get(n.id);
                 return start ? { ...n, position: { x: start.x + dx, y: start.y + dy } } : n;
               }),
@@ -693,6 +721,7 @@ export function App(): React.JSX.Element {
                 位置は戻るが、失敗の文言が画面に出る。置けない場所へ運んだのは
                 操作のうちであって、報告すべき失敗ではない。
               */
+              clearOverlapMarks();
               if (drag?.blocked) {
                 setNodes((current) =>
                   current.map((n) => {

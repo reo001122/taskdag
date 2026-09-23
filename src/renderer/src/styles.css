@@ -644,10 +644,39 @@ body.is-dragging-child .child-grip {
   枠どうしは重ねられない。離した時点で元の位置に戻るので、戻る理由が
   見えていないと「掴み損ねた」と受け取られる。
 */
+/*
+  置けない位置にいる枠。
+
+  形だけで示す —— 破線を実線にする。色を変えていたが、暖色の Project では
+  赤との区別がつかないという報告が出た。どこが問題なのかは、重なっている領域の
+  斜線(.overlap-mark)が示すので、枠のほうは「この操作は通らない」とだけ言えばよい。
+*/
 .react-flow__node.is-blocked .project-frame {
   border-style: solid;
-  border-color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  border-width: 2px;
+}
+
+/*
+  重なっている領域。
+
+  置けない理由は重なることであって、どちらか一方の枠ではない。領域そのものに
+  斜線を引く。両方の枠の上に描くので、どちらが前面かに関係なく見える。
+  模様なので、7色どの Project の上でも読める。
+*/
+.overlap-mark {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 900;
+  border: 1.5px solid var(--danger);
+  border-radius: 4px;
+  background-image: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--danger) 38%, transparent) 0 2px,
+    transparent 2px 11px
+  );
+  /* 下にあるものを拾えなくなるので、当たり判定から外す */
+  pointer-events: none;
 }
 .project-frame-label {
   position: absolute;

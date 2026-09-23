@@ -257,6 +257,34 @@ export default {
         midDrag.map((f) => [f.name, f.blocked]),
       );
 
+      /*
+        どこが問題なのかは、重なっている領域そのもので示す。
+
+        枠の片方を塗ると、動かしている側が悪いように見えるうえ、枠はすべて同じ
+        重なり順なので相手の下に潜って見えないことがある。
+      */
+      const marks = await evaluate(`
+        const frames = [...document.querySelectorAll('.react-flow__node-projectFrame')]
+          .map((n) => n.getBoundingClientRect());
+        return [...document.querySelectorAll('.overlap-mark')].map((m) => {
+          const r = m.getBoundingClientRect();
+          return {
+            矩形: [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)],
+            // どの枠の中にも収まっているか(重なりは両方の内側にあるはず)
+            内側: frames.filter((f) =>
+              r.left >= f.left - 1 && r.right <= f.right + 1 &&
+              r.top >= f.top - 1 && r.bottom <= f.bottom + 1
+            ).length,
+          };
+        });
+      `);
+      check('D-7b 重なっている領域に印が出る', marks.length === 1, marks);
+      check(
+        'D-7c その印は両方の枠の内側にある',
+        marks[0]?.内側 === 2 && marks[0]?.矩形[2] > 0 && marks[0]?.矩形[3] > 0,
+        marks,
+      );
+
       await mouse('mouseReleased', onto.x, onto.y, { buttons: 0 });
       await wait(600);
 
@@ -270,6 +298,10 @@ export default {
         'D-9 戻ったあと、置けない印は消えている',
         dropped.every((f) => !f.blocked),
         dropped.map((f) => [f.name, f.blocked]),
+      );
+      check(
+        'D-9b 重なりの印も消えている',
+        (await evaluate(`return document.querySelectorAll('.overlap-mark').length`)) === 0,
       );
       check(
         'D-10 弾かれても所属は変わらない',
