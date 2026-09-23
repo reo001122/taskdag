@@ -28,9 +28,10 @@ type Task = {
   id: TaskId;
   title: string;
   progress: Progress;
-  projectId: ProjectId | null;   // 0 or 1(FR-4)
+  // projectId を持たない  → Project の矩形に含まれているかで導出(FR-4)
   position: Position;            // 手動配置(FR-6)
   collapsed: boolean;            // 折りたたみ状態(FR-6)
+  memo: string;                  // 自由記述。空文字はメモなし(FR-10)
   childTaskIds: ChildTaskId[];   // 配列の順序が childTask の表示順(FR-2)
 };
 
@@ -39,6 +40,7 @@ type ChildTask = {
   parentId: TaskId;
   title: string;
   progress: Progress;
+  memo: string;          // 自由記述。空文字はメモなし(Task と同じ扱い。FR-10)
   // projectId を持たない  → 親から導出(FR-4)
   // position を持たない   → 親ノード内に描画される
   // readiness を持たない  → v1では軸aを持たない(FR-5)
@@ -53,6 +55,10 @@ type DependencyEdge = {
 type Project = {
   id: ProjectId;
   name: string;
+  position: Position;    // 矩形の左上
+  width: number;
+  height: number;
+  colorIndex: number;    // 表示側の配色表の何番目か。色そのものは持たない
 };
 
 type TaskGraph = {
