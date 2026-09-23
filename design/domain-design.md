@@ -10,6 +10,20 @@
 
 ## 1. ドメインモデル
 
+```mermaid
+flowchart LR
+  P["Project — 矩形"]
+  T["Task"]
+  C["ChildTask"]
+  T -- "childTaskIds の配列順" --> C
+  T -- "DependencyEdge" --> T
+  P -. "所属は導出" .-> T
+  C -. "親の所属を継承" .-> P
+```
+
+実線は保存される参照、破線は導出される関係を表す。Project から Task への矢印が
+破線であること —— 所属を表す列がどこにも無いこと —— がこのモデルの要点である(FR-4)。
+
 ```ts
 type TaskId      = string & { readonly __brand: 'TaskId' };
 type ChildTaskId = string & { readonly __brand: 'ChildTaskId' };
