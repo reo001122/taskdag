@@ -152,8 +152,13 @@ body {
   cursor: grabbing;
 }
 
-/* 所属先を示す印。掴む場所ではないので、カーソルは本体に任せる。 */
-.task-grip {
+/*
+  所属先を示す印。掴む場所ではない。
+
+  かつて .task-grip という名前だった。本体のどこでも掴めた頃の名残で、実際には
+  掴めない。取っ手を足したときに紛らわしくなったので、役割どおりの名前にした。
+*/
+.task-project-mark {
   position: absolute;
   top: 0;
   left: 0;
@@ -167,7 +172,7 @@ body {
   justify-content: center;
 }
 
-.task-grip-dot {
+.task-project-dot {
   width: 12px;
   height: 12px;
   border-radius: 50%;
@@ -176,7 +181,7 @@ body {
   box-shadow: 0 0 0 2px var(--surface);
 }
 /* どの Project にも属していないことを、色ではなく形で示す */
-.task-grip-dot.is-unassigned {
+.task-project-dot.is-unassigned {
   background: var(--surface);
   border: 1.5px solid var(--border);
 }
@@ -461,24 +466,46 @@ body {
   普段は薄く、行にカーソルが載ったら濃くする。常に濃いと、分解を読むときに
   名前より先に取っ手が目に入る。
 */
-.child-grip {
+.child-grip,
+.task-grip {
   flex: none;
   width: 10px;
-  height: 16px;
   border-radius: 3px;
   cursor: grab;
-  opacity: 0;
   transition: opacity 0.1s;
   /* 掴める面であることを、点の並びで示す */
   background-image: radial-gradient(circle, var(--text-dim) 1px, transparent 1.2px);
   background-size: 5px 5px;
   background-position: center;
 }
+.child-grip {
+  height: 16px;
+  opacity: 0;
+}
 .child:hover .child-grip {
   opacity: 0.7;
 }
 .child-grip:hover {
   opacity: 1;
+}
+
+/*
+  Task の取っ手は常に出しておく。
+
+  childTask の取っ手はカーソルを載せてから出るが、あちらは行が並んでいて、
+  全部に出ていると名前より先に点の列が目に入る。Task は1枚ずつ離れているので
+  その心配がなく、出したままのほうが「ここから動かす」と分かる。
+*/
+.task-grip {
+  align-self: stretch;
+  min-height: 18px;
+  opacity: 0.45;
+}
+.task-grip:hover {
+  opacity: 0.9;
+}
+.react-flow__node-task.dragging .task-grip {
+  cursor: grabbing;
 }
 body.is-dragging-child,
 body.is-dragging-child .child-grip {

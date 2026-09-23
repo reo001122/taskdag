@@ -425,6 +425,9 @@ export function App(): React.JSX.Element {
         return {
           id: task.id,
           type: 'task',
+          // 取っ手からだけ動かす(FR-6)。本体のどこでも掴めると、childTask の
+          // 取っ手との違いが読めず、掴めるかどうかが場所ごとに変わる。
+          dragHandle: '.task-grip',
           position: task.position,
           data: data as never,
           // dragHandle は指定しない。本体のどこを掴んでも動く。

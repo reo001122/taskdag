@@ -120,12 +120,20 @@ export default {
     });
     check('P-4b 中の Task も一緒に動く', moved(before, after, '中の作業'), { before, after });
 
-    // 中の Task を掴んだときは、Task だけが動く
-    // 名前やボタンには nodrag が付いている。掴めるのは本体の余白。
+    /*
+      中の Task を掴んだときは、Task だけが動く。
+
+      掴めるのは見出しの左端の取っ手だけ(FR-6)。本体のどこでも掴めた頃は
+      下端の余白を押していたが、今そこは掴めない。
+    */
     const onTask = await evaluate(`
-      const r = document.querySelector('.task').getBoundingClientRect();
-      const p = { x: Math.round(r.left + r.width / 2), y: Math.round(r.bottom - 3) };
-      return { ...p, at: document.elementFromPoint(p.x, p.y)?.className?.toString().slice(0, 30) };
+      const grip = document.querySelector('.task-grip');
+      const r = grip.getBoundingClientRect();
+      const p = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+      if (document.elementFromPoint(p.x, p.y) !== grip) {
+        throw new Error('Task の取っ手が覆われている');
+      }
+      return { ...p, at: 'task-grip' };
     `);
     before = await spots();
     await drag(onTask, { x: onTask.x + 50, y: onTask.y + 30 });
@@ -148,7 +156,7 @@ export default {
         const wrap = [...document.querySelectorAll('.task-wrap')]
           .find((w) => w.querySelector('.task-title')?.textContent === ${JSON.stringify(title)});
         if (!wrap) return 'ない';
-        const dot = wrap.querySelector('.task-grip-dot');
+        const dot = wrap.querySelector('.task-project-dot');
         return dot.classList.contains('is-unassigned') ? '所属なし' : getComputedStyle(dot).backgroundColor;
       `);
 
@@ -166,7 +174,9 @@ export default {
       const task = [...document.querySelectorAll('.react-flow__node')]
         .find((n) => n.querySelector('.task-title'));
       const frame = document.querySelector('.react-flow__node-projectFrame').getBoundingClientRect();
-      const r = task.getBoundingClientRect();
+      // 掴めるのは見出しの取っ手だけ(FR-6)
+      const g = task.querySelector('.task-grip').getBoundingClientRect();
+      const r = { left: g.left + g.width / 2 - 6, top: g.top + g.height / 2 - 6 };
       // 窓の内側で、かつ枠の外にある点を探す。枠は窓より大きいことも、
       // 端からはみ出していることもあるので、四方を順に当たる。
       const outside = (x, y) =>
@@ -201,7 +211,9 @@ export default {
       const task = [...document.querySelectorAll('.react-flow__node')]
         .find((n) => n.querySelector('.task-title'));
       const frame = document.querySelector('.react-flow__node-projectFrame').getBoundingClientRect();
-      const r = task.getBoundingClientRect();
+      // 掴めるのは見出しの取っ手だけ(FR-6)
+      const g = task.querySelector('.task-grip').getBoundingClientRect();
+      const r = { left: g.left + g.width / 2 - 6, top: g.top + g.height / 2 - 6 };
       return {
         from: { x: Math.round(r.left + 6), y: Math.round(r.top + 6) },
         to: { x: Math.round(frame.left + 60), y: Math.round(frame.top + 60) },
