@@ -117,6 +117,25 @@ export function executeCommand(
         service.mutate((s) => s.reorderChildTask(childTaskId(command.id), command.newIndex)),
       );
 
+    case 'demoteTaskToChild':
+      return run(
+        service.mutate((s) =>
+          s.demoteTaskToChild(taskId(command.id), taskId(command.newParentId), command.index),
+        ),
+      );
+
+    case 'promoteChildTask':
+      return run(
+        service.mutate((s) => s.promoteChildTask(childTaskId(command.id), command.position)),
+      );
+
+    case 'moveChildTask':
+      return run(
+        service.mutate((s) =>
+          s.moveChildTask(childTaskId(command.id), taskId(command.newParentId), command.index),
+        ),
+      );
+
     case 'connect':
       return run(service.mutate((s) => s.connect(taskId(command.from), taskId(command.to))));
     case 'disconnect':

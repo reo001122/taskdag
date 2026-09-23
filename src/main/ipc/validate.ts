@@ -155,6 +155,35 @@ export function parseCommand(raw: unknown): Result<Command, string> {
       return ok({ type, id: id.value, newIndex: raw.newIndex });
     }
 
+    /*
+      Task と childTask の入れ替え(W-3)
+
+      newParentId は「どの Task の下に入れるか」。renderer は落とした先の
+      ノードから読むが、届いた値が Task の id である保証はここにしかない。
+    */
+    case 'demoteTaskToChild':
+    case 'moveChildTask': {
+      const id = needId();
+      if (!id.ok) return id;
+      if (!isNonEmptyString(raw.newParentId)) {
+        return err('"newParentId" must be a non-empty string');
+      }
+      // index は「表示の並びで何番目の手前か」。負や小数のまま通すと、
+      // 並びの計算が想定外の場所へ入れる。
+      if (typeof raw.index !== 'number' || !Number.isInteger(raw.index) || raw.index < 0) {
+        return err('"index" must be a non-negative integer');
+      }
+      return ok({ type, id: id.value, newParentId: raw.newParentId, index: raw.index });
+    }
+
+    case 'promoteChildTask': {
+      const id = needId();
+      if (!id.ok) return id;
+      const pos = readPosition(raw.position, 'position');
+      if (!pos.ok) return pos;
+      return ok({ type, id: id.value, position: pos.value });
+    }
+
     case 'connect': {
       if (!isNonEmptyString(raw.from)) return err('"from" must be a non-empty string');
       if (!isNonEmptyString(raw.to)) return err('"to" must be a non-empty string');
