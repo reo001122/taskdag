@@ -131,10 +131,21 @@ body {
   position: relative;
 }
 
+/*
+  掴めるのは取っ手だけ(FR-6)。
+
+  React Flow は `.react-flow__node.draggable` に cursor: grab を付ける。
+  カーソルは継承するので、打ち消さないと取っ手以外でも掴む形になる。掴める形を
+  出しておいて動かないのは、壊れているように見える。
+
+  `.draggable` まで書いているのは詳細度を合わせるため。`.react-flow__node-task`
+  だけでは向こうの規則に負ける。
+*/
+.react-flow__node-task.draggable {
+  cursor: default;
+}
+
 .task {
-  /* 本体のどこを掴んでも動く。名前やボタンの上では、それぞれの
-     カーソル(text / pointer)が上書きする。 */
-  cursor: grab;
   position: relative;
   min-width: 160px;
   max-width: 280px;
@@ -148,7 +159,7 @@ body {
 }
 
 /* 掴んでいる間。React Flow がノードに .dragging を付ける。 */
-.react-flow__node.dragging .task {
+.react-flow__node.dragging .task-grip {
   cursor: grabbing;
 }
 
@@ -503,9 +514,6 @@ body {
 }
 .task-grip:hover {
   opacity: 0.9;
-}
-.react-flow__node-task.dragging .task-grip {
-  cursor: grabbing;
 }
 body.is-dragging-child,
 body.is-dragging-child .child-grip {

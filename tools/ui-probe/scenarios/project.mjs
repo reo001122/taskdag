@@ -146,6 +146,23 @@ export default {
     check('P-4d そのとき枠は動かない', !moved(before, after, '改名A'), { before, after });
 
     /*
+      掴める形は、掴める場所にだけ出す。
+
+      本体のどこでも動かせた頃のカーソルが残っていて、取っ手以外でも掴む形に
+      なっていた。掴める形を出しておいて動かないのは、壊れているように見える。
+    */
+    const cursors = await evaluate(`
+      const task = document.querySelector('.task');
+      const grip = task.querySelector('.task-grip');
+      const title = task.querySelector('.task-title');
+      const at = (el) => getComputedStyle(el).cursor;
+      return { 取っ手: at(grip), 本体: at(task), 名前: at(title) };
+    `);
+    check('P-5a 取っ手は掴む形', cursors.取っ手 === 'grab', cursors);
+    check('P-5b 本体は掴む形にしない', cursors.本体 !== 'grab', cursors);
+    check('P-5c 名前は文字を編集する形のまま', cursors.名前 === 'text', cursors);
+
+    /*
       所属は「枠の中に Task があるか」だけで決まる(FR-4)。保存はしない。
 
       枠を消しても中の Task は残る。 領域であって入れ物ではないため、
