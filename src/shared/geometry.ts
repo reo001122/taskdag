@@ -21,3 +21,18 @@ export type Rect = {
 export function rectsOverlap(a: Rect, b: Rect): boolean {
   return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 }
+
+/**
+ * 2つの矩形が重なっている部分。重なっていなければ null。
+ *
+ * 置けない理由は「重なること」であって、どちらか一方の枠ではない。
+ * 重なった領域そのものを示すために使う(FR-4)。
+ */
+export function rectIntersection(a: Rect, b: Rect): Rect | null {
+  const x = Math.max(a.x, b.x);
+  const y = Math.max(a.y, b.y);
+  const right = Math.min(a.x + a.width, b.x + b.width);
+  const bottom = Math.min(a.y + a.height, b.y + b.height);
+  if (right <= x || bottom <= y) return null;
+  return { x, y, width: right - x, height: bottom - y };
+}
