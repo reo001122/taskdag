@@ -461,6 +461,14 @@ export function TaskNode({ data }: NodeProps): React.JSX.Element {
     >
       <div className={className}>
         <div className="task-head">
+          {/*
+            掴み手。ここからだけ動かせる(FR-6)。
+
+            childTask 側に取っ手を出したことで、取っ手の無いものは掴めない、と
+            読めるようになった。実際 Task 本体は掴む場所が分からない、という
+            報告が出た。同じ形の取っ手を同じ位置に置いて揃える。
+          */}
+          <span className="task-grip" title="ドラッグして動かす" />
           <StateToggle
             progress={task.progress}
             onToggle={() =>
@@ -674,10 +682,10 @@ export function TaskNode({ data }: NodeProps): React.JSX.Element {
         移動は本体のどこを掴んでもできるので、ここは掴む場所ではない。
       */}
       <div
-        className="task-grip"
+        className="task-project-mark"
         title={projectColor ? 'この Project に所属' : 'Project に属していない'}
       >
-        <span className={`task-grip-dot${projectColor ? '' : ' is-unassigned'}`} />
+        <span className={`task-project-dot${projectColor ? '' : ' is-unassigned'}`} />
       </div>
     </div>
   );

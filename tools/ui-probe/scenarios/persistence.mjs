@@ -12,9 +12,9 @@ const READ_SCREEN = `
       memo: n.querySelector('.memo-text')?.textContent ?? null,
       state: n.querySelector('.state-toggle')?.className.replace(/state-toggle |nodrag /g, ''),
       collapsed: !!n.querySelector('.state-button.is-collapsed'),
-      project: n.querySelector('.task-grip-dot.is-unassigned')
+      project: n.querySelector('.task-project-dot.is-unassigned')
         ? null
-        : getComputedStyle(n.querySelector('.task-grip-dot')).backgroundColor,
+        : getComputedStyle(n.querySelector('.task-project-dot')).backgroundColor,
       position: [Math.round(n.offsetLeft), Math.round(n.offsetTop)],
       children: [...n.querySelectorAll('.child')].map((c) => ({
         title: c.querySelector('.child-title')?.textContent ?? null,

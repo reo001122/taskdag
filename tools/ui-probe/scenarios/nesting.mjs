@@ -190,12 +190,18 @@ export default {
     );
 
     // 5. Task を、別の Task の見出しへ運んで入れ子にする
+    /** Task を掴む点。掴めるのは見出しの取っ手だけ(FR-6)。 */
     const taskBody = (title) =>
       evaluate(`
         const n = [...document.querySelectorAll('.react-flow__node-task')]
           .find((x) => x.querySelector('.task-title')?.textContent === ${JSON.stringify(title)});
-        const r = n.getBoundingClientRect();
-        return { x: Math.round(r.left + r.width / 2), y: Math.round(r.bottom - 6) };
+        const g = n.querySelector('.task-grip');
+        const r = g.getBoundingClientRect();
+        const p = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+        if (document.elementFromPoint(p.x, p.y) !== g) {
+          throw new Error('Task の取っ手が覆われている: ' + ${JSON.stringify(title)});
+        }
+        return p;
       `);
     const nestSeen = await carry(await taskBody('手順3'), await headOf('親B'));
     check('W-3-5a 入れ子でも、入る場所に線が引かれる', typeof nestSeen.線 === 'number', nestSeen);

@@ -72,7 +72,7 @@ export default {
       evaluate(`
         const out = {};
         for (const wrap of document.querySelectorAll('.task-wrap')) {
-          const dot = wrap.querySelector('.task-grip-dot');
+          const dot = wrap.querySelector('.task-project-dot');
           out[wrap.querySelector('.task-title')?.textContent ?? '?'] =
             dot.classList.contains('is-unassigned') ? '' : getComputedStyle(dot).backgroundColor;
         }
@@ -91,11 +91,17 @@ export default {
           .find((n) => n.querySelector(sel)?.textContent === text);
         const task = find('.task-title', ${JSON.stringify(title)});
         const frame = find('.project-name', ${JSON.stringify(projectName)});
+        // 掴めるのは見出しの取っ手だけ(FR-6)
+        const g = task.querySelector('.task-grip').getBoundingClientRect();
         const t = task.getBoundingClientRect();
         const f = frame.getBoundingClientRect();
         return {
-          from: { x: Math.round(t.left + 6), y: Math.round(t.top + 6) },
-          to: { x: Math.round(f.left + 70), y: Math.round(f.top + 70) },
+          from: { x: Math.round(g.left + g.width / 2), y: Math.round(g.top + g.height / 2) },
+          // 掴んだ点と Task の左上のずれ。所属は左上で決まるので、そのぶん戻す。
+          to: {
+            x: Math.round(f.left + 70 + (g.left + g.width / 2 - t.left)),
+            y: Math.round(f.top + 70 + (g.top + g.height / 2 - t.top)),
+          },
         };
       `);
       await drag(points.from, points.to);
