@@ -334,42 +334,100 @@ type DomainError =
   | { type: 'task_not_found'; id: TaskId }
   | { type: 'child_task_not_found'; id: ChildTaskId }
   | { type: 'edge_not_found'; id: EdgeId }
+  | { type: 'project_not_found'; id: ProjectId }
   | { type: 'would_create_cycle'; from: TaskId; to: TaskId }
   | { type: 'edge_already_exists'; from: TaskId; to: TaskId }
   | { type: 'self_loop'; id: TaskId }
-  | { type: 'project_not_found'; id: ProjectId }
-  | { type: 'index_out_of_range'; index: number; length: number };
+  | { type: 'index_out_of_range'; index: number; length: number }
+  | { type: 'projects_overlap'; a: ProjectId; b: ProjectId }
+  | { type: 'cannot_nest_into_itself'; id: TaskId };
 ```
+
+#### Task
 
 | 操作 | 失敗しうるか |
 |---|---|
-| `createTask(title, position, projectId?)` | projectId が存在しない場合 |
+| `createTask(title, position)` | しない |
 | `updateTaskTitle(id, title)` | Task不在 |
-| `deleteTask(id)` | Task不在 |
 | `setTaskProgress(id, progress)` | Task不在 |
-| `moveTask(id, position)` | Task不在 |
+| `setTaskMemo(id, memo)` | Task不在 |
 | `setTaskCollapsed(id, collapsed)` | Task不在 |
-| `setTaskProject(id, projectId \| null)` | Task不在 / Project不在 |
+| `moveTask(id, position)` | Task不在 |
+| `deleteTask(id, keep?)` | Task不在。`keep` は繋ぎ直すエッジの指定(FR-1) |
+
+**所属を渡す引数も、所属を付け替える操作も無い。** Project は領域であり、所属は位置から
+導出される(§3.5, D-1)。動かせば変わる。
+
+#### childTask
+
+| 操作 | 失敗しうるか |
+|---|---|
 | `createChildTask(parentId, title)` | 親Task不在(末尾に追加する) |
 | `updateChildTaskTitle(id, title)` | childTask不在 |
-| `deleteChildTask(id)` | childTask不在 |
 | `setChildTaskProgress(id, progress)` | childTask不在 |
+| `setChildTaskMemo(id, memo)` | childTask不在 |
+| `deleteChildTask(id)` | childTask不在 |
 | `reorderChildTask(id, newIndex)` | childTask不在 / インデックスが範囲外 |
+
+#### Task と childTask の行き来(W-3)
+
+| 操作 | 失敗しうるか |
+|---|---|
+| `demoteTaskToChild(id, newParentId, index)` | Task不在 / 自分自身を指定 |
+| `promoteChildTask(id, position)` | childTask不在 / 親Task不在 |
+| `moveChildTask(id, newParentId, index)` | childTask不在 / 移す先のTask不在 |
+
+`index` は「表示の並びで何番目の手前に入れるか」。範囲外は端に丸める —— 呼ぶ側が画面から
+読んだ数をそのまま渡せるようにするため。
+
+#### 依存エッジ
+
+| 操作 | 失敗しうるか |
+|---|---|
 | `connect(from, to)` | 循環 / 重複 / 自己ループ / Task不在 |
 | `disconnect(edgeId)` | エッジ不在 |
-| `applyLayout(positions)` | 含まれるTaskが不在 |
-| `batch(fn)` | 内部の操作に従う |
-| `undo()` / `redo()` | 履歴がない場合は何もしない(エラーではない) |
+
+#### Project
+
+| 操作 | 失敗しうるか |
+|---|---|
+| `createProject(name, position, width, height, colorIndex)` | 既にある枠と重なる |
+| `renameProject(id, name)` | Project不在 |
+| `setProjectColor(id, colorIndex)` | Project不在 |
+| `moveProject(id, position)` | Project不在 / 他の枠と重なる |
+| `resizeProject(id, position, width, height)` | Project不在 / 他の枠と重なる |
+| `deleteProject(id)` | Project不在 |
+
+枠どうしが重ならないことは、この層だけが守っている(D-11)。DB 側に制約は無い。
+
+#### まとめて行うもの
+
+| 操作 | 失敗しうるか |
+|---|---|
+| `applyLayout(positions, projectRects?)` | 含まれるTask不在 / 置き直した結果、枠が重なる |
+| `batch(fn)` | 内部の操作に従う。1回の Undo で戻る単位になる |
+| `undo()` / `redo()` | 履歴がない場合は何もしない(エラーではない)。戻せたかを boolean で返す |
+| `resetTo(graph)` | しない。永続化に失敗したときに DB から読み直して戻す用(app-service) |
 
 ### クエリ(状態を変えない)
 
 ```ts
-getGraph(): TaskGraph
-getReadiness(taskId): Readiness
+get graph(): TaskGraph
+get canUndo(): boolean
+get canRedo(): boolean
+
+readinessOf(id: TaskId): Readiness
 getAllReadiness(): ReadonlyMap<TaskId, Readiness>
-canConnect(from, to): boolean       // UIの接続可否判定用(3.1)
-projectOf(childTaskId): ProjectId | null
+
+projectOfTask(id: TaskId): ProjectId | null
+getAllTaskProjects(): ReadonlyMap<TaskId, ProjectId | null>
+
+canConnect(from: TaskId, to: TaskId): boolean   // UIの接続可否判定用(3.1)
+planDeleteTask(id: TaskId): Result<DeleteTaskPlan, DomainError>  // 削除前の提示(FR-1)
 ```
+
+導出値(Readiness と所属)は、1件ずつ引くものと全件まとめて引くものの両方がある。
+画面は毎回すべての Task について必要とするため、1件ずつ呼ぶと同じ探索を繰り返す。
 
 `canConnect` は React Flow の `isValidConnection` から同期的に呼ばれるため、**必ず副作用を持たない**こと。
 
