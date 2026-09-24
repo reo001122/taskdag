@@ -56,6 +56,29 @@ export default {
       あるのが理由。ここも本物のマウスで押す —— click() では pointerdown が
       出ないので反応しない。
     */
+    /** × を押す。押した時点で効く(FR-1)。 */
+    const pressDelete = async (title) => {
+      const at = await evaluate(`
+        const wrap = [...document.querySelectorAll('.task-wrap')]
+          .find((w) => w.querySelector('.task-title')?.textContent === ${JSON.stringify(title)});
+        const btn = [...wrap.querySelectorAll('.task-actions .state-button')]
+          .find((b) => b.textContent === '×');
+        const r = btn.getBoundingClientRect();
+        const p = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+        if (document.elementFromPoint(p.x, p.y) !== btn) {
+          const over = document.elementFromPoint(p.x, p.y);
+          throw new Error(
+            '× が覆われている: ' + (over?.className?.toString?.().slice(0, 40) ?? '?') +
+            ' / 画面内=' + (p.x > 0 && p.y > 0 && p.x < innerWidth && p.y < innerHeight),
+          );
+        }
+        return p;
+      `);
+      await mouse('mousePressed', at.x, at.y, { buttons: 1 });
+      await mouse('mouseReleased', at.x, at.y, { buttons: 0 });
+      await wait(500);
+    };
+
     const openDeleteFor = async (title) => {
       const at = await evaluate(`
         const wrap = [...document.querySelectorAll('.task-wrap')]
@@ -292,5 +315,37 @@ export default {
       hiddenOn,
       hiddenAfterUndo,
     });
+
+    /*
+      見せるものが無ければ、確認を出さずに消す(FR-1)。
+
+      確認の目的は「何が消えて何が繋ぎ直されるか」を見せること。依存も
+      childTask も持たない Task では、空の一覧を見せて聞くだけになる。
+    */
+    await addTask('ひとりだけ');
+    // 新しい Task は画面の外に出ることがある(既知の弱点)。戻してから押す。
+    await evaluate(`document.querySelector('.react-flow__controls-fitview').click(); return 1;`);
+    await wait(600);
+    const countBefore = await evaluate(`return document.querySelectorAll('.task').length`);
+    await pressDelete('ひとりだけ');
+    check(
+      'F-9a 依存も childTask も無い Task は、確認を出さずに消える',
+      !(await evaluate(`return !!document.querySelector('dialog[open]')`)) &&
+        (await evaluate(`return document.querySelectorAll('.task').length`)) === countBefore - 1,
+      {
+        確認: await evaluate(`return !!document.querySelector('dialog[open]')`),
+        件数: [countBefore, await evaluate(`return document.querySelectorAll('.task').length`)],
+      },
+    );
+
+    await evaluate(`
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', metaKey: true, bubbles: true }));
+      return 1;
+    `);
+    await wait(600);
+    check(
+      'F-9b それも1回の Undo で戻る',
+      (await evaluate(`return document.querySelectorAll('.task').length`)) === countBefore,
+    );
   },
 };

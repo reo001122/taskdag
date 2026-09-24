@@ -32,7 +32,26 @@ export default {
     const focusedInput = async (label) => {
       const waitedMs = await waitForFocus();
       const s = await state();
-      check(label, waitedMs >= 0, { waitedMs, ...s });
+      /*
+        間に合わなかったとき、どちら側で時間がかかったのかを添える。
+
+        アプリは「ノードを測り終えた合図」を待ってからフォーカスを当てる。
+        測り終えていなければ機械が遅いだけで、測り終えているのに当たって
+        いなければアプリ側の問題。この2つは直し方がまったく違う。
+      */
+      const why =
+        waitedMs >= 0
+          ? undefined
+          : await evaluate(`
+              const node = document.querySelector('.react-flow__node-task');
+              const a = document.activeElement;
+              return {
+                測れている: node ? node.offsetWidth > 0 : null,
+                見えている: node ? getComputedStyle(node).visibility : null,
+                今のフォーカス: (a?.tagName ?? 'なし') + '.' + (a?.className?.toString?.().slice(0, 24) ?? ''),
+              };
+            `);
+      check(label, waitedMs >= 0, { waitedMs, ...s, ...(why ?? {}) });
       return s;
     };
 
