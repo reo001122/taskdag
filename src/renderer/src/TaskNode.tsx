@@ -1,5 +1,5 @@
 import { Handle, Position as HandlePosition, type NodeProps, NodeResizer } from '@xyflow/react';
-import { useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import type { ChildTaskSnapshot, Command, Progress, TaskSnapshot } from '../../shared/ipc';
 import { type DropPoint, startChildDrag } from './childDrag';
 import { PROJECT_COLORS } from './colors';
@@ -100,25 +100,37 @@ const log = logger('edit');
  * 取れたか(document.activeElement)を見て、駄目なら次のフレームで試す。
  * 要素が消えていれば諦める。
  */
-function focusWhenVisible(
-  el: HTMLInputElement | HTMLTextAreaElement | null,
-  caret: Caret,
-  framesLeft = 20,
-): void {
+/**
+ * このノードが測り終えたか(FR-1)
+ *
+ * React Flow は、ノードの大きさを測り終えるまで `visibility: hidden` にする。
+ * 隠れている要素に focus() を呼んでも何も起きず、しかもエラーにならない。
+ * 測り終えた合図を待ってから当てる。
+ *
+ * ノードの外(ダイアログなど)では常に真。待つ相手がいないため。
+ */
+const NodeMeasured = createContext(true);
+
+/**
+ * 入力欄へフォーカスを当てる。
+ *
+ * かつては「20フレームだけ再試行」していた。フレームの間隔は機械の忙しさで
+ * 変わるので、描画が詰まっているときほど早く諦める —— 遅い機械ほど待たない、
+ * という逆の挙動だった。負荷の高い CI で実際に落ちた。
+ *
+ * 測り終えた合図で呼ぶようにしたので、再試行はしない。当たらなければ、
+ * 黙って失うより残しておくほうがよい。
+ */
+function focusInput(el: HTMLInputElement | HTMLTextAreaElement | null, caret: Caret): void {
   if (!el || !document.contains(el)) return;
 
   el.focus();
-  if (document.activeElement === el) {
-    if (caret === 'all') el.select();
-    else el.setSelectionRange(el.value.length, el.value.length);
+  if (document.activeElement !== el) {
+    log.warn('入力欄にフォーカスできなかった', { タグ: el.tagName });
     return;
   }
-
-  if (framesLeft <= 0) {
-    log.warn('入力欄にフォーカスできなかった');
-    return;
-  }
-  requestAnimationFrame(() => focusWhenVisible(el, caret, framesLeft - 1));
+  if (caret === 'all') el.select();
+  else el.setSelectionRange(el.value.length, el.value.length);
 }
 
 /**
@@ -217,11 +229,12 @@ function EditableText({
 
   // autoFocus 属性はスクリーンリーダーの読み上げ位置を突然動かすため使わない。
   // 編集に切り替わった時点で明示的にフォーカスする。
+  const measured = useContext(NodeMeasured);
   useEffect(() => {
-    if (!editing) return;
+    if (!editing || !measured) return;
     closingRef.current = false;
-    focusWhenVisible(inputRef.current, caret);
-  }, [editing, caret]);
+    focusInput(inputRef.current, caret);
+  }, [editing, measured, caret]);
 
   // 編集を閉じるのは、入力欄の外が押されたときだけ。
   useCloseOnOutsidePointerDown(
@@ -358,9 +371,10 @@ function Memo({
     setDraft(memo);
   }, [memo]);
 
+  const measured = useContext(NodeMeasured);
   useEffect(() => {
-    if (editing) focusWhenVisible(ref.current, 'all');
-  }, [editing]);
+    if (editing && measured) focusInput(ref.current, 'all');
+  }, [editing, measured]);
 
   const finish = (): void => {
     setEditing(false);
@@ -409,7 +423,7 @@ function Memo({
   );
 }
 
-export function TaskNode({ data }: NodeProps): React.JSX.Element {
+export function TaskNode({ data, width }: NodeProps): React.JSX.Element {
   const {
     task,
     children,
@@ -447,247 +461,256 @@ export function TaskNode({ data }: NodeProps): React.JSX.Element {
     .filter(Boolean)
     .join(' ');
 
+  // 測り終えるまで隠れている。その間はフォーカスを当てても何も起きない。
+  const measured = width != null && width > 0;
+
   return (
     /*
       取っ手と接続の端は、角や辺からはみ出すため本体の外側に置く。本体の中に
       置くと overflow: hidden で切り落とされ、かといって visible にすると
       ヘッダの背景が親の丸い角を上書きして枠線が途切れる。
     */
-    <div
-      className="task-wrap"
-      style={
-        projectColor ? ({ '--project-color': projectColor } as React.CSSProperties) : undefined
-      }
-    >
-      <div className={className}>
-        <div className="task-head">
-          {/*
+    <NodeMeasured.Provider value={measured}>
+      <div
+        className="task-wrap"
+        style={
+          projectColor ? ({ '--project-color': projectColor } as React.CSSProperties) : undefined
+        }
+      >
+        <div className={className}>
+          <div className="task-head">
+            {/*
             掴み手。ここからだけ動かせる(FR-6)。
 
             childTask 側に取っ手を出したことで、取っ手の無いものは掴めない、と
             読めるようになった。実際 Task 本体は掴む場所が分からない、という
             報告が出た。同じ形の取っ手を同じ位置に置いて揃える。
           */}
-          <span className="task-grip" title="ドラッグして動かす" />
-          <StateToggle
-            progress={task.progress}
-            onToggle={() =>
-              send({ type: 'setTaskProgress', id: task.id, progress: nextProgress(task.progress) })
-            }
-          />
+            <span className="task-grip" title="ドラッグして動かす" />
+            <StateToggle
+              progress={task.progress}
+              onToggle={() =>
+                send({
+                  type: 'setTaskProgress',
+                  id: task.id,
+                  progress: nextProgress(task.progress),
+                })
+              }
+            />
 
-          <EditableText
-            value={task.title}
-            className="task-title"
-            startEditing={autoEdit?.id === task.id}
-            caret={autoEdit?.caret}
-            onEditEnd={onAutoEditConsumed}
-            onCommit={(title) => send({ type: 'updateTaskTitle', id: task.id, title })}
-            // Shift+Enter で、Task 名を打ち終えた勢いのまま分解に入れる
-            onCommitAndAdd={() => onChildChainAdd(task.id)}
-            // Tab で、そのままメモへ
-            onCommitAndMemo={() => setMemoTarget('task')}
-          />
+            <EditableText
+              value={task.title}
+              className="task-title"
+              startEditing={autoEdit?.id === task.id}
+              caret={autoEdit?.caret}
+              onEditEnd={onAutoEditConsumed}
+              onCommit={(title) => send({ type: 'updateTaskTitle', id: task.id, title })}
+              // Shift+Enter で、Task 名を打ち終えた勢いのまま分解に入れる
+              onCommitAndAdd={() => onChildChainAdd(task.id)}
+              // Tab で、そのままメモへ
+              onCommitAndMemo={() => setMemoTarget('task')}
+            />
 
-          <span className="task-actions nodrag">
-            {children.length > 0 && (
-              /*
+            <span className="task-actions nodrag">
+              {children.length > 0 && (
+                /*
                 折りたたんでいる間は件数を出す。畳んだ Task は1行の Task と
                 見た目が変わらず、中身があること自体が画面から消える。
                 件数は畳んでいるときだけ出す —— 開いていれば数えられる。
               */
+                <button
+                  type="button"
+                  className={`state-button${task.collapsed ? ' is-collapsed' : ''}`}
+                  title={task.collapsed ? `展開 (${children.length} 件)` : '折りたたむ'}
+                  onClick={() =>
+                    send({ type: 'setTaskCollapsed', id: task.id, collapsed: !task.collapsed })
+                  }
+                >
+                  {task.collapsed ? `▸ ${children.length}` : '▾'}
+                </button>
+              )}
               <button
                 type="button"
-                className={`state-button${task.collapsed ? ' is-collapsed' : ''}`}
-                title={task.collapsed ? `展開 (${children.length} 件)` : '折りたたむ'}
-                onClick={() =>
-                  send({ type: 'setTaskCollapsed', id: task.id, collapsed: !task.collapsed })
-                }
+                className="state-button"
+                title="メモ"
+                onClick={() => setMemoTarget('task')}
               >
-                {task.collapsed ? `▸ ${children.length}` : '▾'}
+                ✎
               </button>
-            )}
-            <button
-              type="button"
-              className="state-button"
-              title="メモ"
-              onClick={() => setMemoTarget('task')}
-            >
-              ✎
-            </button>
-            <button
-              type="button"
-              className="state-button"
-              title="子タスクを追加"
-              onClick={() => onChildChainAdd(task.id)}
-            >
-              ＋
-            </button>
-            <button
-              type="button"
-              className="state-button"
-              title="この Task を削除"
-              onClick={() => requestDelete(task.id)}
-            >
-              ×
-            </button>
-          </span>
-        </div>
+              <button
+                type="button"
+                className="state-button"
+                title="子タスクを追加"
+                onClick={() => onChildChainAdd(task.id)}
+              >
+                ＋
+              </button>
+              <button
+                type="button"
+                className="state-button"
+                title="この Task を削除"
+                onClick={() => requestDelete(task.id)}
+              >
+                ×
+              </button>
+            </span>
+          </div>
 
-        <Memo
-          memo={task.memo}
-          startEditing={memoTarget === 'task'}
-          onCommit={(memo) => send({ type: 'setTaskMemo', id: task.id, memo })}
-          onEditEnd={() => setMemoTarget(null)}
-        />
+          <Memo
+            memo={task.memo}
+            startEditing={memoTarget === 'task'}
+            onCommit={(memo) => send({ type: 'setTaskMemo', id: task.id, memo })}
+            onEditEnd={() => setMemoTarget(null)}
+          />
 
-        {showChildren && (
-          <div className="task-children">
-            {visibleChildren.map((child, index) => {
-              const isLast = index === visibleChildren.length - 1;
+          {showChildren && (
+            <div className="task-children">
+              {visibleChildren.map((child, index) => {
+                const isLast = index === visibleChildren.length - 1;
 
-              /*
+                /*
                 並べ替えの行き先は「見えている隣」の位置。
                 表示上の index をそのまま渡すと、完了を非表示にしている間は
                 隠れている項目のぶんだけズレて、別の場所へ飛んでしまう。
                 ドメインは非表示のものも含む全体の並びで扱うため、
                 ここで全体側の位置へ読み替える。
               */
-              const fullIndexOf = (id: string): number => children.findIndex((c) => c.id === id);
-              const previousVisible = visibleChildren[index - 1];
-              const nextVisible = visibleChildren[index + 1];
-              return (
-                <div
-                  key={child.id}
-                  data-child-id={child.id}
-                  className={`child${child.progress === 'done' ? ' is-done' : ''}`}
-                >
-                  <div className="child-row">
-                    {/*
+                const fullIndexOf = (id: string): number => children.findIndex((c) => c.id === id);
+                const previousVisible = visibleChildren[index - 1];
+                const nextVisible = visibleChildren[index + 1];
+                return (
+                  <div
+                    key={child.id}
+                    data-child-id={child.id}
+                    className={`child${child.progress === 'done' ? ' is-done' : ''}`}
+                  >
+                    <div className="child-row">
+                      {/*
                       掴み手。ここから運んで、別の Task の上で離せばその下へ、
                       余白で離せば独立した Task になる(W-3)。
                       nodrag が無いと、React Flow が親ノードごと動かしてしまう。
                     */}
-                    <span
-                      className="child-grip nodrag"
-                      title="ドラッグして、別の Task の下へ移す / 独立させる"
-                      onPointerDown={(e) =>
-                        startChildDrag(e, child, (at, to) => onChildDropped(child.id, at, to))
-                      }
-                    />
-                    <StateToggle
-                      progress={child.progress}
-                      onToggle={() =>
-                        send({
-                          type: 'setChildTaskProgress',
-                          id: child.id,
-                          progress: nextProgress(child.progress),
-                        })
-                      }
-                    />
-
-                    <EditableText
-                      value={child.title}
-                      className="child-title"
-                      startEditing={autoEdit?.id === child.id}
-                      caret={autoEdit?.caret}
-                      onEditEnd={onAutoEditConsumed}
-                      onCommit={(title) =>
-                        send({ type: 'updateChildTaskTitle', id: child.id, title })
-                      }
-                      // Shift+Enter で確定したら、続けてもう1件足す。
-                      // 分解は一気に書き出したいので、都度ボタンへ手を戻したくない。
-                      onCommitAndAdd={() => onChildChainAdd(task.id)}
-                      // Tab で、そのままメモへ
-                      onCommitAndMemo={() => setMemoTarget(child.id)}
-                      // 名前を空にして Backspace で、この項目を取り消す
-                      onRemoveWhenEmpty={() => onChildRemoveWhileEditing(child.id)}
-                    />
-
-                    <span className="child-actions nodrag">
-                      <button
-                        type="button"
-                        className="state-button"
-                        title="上へ"
-                        disabled={index === 0}
-                        onClick={() => {
-                          if (!previousVisible) return;
+                      <span
+                        className="child-grip nodrag"
+                        title="ドラッグして、別の Task の下へ移す / 独立させる"
+                        onPointerDown={(e) =>
+                          startChildDrag(e, child, (at, to) => onChildDropped(child.id, at, to))
+                        }
+                      />
+                      <StateToggle
+                        progress={child.progress}
+                        onToggle={() =>
                           send({
-                            type: 'reorderChildTask',
+                            type: 'setChildTaskProgress',
                             id: child.id,
-                            newIndex: fullIndexOf(previousVisible.id),
-                          });
-                        }}
-                      >
-                        ↑
-                      </button>
-                      <button
-                        type="button"
-                        className="state-button"
-                        title="下へ"
-                        disabled={isLast}
-                        onClick={() => {
-                          if (!nextVisible) return;
-                          send({
-                            type: 'reorderChildTask',
-                            id: child.id,
-                            newIndex: fullIndexOf(nextVisible.id),
-                          });
-                        }}
-                      >
-                        ↓
-                      </button>
-                      <button
-                        type="button"
-                        className="state-button"
-                        title="メモ"
-                        onClick={() => setMemoTarget(child.id)}
-                      >
-                        ✎
-                      </button>
-                      <button
-                        type="button"
-                        className="state-button"
-                        title="削除"
-                        onClick={() => send({ type: 'deleteChildTask', id: child.id })}
-                      >
-                        ×
-                      </button>
-                    </span>
+                            progress: nextProgress(child.progress),
+                          })
+                        }
+                      />
+
+                      <EditableText
+                        value={child.title}
+                        className="child-title"
+                        startEditing={autoEdit?.id === child.id}
+                        caret={autoEdit?.caret}
+                        onEditEnd={onAutoEditConsumed}
+                        onCommit={(title) =>
+                          send({ type: 'updateChildTaskTitle', id: child.id, title })
+                        }
+                        // Shift+Enter で確定したら、続けてもう1件足す。
+                        // 分解は一気に書き出したいので、都度ボタンへ手を戻したくない。
+                        onCommitAndAdd={() => onChildChainAdd(task.id)}
+                        // Tab で、そのままメモへ
+                        onCommitAndMemo={() => setMemoTarget(child.id)}
+                        // 名前を空にして Backspace で、この項目を取り消す
+                        onRemoveWhenEmpty={() => onChildRemoveWhileEditing(child.id)}
+                      />
+
+                      <span className="child-actions nodrag">
+                        <button
+                          type="button"
+                          className="state-button"
+                          title="上へ"
+                          disabled={index === 0}
+                          onClick={() => {
+                            if (!previousVisible) return;
+                            send({
+                              type: 'reorderChildTask',
+                              id: child.id,
+                              newIndex: fullIndexOf(previousVisible.id),
+                            });
+                          }}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          className="state-button"
+                          title="下へ"
+                          disabled={isLast}
+                          onClick={() => {
+                            if (!nextVisible) return;
+                            send({
+                              type: 'reorderChildTask',
+                              id: child.id,
+                              newIndex: fullIndexOf(nextVisible.id),
+                            });
+                          }}
+                        >
+                          ↓
+                        </button>
+                        <button
+                          type="button"
+                          className="state-button"
+                          title="メモ"
+                          onClick={() => setMemoTarget(child.id)}
+                        >
+                          ✎
+                        </button>
+                        <button
+                          type="button"
+                          className="state-button"
+                          title="削除"
+                          onClick={() => send({ type: 'deleteChildTask', id: child.id })}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    </div>
+
+                    <Memo
+                      memo={child.memo}
+                      startEditing={memoTarget === child.id}
+                      onCommit={(memo) => send({ type: 'setChildTaskMemo', id: child.id, memo })}
+                      onEditEnd={() => setMemoTarget(null)}
+                    />
                   </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
-                  <Memo
-                    memo={child.memo}
-                    startEditing={memoTarget === child.id}
-                    onCommit={(memo) => send({ type: 'setChildTaskMemo', id: child.id, memo })}
-                    onEditEnd={() => setMemoTarget(null)}
-                  />
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/*
+        {/*
         接続の端は、取っ手と同じ理由で本体の外側に置く。本体は角を整えるために
         overflow: hidden にしてあり、中に置くと外側の半分が切り落とされる。
         見た目は縦棒のままなのに掴める幅が実測 2.5px しかなく、狙って掴めない。
       */}
-      <Handle type="target" position={HandlePosition.Left} />
-      <Handle type="source" position={HandlePosition.Right} />
+        <Handle type="target" position={HandlePosition.Left} />
+        <Handle type="source" position={HandlePosition.Right} />
 
-      {/*
+        {/*
         左上の頂点に重なる丸点。どの Project に属しているかの印。
         移動は本体のどこを掴んでもできるので、ここは掴む場所ではない。
       */}
-      <div
-        className="task-project-mark"
-        title={projectColor ? 'この Project に所属' : 'Project に属していない'}
-      >
-        <span className={`task-project-dot${projectColor ? '' : ' is-unassigned'}`} />
+        <div
+          className="task-project-mark"
+          title={projectColor ? 'この Project に所属' : 'Project に属していない'}
+        >
+          <span className={`task-project-dot${projectColor ? '' : ' is-unassigned'}`} />
+        </div>
       </div>
-    </div>
+    </NodeMeasured.Provider>
   );
 }
 
@@ -719,11 +742,12 @@ function ProjectName({
     };
   });
 
+  const measured = useContext(NodeMeasured);
   useEffect(() => {
-    if (!editing) return;
+    if (!editing || !measured) return;
     closingRef.current = false;
-    focusWhenVisible(inputRef.current, 'all');
-  }, [editing]);
+    focusInput(inputRef.current, 'all');
+  }, [editing, measured]);
 
   useCloseOnOutsidePointerDown(
     editing,
@@ -809,7 +833,7 @@ export type ProjectNodeData = {
  * 枠はどこを掴んでも動く。中の Task は手前にいるので、Task の上から始めた
  * ドラッグは Task の移動になる —— 枠が持っていくことはない。
  */
-export function ProjectFrameNode({ data, selected }: NodeProps): React.JSX.Element {
+export function ProjectFrameNode({ data, selected, width }: NodeProps): React.JSX.Element {
   const { id, name, color, colorIndex, onRecolor, onResizeEnd, onResizing, onRename, onDelete } =
     data as unknown as ProjectNodeData;
   const [pickingColor, setPickingColor] = useState(false);
@@ -827,8 +851,11 @@ export function ProjectFrameNode({ data, selected }: NodeProps): React.JSX.Eleme
     () => setPickingColor(false),
   );
 
+  // Task と同じく、測り終えるまでは隠れている。
+  const measured = width != null && width > 0;
+
   return (
-    <>
+    <NodeMeasured.Provider value={measured}>
       {/*
         大きさを変える取っ手は常に置いておく。選んでから掴む2手にすると、
         「掴めない」と受け取られる —— 取っ手が出ていないことが、選択されて
@@ -891,6 +918,6 @@ export function ProjectFrameNode({ data, selected }: NodeProps): React.JSX.Eleme
           </button>
         </span>
       </div>
-    </>
+    </NodeMeasured.Provider>
   );
 }
