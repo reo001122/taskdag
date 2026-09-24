@@ -9,7 +9,7 @@ export default {
   name: 'editing',
   description: '名前の編集、Shift+Enter での書き出し、Backspace での取り消し',
 
-  async run({ evaluate, waitFor, waitForFocus, wait, key, type, check }) {
+  async run({ evaluate, waitFor, waitForFocus, wait, key, type, mouse, check }) {
     const state = () =>
       evaluate(`
         const active = document.activeElement;
@@ -179,5 +179,80 @@ export default {
       (await state()).tasks.length === 1,
       await state(),
     );
+
+    /*
+      名前を編集している間も、Task のボタンが効くこと。
+
+      編集中は入力欄のぶんノードが広く、閉じると縮む。押した時点で効かせないと、
+      指を離す頃にはボタンが動いていて click が成立しない(実測 201px 動いた)。
+      実際、名前の編集中は ✎ ＋ × のどれも一度も効かなかった。
+    */
+    const pressButton = async (title) => {
+      const at = await evaluate(`
+        const btn = [...document.querySelectorAll('.task .state-button')]
+          .find((b) => b.title === ${JSON.stringify(title)});
+        if (!btn) throw new Error('ボタンが見つからない: ' + ${JSON.stringify(title)});
+        const r = btn.getBoundingClientRect();
+        const p = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+        if (document.elementFromPoint(p.x, p.y) !== btn) {
+          throw new Error('ボタンが覆われている: ' + ${JSON.stringify(title)});
+        }
+        return p;
+      `);
+      await mouse('mousePressed', at.x, at.y, { buttons: 1 });
+      await mouse('mouseReleased', at.x, at.y, { buttons: 0 });
+      await wait(500);
+    };
+
+    /** Task 名の編集に入る。 */
+    const editName = async () => {
+      await evaluate(`document.querySelector('.task-title')?.click(); return 1;`);
+      await waitFor(
+        '名前が入力欄になる',
+        `return !!document.querySelector('.task-head .text-input')`,
+      );
+      await waitForFocus();
+    };
+
+    await key({ key: 'Escape', code: 27 });
+    await wait(200);
+
+    // ✎ → 名前が確定して、メモの入力へ移る
+    await editName();
+    await type('見出し');
+    await pressButton('メモ');
+    const afterMemo = await evaluate(`
+      const a = document.activeElement;
+      return {
+        名前: document.querySelector('.task-title')?.textContent ?? '(編集中)',
+        フォーカス: a?.tagName ?? 'なし',
+      };
+    `);
+    check('J-1a 名前の編集中に ✎ を押すと、名前が確定する', afterMemo.名前 === '見出し', afterMemo);
+    check('J-1b そのままメモの入力へ移る', afterMemo.フォーカス === 'TEXTAREA', afterMemo);
+    await key({ key: 'Escape', code: 27 });
+    await wait(300);
+
+    // ＋ → 名前が確定して、childTask が増える
+    const childrenBefore = (await state()).children.length;
+    await editName();
+    await pressButton('子タスクを追加');
+    check(
+      'J-2 名前の編集中に ＋ を押すと、childTask が増える',
+      (await state()).children.length === childrenBefore + 1,
+      { childrenBefore, after: (await state()).children.length },
+    );
+    await key({ key: 'Escape', code: 27 });
+    await wait(300);
+
+    // × → 削除の確認が出る
+    await editName();
+    await pressButton('この Task を削除');
+    check(
+      'J-3 名前の編集中に × を押すと、削除の確認が出る',
+      await evaluate(`return !!document.querySelector('dialog[open]')`),
+    );
+    await key({ key: 'Escape', code: 27 });
+    await wait(200);
   },
 };
