@@ -50,13 +50,25 @@ export default {
       await wait(400);
     };
 
+    /*
+      × は押した時点で効く(onClick ではなく onPointerDown)。名前を編集している
+      間にノードの幅が変わってボタンが動くため、離す位置では成立しないことが
+      あるのが理由。ここも本物のマウスで押す —— click() では pointerdown が
+      出ないので反応しない。
+    */
     const openDeleteFor = async (title) => {
-      await evaluate(`
+      const at = await evaluate(`
         const wrap = [...document.querySelectorAll('.task-wrap')]
           .find((w) => w.querySelector('.task-title')?.textContent === ${JSON.stringify(title)});
-        [...wrap.querySelectorAll('.task-actions .state-button')].find((b) => b.textContent === '×').click();
-        return 1;
+        const btn = [...wrap.querySelectorAll('.task-actions .state-button')]
+          .find((b) => b.textContent === '×');
+        const r = btn.getBoundingClientRect();
+        const p = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+        if (document.elementFromPoint(p.x, p.y) !== btn) throw new Error('× が覆われている');
+        return p;
       `);
+      await mouse('mousePressed', at.x, at.y, { buttons: 1 });
+      await mouse('mouseReleased', at.x, at.y, { buttons: 0 });
       await waitFor('確認が開く', `return !!document.querySelector('dialog[open]')`);
       await wait(200);
     };

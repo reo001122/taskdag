@@ -101,6 +101,23 @@ const log = logger('edit');
  * 要素が消えていれば諦める。
  */
 /**
+ * 押した時点で効かせる(FR-1)。
+ *
+ * 名前を編集している間、入力欄のぶんノードが広い。押した瞬間に編集が閉じて
+ * ノードが縮むと、ボタンが動いて指を離す位置から外れる。click は押した要素と
+ * 離した要素が同じでないと成立しないので、その場合は一度も効かない。
+ *
+ * 左ボタンだけを見る。右クリックやペン先の副ボタンで動くと、意図しない操作になる。
+ */
+function onPress(run: () => void) {
+  return (event: React.PointerEvent<HTMLElement>): void => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    run();
+  };
+}
+
+/**
  * このノードが測り終えたか(FR-1)
  *
  * React Flow は、ノードの大きさを測り終えるまで `visibility: hidden` にする。
@@ -529,11 +546,22 @@ export function TaskNode({ data, width }: NodeProps): React.JSX.Element {
                   {task.collapsed ? `▸ ${children.length}` : '▾'}
                 </button>
               )}
+              {/*
+                押した時点で効かせる(onClick ではなく onPointerDown)。
+
+                名前を編集している間、入力欄のぶんノードが広い。押した瞬間に
+                編集が閉じてノードが縮み、ボタンが左へ動く(実測 201px)。
+                離す位置にはもうボタンが無いので、click は成立しない ——
+                名前の編集中はこの3つが一度も効かなかった。
+
+                代償として、押したまま指をずらして取り消すことができない。
+                3つとも取り返しのつかない操作ではない(× も確認を出すだけ)。
+              */}
               <button
                 type="button"
                 className="state-button"
                 title="メモ"
-                onClick={() => setMemoTarget('task')}
+                onPointerDown={onPress(() => setMemoTarget('task'))}
               >
                 ✎
               </button>
@@ -541,7 +569,7 @@ export function TaskNode({ data, width }: NodeProps): React.JSX.Element {
                 type="button"
                 className="state-button"
                 title="子タスクを追加"
-                onClick={() => onChildChainAdd(task.id)}
+                onPointerDown={onPress(() => onChildChainAdd(task.id))}
               >
                 ＋
               </button>
@@ -549,7 +577,7 @@ export function TaskNode({ data, width }: NodeProps): React.JSX.Element {
                 type="button"
                 className="state-button"
                 title="この Task を削除"
-                onClick={() => requestDelete(task.id)}
+                onPointerDown={onPress(() => requestDelete(task.id))}
               >
                 ×
               </button>
