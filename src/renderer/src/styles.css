@@ -162,12 +162,25 @@ body {
   選ばれている Task(FR-1)
 
   Enter でその名前の編集に入れる。どれが対象なのかが見えていないと、押してから
-  分かることになる。枠線を強めるだけにして、中身の色は変えない —— Ready/Blocked と
-  着手中は既に枠線と地の色で示しており、そこへ色を足すと読み取る手がかりが増えすぎる。
+  分かることになる。
+
+  光らせるのは見出しの帯だけにする。 カード全体を囲むと、childTask を持つ
+  Task では「この一式が対象」に見えるのに、Enter が触るのは親の名前だけ ——
+  指し示す範囲と、実際に起きることが食い違う。
 */
-.react-flow__node-task.selected .task {
-  border-color: var(--active);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--active) 35%, transparent);
+.react-flow__node-task.selected .task-own {
+  /*
+    囲むのは親 Task 自身の部分(見出しとメモ)まで。childTask の並びは含めない。
+
+    カード全体を囲むと、childTask を持つ Task では「この一式が対象」に見えるのに、
+    Enter が触るのは親の名前だけ —— 指し示す範囲と実際に起きることが食い違う。
+
+    地の色は変えない。着手中のヘッダは既に色で示されており、線と地なら重なっても
+    見分けられる。
+  */
+  outline: 2px solid var(--active);
+  outline-offset: -2px;
+  border-radius: 6px;
 }
 
 /* 掴んでいる間。React Flow がノードに .dragging を付ける。 */

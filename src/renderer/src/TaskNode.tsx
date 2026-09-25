@@ -521,101 +521,108 @@ export function TaskNode({ data, width }: NodeProps): React.JSX.Element {
         }
       >
         <div className={className}>
-          <div className="task-head">
-            {/*
-            掴み手。ここからだけ動かせる(FR-6)。
+          {/*
+          親 Task 自身の部分。選ばれたときに囲むのはここまでで、childTask の
+          並びは含めない。Enter が触るのは親の名前で、メモも親のものだが、
+          childTask はそれぞれ別の対象だから。
+        */}
+          <div className="task-own">
+            <div className="task-head">
+              {/*
+              掴み手。ここからだけ動かせる(FR-6)。
+  
+              childTask 側に取っ手を出したことで、取っ手の無いものは掴めない、と
+              読めるようになった。実際 Task 本体は掴む場所が分からない、という
+              報告が出た。同じ形の取っ手を同じ位置に置いて揃える。
+            */}
+              <span className="task-grip" title="ドラッグして動かす" />
+              <StateToggle
+                progress={task.progress}
+                onToggle={() =>
+                  send({
+                    type: 'setTaskProgress',
+                    id: task.id,
+                    progress: nextProgress(task.progress),
+                  })
+                }
+              />
 
-            childTask 側に取っ手を出したことで、取っ手の無いものは掴めない、と
-            読めるようになった。実際 Task 本体は掴む場所が分からない、という
-            報告が出た。同じ形の取っ手を同じ位置に置いて揃える。
-          */}
-            <span className="task-grip" title="ドラッグして動かす" />
-            <StateToggle
-              progress={task.progress}
-              onToggle={() =>
-                send({
-                  type: 'setTaskProgress',
-                  id: task.id,
-                  progress: nextProgress(task.progress),
-                })
-              }
-            />
+              <EditableText
+                value={task.title}
+                className="task-title"
+                startEditing={autoEdit?.id === task.id}
+                caret={autoEdit?.caret}
+                onEditEnd={onAutoEditConsumed}
+                onCommit={(title) => send({ type: 'updateTaskTitle', id: task.id, title })}
+                // Shift+Enter で、Task 名を打ち終えた勢いのまま分解に入れる
+                onCommitAndAdd={() => onChildChainAdd(task.id)}
+                // Ctrl+Enter で、そのままメモへ
+                onCommitAndMemo={() => setMemoTarget('task')}
+              />
 
-            <EditableText
-              value={task.title}
-              className="task-title"
-              startEditing={autoEdit?.id === task.id}
-              caret={autoEdit?.caret}
-              onEditEnd={onAutoEditConsumed}
-              onCommit={(title) => send({ type: 'updateTaskTitle', id: task.id, title })}
-              // Shift+Enter で、Task 名を打ち終えた勢いのまま分解に入れる
-              onCommitAndAdd={() => onChildChainAdd(task.id)}
-              // Ctrl+Enter で、そのままメモへ
-              onCommitAndMemo={() => setMemoTarget('task')}
-            />
-
-            <span className="task-actions nodrag">
-              {children.length > 0 && (
-                /*
-                折りたたんでいる間は件数を出す。畳んだ Task は1行の Task と
-                見た目が変わらず、中身があること自体が画面から消える。
-                件数は畳んでいるときだけ出す —— 開いていれば数えられる。
-              */
+              <span className="task-actions nodrag">
+                {children.length > 0 && (
+                  /*
+                  折りたたんでいる間は件数を出す。畳んだ Task は1行の Task と
+                  見た目が変わらず、中身があること自体が画面から消える。
+                  件数は畳んでいるときだけ出す —— 開いていれば数えられる。
+                */
+                  <button
+                    type="button"
+                    className={`state-button${task.collapsed ? ' is-collapsed' : ''}`}
+                    title={task.collapsed ? `展開 (${children.length} 件)` : '折りたたむ'}
+                    onClick={() =>
+                      send({ type: 'setTaskCollapsed', id: task.id, collapsed: !task.collapsed })
+                    }
+                  >
+                    {task.collapsed ? `▸ ${children.length}` : '▾'}
+                  </button>
+                )}
+                {/*
+                  押した時点で効かせる(onClick ではなく onPointerDown)。
+  
+                  名前を編集している間、入力欄のぶんノードが広い。押した瞬間に
+                  編集が閉じてノードが縮み、ボタンが左へ動く(実測 201px)。
+                  離す位置にはもうボタンが無いので、click は成立しない ——
+                  名前の編集中はこの3つが一度も効かなかった。
+  
+                  代償として、押したまま指をずらして取り消すことができない。
+                  3つとも取り返しのつかない操作ではない(× も確認を出すだけ)。
+                */}
                 <button
                   type="button"
-                  className={`state-button${task.collapsed ? ' is-collapsed' : ''}`}
-                  title={task.collapsed ? `展開 (${children.length} 件)` : '折りたたむ'}
-                  onClick={() =>
-                    send({ type: 'setTaskCollapsed', id: task.id, collapsed: !task.collapsed })
-                  }
+                  className="state-button"
+                  title="メモ"
+                  onPointerDown={onPress(() => setMemoTarget('task'))}
                 >
-                  {task.collapsed ? `▸ ${children.length}` : '▾'}
+                  ✎
                 </button>
-              )}
-              {/*
-                押した時点で効かせる(onClick ではなく onPointerDown)。
+                <button
+                  type="button"
+                  className="state-button"
+                  title="子タスクを追加"
+                  onPointerDown={onPress(() => onChildChainAdd(task.id))}
+                >
+                  ＋
+                </button>
+                <button
+                  type="button"
+                  className="state-button"
+                  title="この Task を削除"
+                  onPointerDown={onPress(() => requestDelete(task.id))}
+                >
+                  ×
+                </button>
+              </span>
+            </div>
 
-                名前を編集している間、入力欄のぶんノードが広い。押した瞬間に
-                編集が閉じてノードが縮み、ボタンが左へ動く(実測 201px)。
-                離す位置にはもうボタンが無いので、click は成立しない ——
-                名前の編集中はこの3つが一度も効かなかった。
-
-                代償として、押したまま指をずらして取り消すことができない。
-                3つとも取り返しのつかない操作ではない(× も確認を出すだけ)。
-              */}
-              <button
-                type="button"
-                className="state-button"
-                title="メモ"
-                onPointerDown={onPress(() => setMemoTarget('task'))}
-              >
-                ✎
-              </button>
-              <button
-                type="button"
-                className="state-button"
-                title="子タスクを追加"
-                onPointerDown={onPress(() => onChildChainAdd(task.id))}
-              >
-                ＋
-              </button>
-              <button
-                type="button"
-                className="state-button"
-                title="この Task を削除"
-                onPointerDown={onPress(() => requestDelete(task.id))}
-              >
-                ×
-              </button>
-            </span>
+            <Memo
+              memo={task.memo}
+              startEditing={memoTarget === 'task'}
+              onCommit={(memo) => send({ type: 'setTaskMemo', id: task.id, memo })}
+              onEditEnd={() => setMemoTarget(null)}
+            />
           </div>
-
-          <Memo
-            memo={task.memo}
-            startEditing={memoTarget === 'task'}
-            onCommit={(memo) => send({ type: 'setTaskMemo', id: task.id, memo })}
-            onEditEnd={() => setMemoTarget(null)}
-          />
 
           {showChildren && (
             <div className="task-children">
