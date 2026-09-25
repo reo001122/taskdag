@@ -182,8 +182,14 @@ body {
 */
 .task-own.is-cursor,
 .child.is-cursor {
-  outline: 2px solid var(--select);
-  outline-offset: -2px;
+  /*
+    にじませた線にする。くっきりした枠は、Ready/Blocked の枠線や着手中の
+    ヘッダと同じ強さで主張し、どれが状態でどれが印なのかが読みにくい。
+
+    内側に落とす。カードは角を整えるために overflow: hidden にしてあり、
+    外側へ広げると childTask の行では左右が切り落とされて、上下だけ光る。
+  */
+  box-shadow: inset 0 0 7px 2px color-mix(in srgb, var(--select) 75%, transparent);
   border-radius: 6px;
 }
 
