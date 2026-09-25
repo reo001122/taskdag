@@ -431,5 +431,87 @@ export default {
       ).includes('1行目'),
       { 本文: await evaluate(`return document.querySelector('.memo-text')?.textContent ?? null`) },
     );
+
+    /*
+      Shift+↑↓ で、印を親 Task と childTask の間で動かす(FR-1)。
+
+      見るのは2つ。印が Enter の開く相手と一致していること、そして矢印で
+      ノードが動かないこと —— 修飾キーを足しただけでは React Flow の移動が
+      生き残る、という形で壊れうる。
+    */
+    await key({ key: 'Escape', code: 27 });
+    await wait(200);
+    await evaluate(
+      `[...document.querySelectorAll('.toolbar button')].find((b) => b.textContent.includes('Task')).click(); return 1;`,
+    );
+    await waitForFocus();
+    await type('鍵を回す');
+    // 確定して childTask へ。作った Task は選ばれたままになる。
+    await key({ key: 'Enter', code: 13, shift: true });
+    await waitForFocus();
+    await type('手順あ');
+    await key({ key: 'Enter', code: 13, shift: true });
+    await waitForFocus();
+    await type('手順い');
+    await key({ key: 'Enter', code: 13 });
+    await wait(300);
+
+    const mark = () =>
+      evaluate(`
+        return {
+          親: !!document.querySelector('.task-own.is-cursor'),
+          行: document.querySelector('.child.is-cursor .child-title')?.textContent ?? null,
+        };
+      `);
+    const positionOfSelected = () =>
+      evaluate(
+        `return document.querySelector('.react-flow__node-task.selected')?.style.transform ?? null`,
+      );
+
+    const before = await positionOfSelected();
+    check('N-1a 選んだ直後は親 Task を指している', (await mark()).親 === true, await mark());
+
+    await key({ key: 'ArrowDown', code: 40, shift: true });
+    await wait(200);
+    check('N-1b Shift+↓ で1件目の childTask へ移る', (await mark()).行 === '手順あ', await mark());
+
+    // 端まで押しても、次の Task へは回り込まない
+    await key({ key: 'ArrowDown', code: 40, shift: true });
+    await wait(200);
+    await key({ key: 'ArrowDown', code: 40, shift: true });
+    await wait(200);
+    check('N-1c 一番下で止まる', (await mark()).行 === '手順い', await mark());
+
+    await key({ key: 'ArrowUp', code: 38, shift: true });
+    await wait(200);
+    await key({ key: 'ArrowUp', code: 38, shift: true });
+    await wait(200);
+    await key({ key: 'ArrowUp', code: 38, shift: true });
+    await wait(200);
+    check('N-1d Shift+↑ で親 Task まで戻る', (await mark()).親 === true, await mark());
+
+    check('N-1e 印を動かしても Task の位置は変わらない', (await positionOfSelected()) === before, {
+      before,
+      after: await positionOfSelected(),
+    });
+
+    await key({ key: 'ArrowDown', code: 40, shift: true });
+    await wait(200);
+    await key({ key: 'Enter', code: 13 });
+    await wait(400);
+    const opened = await evaluate(`
+      const a = document.activeElement;
+      return {
+        値: a?.value ?? null,
+        場所: a?.closest('.child') ? 'childTask' : a?.closest('.task-head') ? '親' : 'その他',
+      };
+    `);
+    check(
+      'N-1f Enter は印の付いている childTask の名前を開く',
+      opened.場所 === 'childTask' && opened.値 === '手順あ',
+      opened,
+    );
+    await key({ key: 'Escape', code: 27 });
+    await wait(200);
   },
 };

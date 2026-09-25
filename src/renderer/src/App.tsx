@@ -55,6 +55,19 @@ export function App(): React.JSX.Element {
   const [autoEdit, setAutoEdit] = useState<AutoEdit>(null);
 
   /**
+   * 印が付いている childTask(FR-1)。null なら親 Task 自身を指している。
+   *
+   * どの Task が選ばれているかは React Flow が持っている。こちらが足すのは
+   * その中のどの行か、だけ。選択そのものを自前で持つと、クリックでの選択と
+   * 食い違う。
+   *
+   * 親の id も一緒に持つ。別の Task を選んだときに「前の Task の何行目」を
+   * 引き継がないため —— 引き継ぐと、選び直した直後の Enter が思っていない
+   * childTask を開く。消す処理を別に書くより、見るときに確かめるほうが確実。
+   */
+  const [cursor, setCursor] = useState<{ taskId: string; childId: string } | null>(null);
+
+  /**
    * React Flow に描画を任せるための状態。
    *
    * スナップショットから作った配列をそのまま渡すだけでは、ドラッグ中の
@@ -341,6 +354,52 @@ export function App(): React.JSX.Element {
     [dispatch, snapshot],
   );
 
+  /**
+   * その Task の中で、印を動かせる childTask の id を上から順に返す。
+   *
+   * 画面に出ている行だけを対象にする。完了を隠しているときに隠れた行へ
+   * 印を送ると、押した Enter が画面のどこにも見えないものを開く。
+   * 折りたたんでいる間は行が無いので、印は親から動かない。
+   */
+  const rowsOf = useCallback(
+    (taskId: string): string[] => {
+      const task = snapshot?.tasks.find((t) => t.id === taskId);
+      if (!snapshot || !task || task.collapsed) return [];
+      return task.childTaskIds.filter((id) => {
+        const child = snapshot.childTasks.find((c) => c.id === id);
+        return child !== undefined && (!snapshot.hideCompleted || child.progress !== 'done');
+      });
+    },
+    [snapshot],
+  );
+
+  /** その Task で印が付いている childTask。指していなければ null(= 親自身)。 */
+  const cursorIn = useCallback(
+    (taskId: string): string | null =>
+      cursor !== null && cursor.taskId === taskId && rowsOf(taskId).includes(cursor.childId)
+        ? cursor.childId
+        : null,
+    [cursor, rowsOf],
+  );
+
+  /**
+   * 印を1行動かす(FR-1)。親 Task を先頭に、childTask が続く並びの上を動く。
+   *
+   * 端は端で止める。次の Task へ回り込ませると、選択そのものが動くことになり、
+   * 「今どの Task を見ているか」がキーを押すたびに変わる。
+   */
+  const moveRowCursor = useCallback(
+    (delta: 1 | -1) => {
+      const taskId = getNodes().find((n) => n.selected && n.type === 'task')?.id;
+      if (taskId === undefined) return;
+      const order: (string | null)[] = [null, ...rowsOf(taskId)];
+      const at = Math.max(0, order.indexOf(cursorIn(taskId)));
+      const childId = order[Math.min(order.length - 1, Math.max(0, at + delta))];
+      setCursor(childId == null ? null : { taskId, childId });
+    },
+    [getNodes, rowsOf, cursorIn],
+  );
+
   // Cmd+Z / Cmd+Shift+Z(FR-8)。AI が行った操作もこれで戻せる。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
@@ -365,7 +424,13 @@ export function App(): React.JSX.Element {
         const selected = getNodes().find((n) => n.selected && n.type === 'task');
         if (!selected) return;
         e.preventDefault();
-        setAutoEdit({ id: selected.id, caret: 'all' });
+        /*
+          開くのは印の付いている行。印が childTask にあればその名前へ。
+
+          指していた childTask が消えていれば親を開く。画面の印も同じときに
+          親へ戻る(TaskNode.tsx)ので、見えているものと開くものが揃う。
+        */
+        setAutoEdit({ id: cursorIn(selected.id) ?? selected.id, caret: 'all' });
         return;
       }
 
@@ -391,7 +456,7 @@ export function App(): React.JSX.Element {
       }
     };
     /*
-      矢印キーでノードを動かさせない(FR-6)。
+      矢印キーの扱い。印を動かす(FR-1)か、何もさせない(FR-6)かのどちらか。
 
       React Flow は既定で、焦点のあるノードを矢印キーで動かす。ところがこの
       アプリが座標を確定させるのはドラッグを離したときだけなので、矢印キーで
@@ -403,22 +468,40 @@ export function App(): React.JSX.Element {
       window のリスナより先に走るため、後から preventDefault しても遅い。
       入力欄の中では止めない —— 文字の移動に使うため。
     */
-    const blockArrowMove = (e: KeyboardEvent): void => {
+    const onArrow = (e: KeyboardEvent): void => {
       if (!e.key.startsWith('Arrow')) return;
       const target = e.target as HTMLElement | null;
       if (target?.closest('input, textarea')) return;
+
+      /*
+        Shift+↑↓ で、印を親 Task と childTask の間で動かす(FR-1)。
+
+        ここで受けるのは、こちらもノードより先に取る必要があるため。
+        Shift を足すと React Flow は移動の幅を広げるだけで、動かすことには
+        変わりがない。捕捉の段階で取らなければ、先に動かされる。
+
+        ダイアログが開いている間は何もしない —— そこでのキーはそちらのもの。
+      */
+      if (e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        if (target?.closest('dialog')) return;
+        e.stopPropagation();
+        e.preventDefault();
+        moveRowCursor(e.key === 'ArrowDown' ? 1 : -1);
+        return;
+      }
+
       if (!target?.closest('.react-flow__node')) return;
       e.stopPropagation();
       e.preventDefault();
     };
 
     window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('keydown', blockArrowMove, true);
+    window.addEventListener('keydown', onArrow, true);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('keydown', blockArrowMove, true);
+      window.removeEventListener('keydown', onArrow, true);
     };
-  }, [send, addTaskHere, getNodes]);
+  }, [send, addTaskHere, getNodes, cursorIn, moveRowCursor]);
 
   const requestDelete = useCallback(
     (id: string) => {
@@ -565,6 +648,7 @@ export function App(): React.JSX.Element {
           hideCompleted: snapshot.hideCompleted,
           onChildDropped,
           autoEdit,
+          cursorChildId: cursorIn(task.id),
           send,
           requestDelete,
           onAutoEditConsumed,
@@ -612,6 +696,7 @@ export function App(): React.JSX.Element {
     removeEdge,
     onAutoEditConsumed,
     autoEdit,
+    cursorIn,
     markFrameBlocked,
     wouldOverlap,
     restoreFrameSize,

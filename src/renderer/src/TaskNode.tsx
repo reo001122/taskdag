@@ -24,6 +24,12 @@ export type TaskNodeData = {
   hideCompleted: boolean;
   /** 追加・削除の直後に編集へ入れる相手。Task と childTask のどちらの id も入る。 */
   autoEdit: AutoEdit;
+  /**
+   * Shift+↑↓ で選んでいる行(FR-1)。childTask の id。null なら親 Task 自身。
+   *
+   * 選ばれている Task の分だけ意味を持つ。選ばれていなければ印は出さない。
+   */
+  cursorChildId: string | null;
   send: (command: Command) => void;
   requestDelete: (id: string) => void;
   onAutoEditConsumed: () => void;
@@ -466,13 +472,14 @@ function Memo({
   );
 }
 
-export function TaskNode({ data, width }: NodeProps): React.JSX.Element {
+export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Element {
   const {
     task,
     children,
     projectColor,
     hideCompleted,
     autoEdit,
+    cursorChildId,
     send,
     requestDelete,
     onAutoEditConsumed,
@@ -493,6 +500,18 @@ export function TaskNode({ data, width }: NodeProps): React.JSX.Element {
 
   const visibleChildren = hideCompleted ? children.filter((c) => c.progress !== 'done') : children;
   const showChildren = !task.collapsed && children.length > 0;
+
+  /*
+    印を出す行(FR-1)。Enter が触る相手と同じでなければならない。
+
+    指している childTask が見当たらなければ親へ戻す。完了を非表示にした、
+    別の Task へ移した、消した —— 指す先が消える経路は複数ある。そのまま
+    どこにも印が出ない状態にすると、Enter が何を開くのか画面から読めない。
+  */
+  const cursorRow =
+    cursorChildId !== null && visibleChildren.some((c) => c.id === cursorChildId)
+      ? cursorChildId
+      : null;
 
   const className = [
     'task',
@@ -526,7 +545,7 @@ export function TaskNode({ data, width }: NodeProps): React.JSX.Element {
           並びは含めない。Enter が触るのは親の名前で、メモも親のものだが、
           childTask はそれぞれ別の対象だから。
         */}
-          <div className="task-own">
+          <div className={`task-own${selected && cursorRow === null ? ' is-cursor' : ''}`}>
             <div className="task-head">
               {/*
               掴み手。ここからだけ動かせる(FR-6)。
@@ -643,7 +662,9 @@ export function TaskNode({ data, width }: NodeProps): React.JSX.Element {
                   <div
                     key={child.id}
                     data-child-id={child.id}
-                    className={`child${child.progress === 'done' ? ' is-done' : ''}`}
+                    className={`child${child.progress === 'done' ? ' is-done' : ''}${
+                      selected && cursorRow === child.id ? ' is-cursor' : ''
+                    }`}
                   >
                     <div className="child-row">
                       {/*
