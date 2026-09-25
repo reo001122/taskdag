@@ -39,6 +39,8 @@ export type TaskNodeData = {
   onChildRemoveWhileEditing: (childId: string) => void;
   /** childTask が掴まれて、画面上のその点で離された(W-3)。to は入る先。 */
   onChildDropped: (childId: string, at: { x: number; y: number }, to: DropPoint | null) => void;
+  /** 行が押された。押した行に印を移す。childId が null なら親 Task 自身。 */
+  onRowPressed: (taskId: string, childId: string | null) => void;
 };
 
 /**
@@ -480,6 +482,7 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
     hideCompleted,
     autoEdit,
     cursorChildId,
+    onRowPressed,
     send,
     requestDelete,
     onAutoEditConsumed,
@@ -545,7 +548,16 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
           並びは含めない。Enter が触るのは親の名前で、メモも親のものだが、
           childTask はそれぞれ別の対象だから。
         */}
-          <div className={`task-own${selected && cursorRow === null ? ' is-cursor' : ''}`}>
+          {/*
+          押された行に印を移す(FR-1)。
+
+          押した時点で移す。クリックの成立を待つと、名前を編集している間に
+          レイアウトが動いたときに取りこぼす —— ボタンで実際に起きた。
+        */}
+          <div
+            className={`task-own${selected && cursorRow === null ? ' is-cursor' : ''}`}
+            onPointerDown={() => onRowPressed(task.id, null)}
+          >
             <div className="task-head">
               {/*
               掴み手。ここからだけ動かせる(FR-6)。
@@ -665,6 +677,7 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
                     className={`child${child.progress === 'done' ? ' is-done' : ''}${
                       selected && cursorRow === child.id ? ' is-cursor' : ''
                     }`}
+                    onPointerDown={() => onRowPressed(task.id, child.id)}
                   >
                     <div className="child-row">
                       {/*

@@ -383,6 +383,17 @@ export function App(): React.JSX.Element {
   );
 
   /**
+   * 押された行に印を移す(FR-1)。
+   *
+   * クリックで選んだ Task の印が、前に見ていた行に残っていてはならない。
+   * 選択そのものは React Flow が付け替えるが、行の位置までは知らない ——
+   * 同じ Task を選び直したときには選択が変わらないので、こちらで動かす。
+   */
+  const focusRow = useCallback((taskId: string, childId: string | null) => {
+    setCursor(childId === null ? null : { taskId, childId });
+  }, []);
+
+  /**
    * 印を1行動かす(FR-1)。親 Task を先頭に、childTask が続く並びの上を動く。
    *
    * 端は端で止める。次の Task へ回り込ませると、選択そのものが動くことになり、
@@ -647,6 +658,7 @@ export function App(): React.JSX.Element {
           projectColor: task.projectId === null ? null : (colorOf.get(task.projectId) ?? null),
           hideCompleted: snapshot.hideCompleted,
           onChildDropped,
+          onRowPressed: focusRow,
           autoEdit,
           cursorChildId: cursorIn(task.id),
           send,
@@ -697,6 +709,7 @@ export function App(): React.JSX.Element {
     onAutoEditConsumed,
     autoEdit,
     cursorIn,
+    focusRow,
     markFrameBlocked,
     wouldOverlap,
     restoreFrameSize,

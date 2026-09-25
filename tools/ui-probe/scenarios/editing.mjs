@@ -513,5 +513,60 @@ export default {
     );
     await key({ key: 'Escape', code: 27 });
     await wait(200);
+
+    /*
+      押した行に印が移る(FR-1)。
+
+      選択は React Flow が付け替えるが、行の位置までは知らない。同じ Task を
+      押し直したときには選択が変わらないため、印が前の行に残りうる ——
+      実際に、childTask を押しても親に印が出たままになっていた。
+    */
+    // 名前やボタンを避け、行の左寄りの余白を押す
+    const pressRow = async (selector, index) => {
+      const at = await evaluate(`
+        const el = document.querySelectorAll(${JSON.stringify(selector)})[${index}];
+        if (!el) throw new Error('行が見つからない');
+        const r = el.getBoundingClientRect();
+        return { x: Math.round(r.left + 120), y: Math.round(r.top + 14) };
+      `);
+      await mouse('mousePressed', at.x, at.y, { buttons: 1 });
+      await mouse('mouseReleased', at.x, at.y, { buttons: 0 });
+      await wait(250);
+    };
+    const markOn = () =>
+      evaluate(`
+        return {
+          親: !!document.querySelector('.task-own.is-cursor'),
+          行: document.querySelector('.child.is-cursor .child-title')?.textContent ?? null,
+        };
+      `);
+
+    // 直前に作った Task(手順あ・手順い)が画面の最後にある
+    const rows = await evaluate(`return document.querySelectorAll('.child').length`);
+    await pressRow('.child', rows - 1);
+    check(
+      'N-2a childTask を押すと、その行に印が移る',
+      (await markOn()).行 === '手順い',
+      await markOn(),
+    );
+
+    const heads = await evaluate(`return document.querySelectorAll('.task-head').length`);
+    await pressRow('.task-head', heads - 1);
+    check('N-2b 親の見出しを押すと、印は親へ戻る', (await markOn()).親 === true, await markOn());
+
+    await pressRow('.child', rows - 1);
+    await key({ key: 'Enter', code: 13 });
+    await wait(400);
+    const afterPress = await evaluate(`
+      const a = document.activeElement;
+      return { 値: a?.value ?? null, 場所: a?.closest('.child') ? 'childTask' : '親' };
+    `);
+    check(
+      'N-2c 押した行が、そのまま Enter の開く相手になる',
+      afterPress.場所 === 'childTask' && afterPress.値 === '手順い',
+      afterPress,
+    );
+    await key({ key: 'Escape', code: 27 });
+    await wait(200);
   },
 };
