@@ -41,6 +41,9 @@ export type TaskNodeData = {
   onChildDropped: (childId: string, at: { x: number; y: number }, to: DropPoint | null) => void;
   /** 行が押された。押した行に印を移す。childId が null なら親 Task 自身。 */
   onRowPressed: (taskId: string, childId: string | null) => void;
+  /** メモの入力を開く相手(FR-10)。Task と childTask のどちらの id も入る。 */
+  autoMemo: string | null;
+  onAutoMemoConsumed: () => void;
 };
 
 /**
@@ -483,6 +486,8 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
     autoEdit,
     cursorChildId,
     onRowPressed,
+    autoMemo,
+    onAutoMemoConsumed,
     send,
     requestDelete,
     onAutoEditConsumed,
@@ -500,6 +505,17 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
 
   // ✎ を押した対象。'task' か childTask の id。押された側だけが編集に入る。
   const [memoTarget, setMemoTarget] = useState<string | null>(null);
+
+  /*
+    メモを閉じたら、開く合図も下ろす(FR-10)。
+
+    下ろさないと、合図が立ったまま残る。次に同じ行でメモを開こうとしても
+    値が変わらないので、開く効果が走らない —— 2回目が効かなくなる。
+  */
+  const endMemo = (id: string): void => {
+    setMemoTarget(null);
+    if (autoMemo === id) onAutoMemoConsumed();
+  };
 
   const visibleChildren = hideCompleted ? children.filter((c) => c.progress !== 'done') : children;
   const showChildren = !task.collapsed && children.length > 0;
@@ -649,9 +665,9 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
 
             <Memo
               memo={task.memo}
-              startEditing={memoTarget === 'task'}
+              startEditing={memoTarget === 'task' || autoMemo === task.id}
               onCommit={(memo) => send({ type: 'setTaskMemo', id: task.id, memo })}
-              onEditEnd={() => setMemoTarget(null)}
+              onEditEnd={() => endMemo(task.id)}
             />
           </div>
 
@@ -775,9 +791,9 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
 
                     <Memo
                       memo={child.memo}
-                      startEditing={memoTarget === child.id}
+                      startEditing={memoTarget === child.id || autoMemo === child.id}
                       onCommit={(memo) => send({ type: 'setChildTaskMemo', id: child.id, memo })}
-                      onEditEnd={() => setMemoTarget(null)}
+                      onEditEnd={() => endMemo(child.id)}
                     />
                   </div>
                 );

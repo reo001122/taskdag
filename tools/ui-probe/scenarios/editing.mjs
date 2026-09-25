@@ -568,5 +568,51 @@ export default {
     );
     await key({ key: 'Escape', code: 27 });
     await wait(200);
+
+    /*
+      印の付いている行のメモを Ctrl+Enter で開く(FR-10)。
+
+      名前を打っている最中の Ctrl+Enter と同じ相手が開く。編集に入ってからで
+      ないとメモへ行けないのでは、直すつもりのない名前を一度開くことになる。
+    */
+    const memoAt = () =>
+      evaluate(`
+        const a = document.activeElement;
+        return {
+          欄: a?.className?.includes?.('memo-input') ?? false,
+          場所: a?.closest('.child') ? 'childTask' : a?.closest('.task-own') ? '親' : 'その他',
+        };
+      `);
+
+    await pressRow('.task-head', heads - 1);
+    await key({ key: 'Enter', code: 13, ctrl: true });
+    await waitFor('メモの入力欄が開く', `return !!document.querySelector('.memo-input')`);
+    const onParentMemo = await memoAt();
+    check(
+      'N-3a 選んだ Task の Ctrl+Enter で、その Task のメモが開く',
+      onParentMemo.欄 && onParentMemo.場所 === '親',
+      onParentMemo,
+    );
+    await key({ key: 'Escape', code: 27 });
+    await wait(300);
+
+    await pressRow('.child', rows - 1);
+    await key({ key: 'Enter', code: 13, ctrl: true });
+    await waitFor('メモの入力欄が開く', `return !!document.querySelector('.memo-input')`);
+    const onChildMemo = await memoAt();
+    check(
+      'N-3b 印が childTask にあれば、その childTask のメモが開く',
+      onChildMemo.欄 && onChildMemo.場所 === 'childTask',
+      onChildMemo,
+    );
+    await key({ key: 'Escape', code: 27 });
+    await wait(300);
+
+    // 2回目も効く(開く合図を下ろせている)
+    await key({ key: 'Enter', code: 13, ctrl: true });
+    await wait(500);
+    check('N-3c 同じ行で続けて押しても開く', (await memoAt()).欄 === true, await memoAt());
+    await key({ key: 'Escape', code: 27 });
+    await wait(200);
   },
 };

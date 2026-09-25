@@ -68,6 +68,14 @@ export function App(): React.JSX.Element {
   const [cursor, setCursor] = useState<{ taskId: string; childId: string } | null>(null);
 
   /**
+   * メモの入力を開く相手(FR-10)。Task と childTask のどちらの id も入る。
+   *
+   * 印の付いている行のメモを Ctrl+Enter で開くために要る。開くかどうかを
+   * 決めているのはノード側の状態なので、外から起こすには合図を渡すしかない。
+   */
+  const [autoMemo, setAutoMemo] = useState<string | null>(null);
+
+  /**
    * React Flow に描画を任せるための状態。
    *
    * スナップショットから作った配列をそのまま渡すだけでは、ドラッグ中の
@@ -445,6 +453,23 @@ export function App(): React.JSX.Element {
         return;
       }
 
+      /*
+        Ctrl+Enter で、印の付いている行のメモを開く(FR-10)。
+
+        名前を打っている最中の Ctrl+Enter と同じ相手が開く。編集に入ってから
+        でないとメモへ行けないのでは、直すつもりのない名前を一度開くことになる。
+      */
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
+        const from = e.target as HTMLElement | null;
+        if (from?.closest('input, textarea, dialog')) return;
+
+        const selected = getNodes().find((n) => n.selected && n.type === 'task');
+        if (!selected) return;
+        e.preventDefault();
+        setAutoMemo(cursorIn(selected.id) ?? selected.id);
+        return;
+      }
+
       if (!(e.metaKey || e.ctrlKey)) return;
       const key = e.key.toLowerCase();
 
@@ -565,6 +590,10 @@ export function App(): React.JSX.Element {
     setAutoEdit(null);
   }, []);
 
+  const onAutoMemoConsumed = useCallback(() => {
+    setAutoMemo(null);
+  }, []);
+
   /** 依存を1本外す(FR-3)。線の上の × から呼ばれる。 */
   const removeEdge = useCallback(
     (id: string) => {
@@ -659,6 +688,8 @@ export function App(): React.JSX.Element {
           hideCompleted: snapshot.hideCompleted,
           onChildDropped,
           onRowPressed: focusRow,
+          autoMemo,
+          onAutoMemoConsumed,
           autoEdit,
           cursorChildId: cursorIn(task.id),
           send,
@@ -707,7 +738,9 @@ export function App(): React.JSX.Element {
     removeChildWhileEditing,
     removeEdge,
     onAutoEditConsumed,
+    onAutoMemoConsumed,
     autoEdit,
+    autoMemo,
     cursorIn,
     focusRow,
     markFrameBlocked,
