@@ -282,6 +282,17 @@ export function App(): React.JSX.Element {
     [dispatch],
   );
 
+  /**
+   * Task を1件足す。ツールバーのボタンと Cmd+N の両方から呼ぶ(FR-1)。
+   *
+   * 置き場所は少しずつずらす。同じ座標に重ねると、作ったものが前のものの
+   * 真下に隠れて、増えたことが見えない。
+   */
+  const addTaskHere = useCallback(() => {
+    const n = snapshot?.tasks.length ?? 0;
+    addTask({ x: 120 + (n % 6) * 40, y: 120 + (n % 6) * 70 });
+  }, [addTask, snapshot]);
+
   /** childTask を1件足し、そのまま名前の入力に入る。Shift+Enter で連続して足せる。 */
   const addChild = useCallback(
     (parentId: string) => {
@@ -333,13 +344,30 @@ export function App(): React.JSX.Element {
   // Cmd+Z / Cmd+Shift+Z(FR-8)。AI が行った操作もこれで戻せる。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
-      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'z') return;
-      e.preventDefault();
-      send({ type: e.shiftKey ? 'redo' : 'undo' });
+      if (!(e.metaKey || e.ctrlKey)) return;
+      const key = e.key.toLowerCase();
+
+      if (key === 'z') {
+        e.preventDefault();
+        send({ type: e.shiftKey ? 'redo' : 'undo' });
+        return;
+      }
+
+      /*
+        Cmd+N で Task を1件足す(FR-1)。
+
+        名前や メモ を打っている間は届かない —— 入力欄が keydown を止めている。
+        打っている途中で新しい Task に移るのは、書きかけを置き去りにする操作なので、
+        そこは Enter で確定してからにする。
+      */
+      if (key === 'n') {
+        e.preventDefault();
+        addTaskHere();
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [send]);
+  }, [send, addTaskHere]);
 
   const requestDelete = useCallback(
     (id: string) => {
@@ -559,14 +587,7 @@ export function App(): React.JSX.Element {
   return (
     <div className="app">
       <div className="toolbar">
-        <button
-          type="button"
-          onClick={() => {
-            // 同じ場所に重ならないよう、少しずつずらして置く
-            const n = snapshot?.tasks.length ?? 0;
-            addTask({ x: 120 + (n % 6) * 40, y: 120 + (n % 6) * 70 });
-          }}
-        >
+        <button type="button" onClick={addTaskHere}>
           + Task
         </button>
         <button type="button" onClick={() => setAskProjectName(true)}>

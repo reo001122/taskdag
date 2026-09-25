@@ -273,5 +273,35 @@ export default {
     );
     await key({ key: 'Escape', code: 27 });
     await wait(200);
+
+    /*
+      Cmd+N で Task を足せること(FR-1)。
+
+      Electron の既定メニューに横取りされていないかも、ここで分かる。
+      取られていれば renderer まで届かず、件数が増えない。
+    */
+    const taskCount = () => evaluate(`return document.querySelectorAll('.task').length`);
+    const countBefore = await taskCount();
+    await key({ key: 'n', code: 78, meta: true });
+    await wait(600);
+    check('K-1a Cmd+N で Task が1件増える', (await taskCount()) === countBefore + 1, {
+      countBefore,
+      after: await taskCount(),
+    });
+    check('K-1b そのまま名前を打ち始められる', (await waitForFocus()) >= 0);
+    await key({ key: 'Escape', code: 27 });
+    await wait(300);
+
+    // 名前を打っている最中は届かない。書きかけを置き去りにしないため。
+    const duringEdit = await taskCount();
+    await editName();
+    await key({ key: 'n', code: 78, meta: true });
+    await wait(600);
+    check('K-2 名前を打っている間は増えない', (await taskCount()) === duringEdit, {
+      duringEdit,
+      after: await taskCount(),
+    });
+    await key({ key: 'Escape', code: 27 });
+    await wait(200);
   },
 };

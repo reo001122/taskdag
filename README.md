@@ -106,7 +106,8 @@ npm run dev
 
 | したいこと | 操作 |
 |---|---|
-| Task / Project を作る | ツールバーの `+ Task` / `+ Project` |
+| Task を作る | **Cmd+N**、またはツールバーの `+ Task` |
+| Project を作る | ツールバーの `+ Project` |
 | 名前を変える | 名前をクリック(1回)。または選んで **F2** |
 | 名前を確定する | **Enter** |
 | childTask を足す | 名前の編集中に **Shift+Enter**、または Task の **＋** |
