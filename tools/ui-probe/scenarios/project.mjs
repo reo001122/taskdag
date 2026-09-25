@@ -324,8 +324,12 @@ export default {
         const m = n.style.transform.match(/translate\\(([-0-9.]+)px, ?([-0-9.]+)px\\)/);
         return m ? [Math.round(+m[1]), Math.round(+m[2])] : null;
       `);
+    // N-1〜N-4 で表示を動かしているので、戻してから測る。
+    await evaluate(`document.querySelector('.react-flow__controls-fitview').click(); return 1;`);
+    await wait(600);
     const grip = await evaluate(`
       const g = document.querySelector('.task-grip');
+      if (!g) throw new Error('Task の取っ手が見つからない(Task が無い?)');
       const r = g.getBoundingClientRect();
       const p = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
       if (document.elementFromPoint(p.x, p.y) !== g) throw new Error('取っ手が覆われている');

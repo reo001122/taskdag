@@ -289,6 +289,25 @@ export default {
       after: await taskCount(),
     });
     check('K-1b そのまま名前を打ち始められる', (await waitForFocus()) >= 0);
+    /*
+      作った直後は選ばれている(FR-1)。
+
+      名前を確定したあと、そのまま Enter でもう一度開ける。選ばれていないと、
+      作ったばかりのものに触るのにクリックが要る。
+    */
+    check(
+      'K-1c 作った直後の Task は選ばれている',
+      await evaluate(`return !!document.querySelector('.react-flow__node-task.selected')`),
+    );
+    // 1回目の Enter で名前を確定し、2回目で開き直す。
+    await key({ key: 'Enter', code: 13 });
+    await wait(300);
+    await key({ key: 'Enter', code: 13 });
+    await wait(300);
+    check(
+      'K-1d 確定したあと、そのまま Enter でもう一度開ける',
+      await evaluate(`return !!document.querySelector('.task-head .text-input')`),
+    );
     await key({ key: 'Escape', code: 27 });
     await wait(300);
 

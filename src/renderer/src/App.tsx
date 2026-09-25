@@ -352,6 +352,16 @@ export function App(): React.JSX.Element {
         選択をそのまま使う。クリックで選ばれ、余白のクリックで外れる。
       */
       if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+        /*
+          どこかの入力欄から来た Enter は、そこで意味を持っている。
+
+          Task 名の入力欄は自分で keydown を止めているが、Project 名を聞く
+          ダイアログは止めていない。そのままだと、名前を確定した Enter が
+          ここまで届いて、選ばれている Task の編集が開く。実際に起きた。
+        */
+        const from = e.target as HTMLElement | null;
+        if (from?.closest('input, textarea, dialog')) return;
+
         const selected = getNodes().find((n) => n.selected && n.type === 'task');
         if (!selected) return;
         e.preventDefault();
@@ -437,6 +447,25 @@ export function App(): React.JSX.Element {
     },
     [send],
   );
+
+  /*
+    作った直後の Task を選んでおく(FR-1)。
+
+    作ってすぐ名前を打ち、Enter で確定したあと、そのまま Enter でもう一度
+    開ける。選ばれていなければ、作ったばかりのものにもう一度触るのに
+    クリックが要る。
+
+    ノードは次のスナップショットで現れる。この効果はノードが変わるたびに
+    走らせ、現れた時点で選ぶ —— 作った直後に一度走らせるだけでは、まだ
+    存在していないので空振りする。
+  */
+  useEffect(() => {
+    const id = autoEdit?.id;
+    if (!id) return;
+    const target = nodes.find((n) => n.id === id && n.type === 'task');
+    if (!target || target.selected) return;
+    setNodes((current) => current.map((n) => ({ ...n, selected: n.id === id })));
+  }, [autoEdit, nodes, setNodes]);
 
   const onAutoEditConsumed = useCallback(() => {
     setAutoEdit(null);
