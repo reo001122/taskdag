@@ -26,7 +26,7 @@
     --active をそのまま引くと、着手中のヘッダより印のほうが濃くなり、
     目が先にそちらへ行く。印は「ここが対象」を伝えれば足りる。
   */
-  --select: #e0a96d;
+  --select: #f59e0b;
   --blocked-border: #c9c9c2;
   --project: #8b8b84;
 
@@ -48,7 +48,7 @@
     --ready-soft: #14301f;
     --active: #fbbf24;
     --active-soft: #33260a;
-    --select: #c08c3a;
+    --select: #e0a23f;
     --blocked-border: #3d3d45;
     --project: #6f6f78;
 
@@ -189,7 +189,7 @@ body {
     内側に落とす。カードは角を整えるために overflow: hidden にしてあり、
     外側へ広げると childTask の行では左右が切り落とされて、上下だけ光る。
   */
-  box-shadow: inset 0 0 5px 1px color-mix(in srgb, var(--select) 55%, transparent);
+  box-shadow: inset 0 0 5px 1px color-mix(in srgb, var(--select) 65%, transparent);
   border-radius: 6px;
 }
 
