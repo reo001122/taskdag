@@ -189,7 +189,7 @@ body {
     内側に落とす。カードは角を整えるために overflow: hidden にしてあり、
     外側へ広げると childTask の行では左右が切り落とされて、上下だけ光る。
   */
-  box-shadow: inset 0 0 7px 2px color-mix(in srgb, var(--select) 75%, transparent);
+  box-shadow: inset 0 0 5px 1px color-mix(in srgb, var(--select) 55%, transparent);
   border-radius: 6px;
 }
 
