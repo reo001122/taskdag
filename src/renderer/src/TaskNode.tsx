@@ -199,7 +199,7 @@ function EditableText({
   onEditEnd?: () => void;
   /** Shift+Enter で確定したときに呼ばれる。確定して、続けて次の項目を足す用。 */
   onCommitAndAdd?: () => void;
-  /** Tab が押されたときに呼ばれる。確定して、メモの入力へ移る用。 */
+  /** Ctrl+Enter が押されたときに呼ばれる。確定して、メモの入力へ移る用。 */
   onCommitAndMemo?: () => void;
   /**
    * 名前が空の状態で Backspace が押されたときに呼ばれる。渡さなければ何も起きない。
@@ -319,22 +319,33 @@ function EditableText({
         // 入力を終える意思表示ではない。
         if (e.nativeEvent.isComposing) return;
 
+        /*
+          Enter の3つ。確定だけ / 確定して childTask へ / 確定してメモへ。
+
+          修飾キーで対にしてある。分解を書き出している間、次に書きたいものが
+          手順なのかメモなのかで手の形だけが変わる。ボタンへ手を戻さずに済む。
+        */
         if (e.key === 'Enter') {
           e.preventDefault();
-          // Enter は確定だけ。Shift+Enter は確定して次の項目へ進む。
-          // 分解を一気に書き出す間、ボタンへ手を戻さずに済む。
+          if ((e.ctrlKey || e.metaKey) && onCommitAndMemo) {
+            finishRef.current(false);
+            onCommitAndMemo();
+            return;
+          }
           finishRef.current(e.shiftKey);
+          return;
         }
-        /*
-          Tab は「次の欄へ」。名前の次にあるのはメモなので、そこへ移る。
 
-          名前を打ち終えてメモを書きたいたびにマウスへ持ち替えるのでは、
-          書き出しの流れが切れる。Tab 本来の意味から外れてもいない。
+        /*
+          Tab は何もしない。
+
+          かつてはメモへ移る操作だったが、Ctrl+Enter に移した。既定の動きに
+          任せると入力欄から焦点が外れるが、この入力欄は焦点を取り返すので、
+          一瞬だけどこかへ移って戻る形になる。止めておく。
         */
-        if (e.key === 'Tab' && !e.shiftKey && onCommitAndMemo) {
+        if (e.key === 'Tab') {
           e.preventDefault();
-          finishRef.current(false);
-          onCommitAndMemo();
+          return;
         }
 
         // 空の名前で Backspace は「この項目を取り消す」。Shift+Enter で
@@ -524,7 +535,7 @@ export function TaskNode({ data, width }: NodeProps): React.JSX.Element {
               onCommit={(title) => send({ type: 'updateTaskTitle', id: task.id, title })}
               // Shift+Enter で、Task 名を打ち終えた勢いのまま分解に入れる
               onCommitAndAdd={() => onChildChainAdd(task.id)}
-              // Tab で、そのままメモへ
+              // Ctrl+Enter で、そのままメモへ
               onCommitAndMemo={() => setMemoTarget('task')}
             />
 
@@ -648,7 +659,7 @@ export function TaskNode({ data, width }: NodeProps): React.JSX.Element {
                         // Shift+Enter で確定したら、続けてもう1件足す。
                         // 分解は一気に書き出したいので、都度ボタンへ手を戻したくない。
                         onCommitAndAdd={() => onChildChainAdd(task.id)}
-                        // Tab で、そのままメモへ
+                        // Ctrl+Enter で、そのままメモへ
                         onCommitAndMemo={() => setMemoTarget(child.id)}
                         // 名前を空にして Backspace で、この項目を取り消す
                         onRemoveWhenEmpty={() => onChildRemoveWhileEditing(child.id)}

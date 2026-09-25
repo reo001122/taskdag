@@ -114,7 +114,7 @@ export default {
     check('戻った先の名前は消えていない', s.children[1] === null, s.children);
 
     /*
-      名前からメモへは Tab で移る。
+      名前からメモへは Ctrl+Enter で移る。
 
       名前を打ち終えてメモを書きたいたびにマウスへ持ち替えるのでは、
       書き出しの流れが切れる。
@@ -127,7 +127,7 @@ export default {
       `return !!document.querySelector('.task-head .text-input')`,
     );
     await waitForFocus();
-    await key({ key: 'Tab', code: 9 });
+    await key({ key: 'Enter', code: 13, ctrl: true });
     await waitFor('メモの入力欄が開く', `return !!document.querySelector('.memo-input')`);
     const onMemo = await evaluate(`
       const t0 = performance.now();
@@ -142,7 +142,7 @@ export default {
         tick();
       });
     `);
-    check('名前から Tab でメモの入力へ移る', onMemo >= 0, { waitedMs: onMemo });
+    check('名前から Ctrl+Enter でメモの入力へ移る', onMemo >= 0, { waitedMs: onMemo });
 
     await type('あとで読み返す用');
     await key({ key: 'Escape', code: 27 });
@@ -153,7 +153,7 @@ export default {
       `return !!document.querySelector('.task-head .text-input')`,
     );
     await waitForFocus();
-    await key({ key: 'Tab', code: 9 });
+    await key({ key: 'Enter', code: 13, ctrl: true });
     await waitFor('メモの入力欄が開く', `return !!document.querySelector('.memo-input')`);
     await waitForFocus();
     await type('あとで読み返す用');
@@ -303,5 +303,65 @@ export default {
     });
     await key({ key: 'Escape', code: 27 });
     await wait(200);
+
+    /*
+      選んでいる Task は Enter で名前の編集に入る(FR-1)。
+
+      作った直後は打てるのに、既にある Task はクリックが要る、という非対称を
+      なくす。どれが対象かは選択の見た目で分かる。
+    */
+    await key({ key: 'Escape', code: 27 });
+    await wait(200);
+    const target = await evaluate(`
+      const g = document.querySelector('.task-grip');
+      const r = g.getBoundingClientRect();
+      const p = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+      if (document.elementFromPoint(p.x, p.y) !== g) throw new Error('取っ手が覆われている');
+      return p;
+    `);
+    await mouse('mousePressed', target.x, target.y, { buttons: 1 });
+    await mouse('mouseReleased', target.x, target.y, { buttons: 0 });
+    await wait(300);
+    check(
+      'L-1a Task を押すと、選ばれていることが見た目に出る',
+      await evaluate(`return !!document.querySelector('.react-flow__node-task.selected')`),
+    );
+
+    await key({ key: 'Enter', code: 13 });
+    await wait(400);
+    check(
+      'L-1b Enter でその名前の編集に入る',
+      await evaluate(`return !!document.querySelector('.task-head .text-input')`),
+    );
+    check('L-1c そのまま打ち始められる', (await waitForFocus()) >= 0);
+    await key({ key: 'Escape', code: 27 });
+    await wait(300);
+
+    // 余白を押すと選択が外れ、Enter は何もしない
+    const empty = await evaluate(`
+      // 本当に余白の点を選ぶ。左下には拡大縮小のボタンが乗っている。
+      const pane = document.querySelector('.react-flow__pane');
+      for (const y of [innerHeight * 0.3, innerHeight * 0.5, innerHeight * 0.75]) {
+        for (const x of [innerWidth * 0.85, innerWidth * 0.7, innerWidth * 0.2]) {
+          if (document.elementFromPoint(Math.round(x), Math.round(y)) === pane) {
+            return { x: Math.round(x), y: Math.round(y) };
+          }
+        }
+      }
+      throw new Error('余白が見つからない');
+    `);
+    await mouse('mousePressed', empty.x, empty.y, { buttons: 1 });
+    await mouse('mouseReleased', empty.x, empty.y, { buttons: 0 });
+    await wait(300);
+    check(
+      'L-2a 余白を押すと選択が外れる',
+      !(await evaluate(`return !!document.querySelector('.react-flow__node-task.selected')`)),
+    );
+    await key({ key: 'Enter', code: 13 });
+    await wait(400);
+    check(
+      'L-2b 選ばれていなければ Enter で編集に入らない',
+      !(await evaluate(`return !!document.querySelector('.task-head .text-input')`)),
+    );
   },
 };

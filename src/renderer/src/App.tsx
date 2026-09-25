@@ -40,7 +40,7 @@ const nodeTypes: NodeTypes = { task: TaskNode, projectFrame: ProjectFrameNode };
 
 export function App(): React.JSX.Element {
   const [snapshot, setSnapshot] = useState<GraphSnapshot | null>(null);
-  const { screenToFlowPosition, flowToScreenPosition } = useReactFlow();
+  const { screenToFlowPosition, flowToScreenPosition, getNodes } = useReactFlow();
   const [error, setError] = useState<string | null>(null);
   const [deletePlan, setDeletePlan] = useState<DeletePlan | null>(null);
   const [askProjectName, setAskProjectName] = useState(false);
@@ -344,6 +344,21 @@ export function App(): React.JSX.Element {
   // Cmd+Z / Cmd+Shift+Z(FR-8)。AI が行った操作もこれで戻せる。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
+      /*
+        選んでいる Task の名前を Enter で編集する(FR-1)。
+
+        入力欄の中では届かない —— 入力欄が keydown を止めている。選んでいる
+        ものが無ければ何もしない。「最後に触れたもの」を自前で覚えず、React Flow の
+        選択をそのまま使う。クリックで選ばれ、余白のクリックで外れる。
+      */
+      if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+        const selected = getNodes().find((n) => n.selected && n.type === 'task');
+        if (!selected) return;
+        e.preventDefault();
+        setAutoEdit({ id: selected.id, caret: 'all' });
+        return;
+      }
+
       if (!(e.metaKey || e.ctrlKey)) return;
       const key = e.key.toLowerCase();
 
@@ -365,9 +380,35 @@ export function App(): React.JSX.Element {
         addTaskHere();
       }
     };
+    /*
+      矢印キーでノードを動かさせない(FR-6)。
+
+      React Flow は既定で、焦点のあるノードを矢印キーで動かす。ところがこの
+      アプリが座標を確定させるのはドラッグを離したときだけなので、矢印キーで
+      動かしても保存されない —— 画面では動いたのに、開き直すと戻る。
+      削除キーで起きていたのと同じ形(FR-3)で、選択が見えるようになったぶん、
+      これから踏まれる側になった。
+
+      捕捉の段階で止める。React Flow の処理はノードの上にあり、こちらの
+      window のリスナより先に走るため、後から preventDefault しても遅い。
+      入力欄の中では止めない —— 文字の移動に使うため。
+    */
+    const blockArrowMove = (e: KeyboardEvent): void => {
+      if (!e.key.startsWith('Arrow')) return;
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('input, textarea')) return;
+      if (!target?.closest('.react-flow__node')) return;
+      e.stopPropagation();
+      e.preventDefault();
+    };
+
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [send, addTaskHere]);
+    window.addEventListener('keydown', blockArrowMove, true);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keydown', blockArrowMove, true);
+    };
+  }, [send, addTaskHere, getNodes]);
 
   const requestDelete = useCallback(
     (id: string) => {

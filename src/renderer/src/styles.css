@@ -158,6 +158,18 @@ body {
   overflow: hidden;
 }
 
+/*
+  選ばれている Task(FR-1)
+
+  Enter でその名前の編集に入れる。どれが対象なのかが見えていないと、押してから
+  分かることになる。枠線を強めるだけにして、中身の色は変えない —— Ready/Blocked と
+  着手中は既に枠線と地の色で示しており、そこへ色を足すと読み取る手がかりが増えすぎる。
+*/
+.react-flow__node-task.selected .task {
+  border-color: var(--active);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--active) 35%, transparent);
+}
+
 /* 掴んでいる間。React Flow がノードに .dragging を付ける。 */
 .react-flow__node.dragging .task-grip {
   cursor: grabbing;

@@ -165,8 +165,9 @@ export async function connect(port, { onConsole, expectedUrlPrefix, timeoutMs = 
       });
     `);
 
-  const key = async ({ key: name, code, shift = false, meta = false }) => {
-    const modifiers = (shift ? MODIFIER.shift : 0) | (meta ? MODIFIER.meta : 0);
+  const key = async ({ key: name, code, shift = false, meta = false, ctrl = false }) => {
+    const modifiers =
+      (shift ? MODIFIER.shift : 0) | (meta ? MODIFIER.meta : 0) | (ctrl ? MODIFIER.ctrl : 0);
     const base = {
       key: name,
       windowsVirtualKeyCode: code,
