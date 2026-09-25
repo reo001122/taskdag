@@ -549,10 +549,20 @@ export default {
       (await markOn()).行 === '手順い',
       await markOn(),
     );
+    /*
+      フォーカスも押した行へ移す。放っておくと React Flow が Task ノード全体に
+      当てるので、childTask を押したのにフォーカスは親、という状態になる。
+      見た目には出ないが、ここから先のキー操作の起点になる値である。
+    */
+    check(
+      'N-2b 押した行にフォーカスが移る',
+      await evaluate(`return document.activeElement?.classList?.contains('child') ?? false`),
+      { フォーカス: await evaluate(`return document.activeElement?.className ?? null`) },
+    );
 
     const heads = await evaluate(`return document.querySelectorAll('.task-head').length`);
     await pressRow('.task-head', heads - 1);
-    check('N-2b 親の見出しを押すと、印は親へ戻る', (await markOn()).親 === true, await markOn());
+    check('N-2c 親の見出しを押すと、印は親へ戻る', (await markOn()).親 === true, await markOn());
 
     await pressRow('.child', rows - 1);
     await key({ key: 'Enter', code: 13 });
@@ -562,7 +572,7 @@ export default {
       return { 値: a?.value ?? null, 場所: a?.closest('.child') ? 'childTask' : '親' };
     `);
     check(
-      'N-2c 押した行が、そのまま Enter の開く相手になる',
+      'N-2d 押した行が、そのまま Enter の開く相手になる',
       afterPress.場所 === 'childTask' && afterPress.値 === '手順い',
       afterPress,
     );

@@ -565,14 +565,23 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
           childTask はそれぞれ別の対象だから。
         */}
           {/*
-          押された行に印を移す(FR-1)。
+          押された行に印を移し、フォーカスもその行へ移す(FR-1)。
 
           押した時点で移す。クリックの成立を待つと、名前を編集している間に
           レイアウトが動いたときに取りこぼす —— ボタンで実際に起きた。
+
+          フォーカスを行が受けるのは、印と食い違わせないため。放っておくと
+          React Flow が Task ノード全体に当てるので、childTask を押したのに
+          フォーカスは親、という状態になる。見た目には出ないが、ここから先の
+          キー操作の起点になる値である。
         */}
           <div
             className={`task-own${selected && cursorRow === null ? ' is-cursor' : ''}`}
-            onPointerDown={() => onRowPressed(task.id, null)}
+            tabIndex={-1}
+            onPointerDown={(e) => {
+              onRowPressed(task.id, null);
+              e.currentTarget.focus();
+            }}
           >
             <div className="task-head">
               {/*
@@ -693,7 +702,11 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
                     className={`child${child.progress === 'done' ? ' is-done' : ''}${
                       selected && cursorRow === child.id ? ' is-cursor' : ''
                     }`}
-                    onPointerDown={() => onRowPressed(task.id, child.id)}
+                    tabIndex={-1}
+                    onPointerDown={(e) => {
+                      onRowPressed(task.id, child.id);
+                      e.currentTarget.focus();
+                    }}
                   >
                     <div className="child-row">
                       {/*
