@@ -20,6 +20,13 @@
   --ready-soft: #eaf4ee;
   --active: #b45309;
   --active-soft: #fdf3e3;
+  /*
+    選ばれていることを示す線。--active より淡い。
+
+    --active をそのまま引くと、着手中のヘッダより印のほうが濃くなり、
+    目が先にそちらへ行く。印は「ここが対象」を伝えれば足りる。
+  */
+  --select: #e0a96d;
   --blocked-border: #c9c9c2;
   --project: #8b8b84;
 
@@ -41,6 +48,7 @@
     --ready-soft: #14301f;
     --active: #fbbf24;
     --active-soft: #33260a;
+    --select: #c08c3a;
     --blocked-border: #3d3d45;
     --project: #6f6f78;
 
@@ -178,7 +186,7 @@ body {
     地の色は変えない。着手中のヘッダは既に色で示されており、線と地なら重なっても
     見分けられる。
   */
-  outline: 2px solid var(--active);
+  outline: 2px solid var(--select);
   outline-offset: -2px;
   border-radius: 6px;
 }
