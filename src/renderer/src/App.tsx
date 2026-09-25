@@ -341,12 +341,33 @@ export function App(): React.JSX.Element {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [send]);
 
-  const requestDelete = useCallback((id: string) => {
-    void (async () => {
-      // 削除で何が変わるかを見せてから確定させる(FR-1)
-      setDeletePlan(await window.api.planDelete(id));
-    })();
-  }, []);
+  const requestDelete = useCallback(
+    (id: string) => {
+      void (async () => {
+        const plan = await window.api.planDelete(id);
+        // 立てられなければ(Task が既に無いなど)何もしない。
+        if (!plan) return;
+        /*
+          見せるものが無ければ、そのまま消す(FR-1)。
+
+          確認の目的は「何が消えて何が繋ぎ直されるか」を見せることなので、
+          依存も childTask も持たない Task では、空の一覧を出して「本当に
+          消しますか」と聞くだけになる。手数だけが増える。
+          消しすぎたら Undo で戻る(FR-8)。
+        */
+        const nothingToShow =
+          plan.removedEdges.length === 0 &&
+          plan.addedEdges.length === 0 &&
+          plan.removedChildTaskIds.length === 0;
+        if (nothingToShow) {
+          send({ type: 'deleteTask', id });
+          return;
+        }
+        setDeletePlan(plan);
+      })();
+    },
+    [send],
+  );
 
   const onAutoEditConsumed = useCallback(() => {
     setAutoEdit(null);
