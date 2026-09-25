@@ -382,5 +382,54 @@ export default {
       'L-2b 選ばれていなければ Enter で編集に入らない',
       !(await evaluate(`return !!document.querySelector('.task-head .text-input')`)),
     );
+
+    /*
+      メモは Enter で確定、Shift+Enter で改行(FR-10)。
+
+      名前の欄と同じで Enter は「書き終えた」の意味。改行のほうを修飾キー側へ
+      置いてある —— メモは1行で済むことが多く、そのたびに枠の外を押して
+      閉じるのでは手数が増える。
+    */
+    const waitForMemoFocus = () =>
+      evaluate(`
+        const t0 = performance.now();
+        return await new Promise((resolve) => {
+          const tick = () => {
+            if (document.activeElement?.classList?.contains('memo-input')) {
+              return resolve(Math.round(performance.now() - t0));
+            }
+            if (performance.now() - t0 > 2000) return resolve(-1);
+            requestAnimationFrame(tick);
+          };
+          tick();
+        });
+      `);
+    const memoValue = () => evaluate(`return document.querySelector('.memo-input')?.value ?? null`);
+
+    await key({ key: 'Escape', code: 27 });
+    await wait(200);
+    await editName();
+    await key({ key: 'Enter', code: 13, ctrl: true });
+    await waitFor('メモの入力欄が開く', `return !!document.querySelector('.memo-input')`);
+    check('M-1 Ctrl+Enter でメモの入力へ移る', (await waitForMemoFocus()) >= 0);
+
+    await type('1行目');
+    // text を渡さないと既定の動作が起きず、改行が入らない。
+    await key({ key: 'Enter', code: 13, shift: true, text: '\r' });
+    await wait(200);
+    check('M-2 Shift+Enter は改行になる', (await memoValue()) === '1行目\n', {
+      value: await memoValue(),
+    });
+
+    await key({ key: 'Enter', code: 13 });
+    await wait(400);
+    check('M-3 Enter は確定。入力欄が閉じる', (await memoValue()) === null);
+    check(
+      'M-4 打った内容が残る',
+      (
+        (await evaluate(`return document.querySelector('.memo-text')?.textContent ?? null`)) ?? ''
+      ).includes('1行目'),
+      { 本文: await evaluate(`return document.querySelector('.memo-text')?.textContent ?? null`) },
+    );
   },
 };

@@ -436,11 +436,26 @@ function Memo({
       onMouseDown={(e) => e.stopPropagation()}
       onBlur={finish}
       onKeyDown={(e) => {
-        // Enter で改行できるよう、キャンバスのショートカットへ渡さない。
-        // capture 側で止めるとこのハンドラ自体が呼ばれなくなる(上と同じ理由)。
+        // キャンバスのショートカットへ渡さない。capture 側で止めると
+        // このハンドラ自体が呼ばれなくなる(上と同じ理由)。
         e.stopPropagation();
 
-        // Enter は改行。Escape で編集をやめる。
+        // IME 変換中の Enter は「変換を決める」ためのもの。書き終える合図ではない。
+        if (e.nativeEvent.isComposing) return;
+
+        /*
+          Enter は確定、Shift+Enter は改行。
+
+          名前の欄と同じで、Enter は「書き終えた」を意味する。改行のほうを
+          修飾キー側へ置いた —— メモは1行で済むことのほうが多く、そのたびに
+          枠の外を押して閉じるのでは手数が増える。
+        */
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          finish();
+          return;
+        }
+
         if (e.key === 'Escape') {
           setEditing(false);
           onEditEnd();

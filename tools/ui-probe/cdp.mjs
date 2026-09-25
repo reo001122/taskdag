@@ -165,7 +165,14 @@ export async function connect(port, { onConsole, expectedUrlPrefix, timeoutMs = 
       });
     `);
 
-  const key = async ({ key: name, code, shift = false, meta = false, ctrl = false }) => {
+  /**
+   * キーを1打。
+   *
+   * text を渡すと、既定の動作として文字が入る(改行を入れる Enter など)。
+   * 渡さないと rawKeyDown になり、ハンドラは呼ばれるが文字は入らない ——
+   * 「押したことに反応するか」を見るときはこちらでよい。
+   */
+  const key = async ({ key: name, code, shift = false, meta = false, ctrl = false, text }) => {
     const modifiers =
       (shift ? MODIFIER.shift : 0) | (meta ? MODIFIER.meta : 0) | (ctrl ? MODIFIER.ctrl : 0);
     const base = {
@@ -174,7 +181,11 @@ export async function connect(port, { onConsole, expectedUrlPrefix, timeoutMs = 
       nativeVirtualKeyCode: code,
       modifiers,
     };
-    await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...base });
+    await send('Input.dispatchKeyEvent', {
+      type: text === undefined ? 'rawKeyDown' : 'keyDown',
+      ...base,
+      ...(text === undefined ? {} : { text }),
+    });
     await send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
   };
 
