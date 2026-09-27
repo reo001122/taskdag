@@ -771,5 +771,35 @@ export default {
     );
     await key({ key: 'Escape', code: 27 });
     await wait(300);
+    /*
+      取り消した下書きは戻らない(FR-1)。
+
+      Escape で取り消したあと Enter で開き直すと、取り消したはずの文字列が
+      入力欄に現れていた。クリックで入る経路だけが下書きを詰め替えていたため。
+    */
+    await pressRow('.task-head', heads - 1);
+    await key({ key: 'Enter', code: 13 });
+    await waitFor(
+      '名前の入力欄が開く',
+      `return !!document.querySelector('.task-head .text-input')`,
+    );
+    await waitForFocus();
+    const beforeEscape = await evaluate(
+      `return document.querySelector('.task-head .text-input')?.value ?? null`,
+    );
+    await type('捨てる文字列');
+    await key({ key: 'Escape', code: 27 });
+    await wait(300);
+    await key({ key: 'Enter', code: 13 });
+    await waitFor(
+      '名前の入力欄が開き直す',
+      `return !!document.querySelector('.task-head .text-input')`,
+    );
+    const reopened = await evaluate(
+      `return document.querySelector('.task-head .text-input')?.value ?? null`,
+    );
+    check('N-7 取り消した下書きは戻らない', reopened === beforeEscape, { beforeEscape, reopened });
+    await key({ key: 'Escape', code: 27 });
+    await wait(200);
   },
 };

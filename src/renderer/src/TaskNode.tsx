@@ -272,9 +272,27 @@ function EditableText({
     スナップショットの反映が先に描画され、目印が立つのはその後になるため、
     「もう出来上がっている入力欄に、後から目印が届く」形になる。
   */
+  /*
+    編集中かどうかを、効果の中から古くならずに読むための控え。
+    これを依存に入れると、編集が終わった瞬間に効果が走り直して開き直してしまう。
+  */
+  const editingRef = useRef(editing);
+  editingRef.current = editing;
+
   useEffect(() => {
-    if (!startInEditMode) return;
-    log.debug('追加直後の目印が届いた。編集に入る', { value });
+    if (!startInEditMode || editingRef.current) return;
+    log.debug('編集に入る目印が届いた', { value });
+    /*
+      下書きをその時点の値から始める。
+
+      クリックで入る経路(begin)は詰め替えていたが、こちらは editing を
+      立てるだけだった。Escape で取り消した文字列や、Undo で戻る前の文字列が
+      下書きに残っているので、Enter で開き直すとそれが現れる。
+
+      既に編集中なら触らない —— 打っている最中に別の経路で value が変わったとき、
+      入力中の文字を上書きしてしまう。
+    */
+    setDraft(value);
     setEditing(true);
   }, [startInEditMode, value]);
 
