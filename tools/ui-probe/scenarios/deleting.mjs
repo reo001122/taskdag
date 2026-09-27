@@ -316,6 +316,35 @@ export default {
     await wait(300);
 
     /*
+      ダイアログが開いている間は、背景のグラフに触れない。
+
+      Enter の経路だけが押された場所を見ていたため、Cmd+Z と Cmd+N が素通り
+      していた —— 削除の確認を開いたまま Cmd+Z を押すと、提示中の削除計画と
+      実際のグラフが食い違う。
+    */
+    await openDeleteFor('B');
+    const underDialog = async () => ({
+      tasks: await evaluate(`return document.querySelectorAll('.task').length`),
+      edges: await edgeCount(),
+      dialog: await evaluate(`return !!document.querySelector('dialog[open]')`),
+    });
+    const beforeKeys = await underDialog();
+    await key({ key: 'z', code: 90, meta: true });
+    await wait(400);
+    await key({ key: 'n', code: 78, meta: true });
+    await wait(600);
+    const afterKeys = await underDialog();
+    check(
+      'F-9 確認を開いている間は Cmd+Z / Cmd+N が背景に効かない',
+      afterKeys.tasks === beforeKeys.tasks &&
+        afterKeys.edges === beforeKeys.edges &&
+        afterKeys.dialog,
+      { before: beforeKeys, after: afterKeys },
+    );
+    await dismiss();
+    await wait(300);
+
+    /*
       印が childTask にあれば、その1行だけが消える。
 
       確認は挟まない —— × と同じ扱いで、巻き添えになるものが無いため

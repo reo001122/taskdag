@@ -498,6 +498,16 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
       /*
+        ダイアログが開いている間は、背景のグラフに触れない。
+
+        Enter の経路だけが押された場所を見ていたため、Cmd+Z と Cmd+N が
+        素通りしていた —— 削除の確認を開いたまま Cmd+Z を押すと、提示中の
+        削除計画と実際のグラフが食い違う。開いているかどうかで判断する:
+        ダイアログの外を押したあとはフォーカスがどこにあるか定まらない。
+      */
+      if (document.querySelector('dialog[open]')) return;
+
+      /*
         選んでいる Task の名前を Enter で編集する(FR-1)。
 
         入力欄の中では届かない —— 入力欄が keydown を止めている。選んでいる
