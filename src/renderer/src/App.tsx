@@ -466,6 +466,34 @@ export function App(): React.JSX.Element {
     [getNodes, rowsOf, cursorIn],
   );
 
+  const requestDelete = useCallback(
+    (id: string) => {
+      void (async () => {
+        const plan = await window.api.planDelete(id);
+        // 立てられなければ(Task が既に無いなど)何もしない。
+        if (!plan) return;
+        /*
+          見せるものが無ければ、そのまま消す(FR-1)。
+
+          確認の目的は「何が消えて何が繋ぎ直されるか」を見せることなので、
+          依存も childTask も持たない Task では、空の一覧を出して「本当に
+          消しますか」と聞くだけになる。手数だけが増える。
+          消しすぎたら Undo で戻る(FR-8)。
+        */
+        const nothingToShow =
+          plan.removedEdges.length === 0 &&
+          plan.addedEdges.length === 0 &&
+          plan.removedChildTaskIds.length === 0;
+        if (nothingToShow) {
+          send({ type: 'deleteTask', id });
+          return;
+        }
+        setDeletePlan(plan);
+      })();
+    },
+    [send],
+  );
+
   // Cmd+Z / Cmd+Shift+Z(FR-8)。AI が行った操作もこれで戻せる。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
@@ -497,6 +525,45 @@ export function App(): React.JSX.Element {
           親へ戻る(TaskNode.tsx)ので、見えているものと開くものが揃う。
         */
         setAutoEdit({ id: cursorIn(selected.id) ?? selected.id, caret: 'all' });
+        return;
+      }
+
+      /*
+        Delete / Backspace で、印の付いている行を消す(FR-1)。
+
+        消すのは印の1件だけ。React Flow の既定は「選んでいるものを全部」で、
+        Task は残るのに繋がっていた依存だけが黙って消える、という形になって
+        いた(FR-3)。そちらは切ったままにする(deleteKeyCode={null})。
+
+        入力欄が**画面のどこかに開いていれば何もしない。** フォーカスが入力欄に
+        あれば keydown はそこで止まるが、「入力欄は出ているのにフォーカスが
+        移っていない」状態が実際に起きている(TaskNode.tsx が warn に残す)。
+        その1打が文字ではなく Task に効くのでは、打ち間違いの代償が大きすぎる。
+        開いて見えているなら、その打鍵は入力欄のものとして扱う。
+      */
+      if (
+        (e.key === 'Delete' || e.key === 'Backspace') &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        !e.shiftKey
+      ) {
+        const from = e.target as HTMLElement | null;
+        if (from?.closest('input, textarea, dialog')) return;
+        if (document.querySelector('.text-input, .memo-input')) return;
+
+        const selected = getNodes().find((n) => n.selected && n.type === 'task');
+        if (!selected) return;
+        e.preventDefault();
+
+        /*
+          childTask は即座に消す。× と同じ扱い —— 消えるのはその1行だけで、
+          依存も childTask も巻き添えにならないため、見せるものがない。
+          Task は × と同じ確認を通す(見せるものが無ければそのまま消える)。
+        */
+        const childId = cursorIn(selected.id);
+        if (childId !== null) send({ type: 'deleteChildTask', id: childId });
+        else requestDelete(selected.id);
         return;
       }
 
@@ -584,35 +651,7 @@ export function App(): React.JSX.Element {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keydown', onArrow, true);
     };
-  }, [send, addTaskHere, getNodes, cursorIn, moveRowCursor]);
-
-  const requestDelete = useCallback(
-    (id: string) => {
-      void (async () => {
-        const plan = await window.api.planDelete(id);
-        // 立てられなければ(Task が既に無いなど)何もしない。
-        if (!plan) return;
-        /*
-          見せるものが無ければ、そのまま消す(FR-1)。
-
-          確認の目的は「何が消えて何が繋ぎ直されるか」を見せることなので、
-          依存も childTask も持たない Task では、空の一覧を出して「本当に
-          消しますか」と聞くだけになる。手数だけが増える。
-          消しすぎたら Undo で戻る(FR-8)。
-        */
-        const nothingToShow =
-          plan.removedEdges.length === 0 &&
-          plan.addedEdges.length === 0 &&
-          plan.removedChildTaskIds.length === 0;
-        if (nothingToShow) {
-          send({ type: 'deleteTask', id });
-          return;
-        }
-        setDeletePlan(plan);
-      })();
-    },
-    [send],
-  );
+  }, [send, addTaskHere, getNodes, cursorIn, moveRowCursor, requestDelete]);
 
   /*
     作った直後の Task を選んでおく(FR-1)。
