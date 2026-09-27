@@ -736,5 +736,40 @@ export default {
     check('N-5b そのまま名前を打ち始められる', (await waitForFocus()) >= 0);
     await key({ key: 'Escape', code: 27 });
     await wait(200);
+
+    /*
+      メモの中を押しても、メモは閉じない(FR-10)。
+
+      行がフォーカスを受け取るようにしたとき、入力欄の中の押下でも行へ移して
+      いた。メモはフォーカスが外れた時点で確定する作りなので、キャレットを
+      動かそうとしただけで閉じていた。
+    */
+    await pressRow('.task-head', heads - 1);
+    await key({ key: 'Enter', code: 13, ctrl: true });
+    await waitFor('メモの入力欄が開く', `return !!document.querySelector('.memo-input')`);
+    await type('一行目のメモ');
+    const inMemo = await evaluate(`
+      const el = document.querySelector('.memo-input');
+      const r = el.getBoundingClientRect();
+      return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+    `);
+    await mouse('mousePressed', inMemo.x, inMemo.y, { buttons: 1 });
+    await mouse('mouseReleased', inMemo.x, inMemo.y, { buttons: 0 });
+    await wait(300);
+    const memoStill = await evaluate(`
+      const a = document.activeElement;
+      return {
+        開いている: !!document.querySelector('.memo-input'),
+        焦点が欄にある: a?.className?.includes?.('memo-input') ?? false,
+        値: document.querySelector('.memo-input')?.value ?? null,
+      };
+    `);
+    check(
+      'N-6 メモの中を押しても閉じない',
+      memoStill.開いている && memoStill.焦点が欄にある && memoStill.値 === '一行目のメモ',
+      memoStill,
+    );
+    await key({ key: 'Escape', code: 27 });
+    await wait(300);
   },
 };

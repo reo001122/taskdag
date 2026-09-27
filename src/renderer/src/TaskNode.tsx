@@ -140,6 +140,21 @@ function onPress(run: () => void) {
 const NodeMeasured = createContext(true);
 
 /**
+ * 押された行に印とフォーカスを移す(FR-1)。
+ *
+ * **入力欄の中を押したときは、フォーカスを動かさない。** メモはフォーカスが
+ * 外れた時点で確定する作りなので、行へ移すと、書いている途中にキャレットを
+ * 動かしただけで閉じてしまう。印だけは移す —— 押した行が対象であることに
+ * 変わりはない。
+ */
+function pressRow(event: React.PointerEvent<HTMLElement>, move: () => void): void {
+  move();
+  const target = event.target as HTMLElement | null;
+  if (target?.closest('input, textarea')) return;
+  event.currentTarget.focus();
+}
+
+/**
  * 入力欄へフォーカスを当てる。
  *
  * かつては「20フレームだけ再試行」していた。フレームの間隔は機械の忙しさで
@@ -606,10 +621,7 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
           <div
             className={`task-own${selected && cursorRow === null ? ' is-cursor' : ''}`}
             tabIndex={-1}
-            onPointerDownCapture={(e) => {
-              onRowPressed(task.id, null);
-              e.currentTarget.focus();
-            }}
+            onPointerDownCapture={(e) => pressRow(e, () => onRowPressed(task.id, null))}
           >
             <div className="task-head">
               {/*
@@ -736,10 +748,7 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
                       止めており(childDrag.ts)、bubble 側では届かない —— 取っ手を
                       押したときだけ印が動かない、という形で実際に出た。
                     */
-                    onPointerDownCapture={(e) => {
-                      onRowPressed(task.id, child.id);
-                      e.currentTarget.focus();
-                    }}
+                    onPointerDownCapture={(e) => pressRow(e, () => onRowPressed(task.id, child.id))}
                   >
                     <div className="child-row">
                       {/*
