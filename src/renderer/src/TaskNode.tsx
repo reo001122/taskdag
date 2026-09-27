@@ -152,7 +152,15 @@ const NodeMeasured = createContext(true);
 function focusInput(el: HTMLInputElement | HTMLTextAreaElement | null, caret: Caret): void {
   if (!el || !document.contains(el)) return;
 
-  el.focus();
+  /*
+    preventScroll: ブラウザに画面を動かさせない。
+
+    既定では、フォーカスした要素が見えるところまで入れ物を巻き上げる。
+    キャンバスは巻き上げて使うものではないので、React Flow がすぐ 0 へ戻す ——
+    その1往復が画面のちらつきとして出る(実測: 592.5px へ飛んで同じミリ秒に 0)。
+    画面の外に置かれた Task を作ったときに見える。
+  */
+  el.focus({ preventScroll: true });
   if (document.activeElement !== el) {
     log.warn('入力欄にフォーカスできなかった', { タグ: el.tagName });
     return;
