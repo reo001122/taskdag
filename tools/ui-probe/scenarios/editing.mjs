@@ -801,5 +801,45 @@ export default {
     check('N-7 取り消した下書きは戻らない', reopened === beforeEscape, { beforeEscape, reopened });
     await key({ key: 'Escape', code: 27 });
     await wait(200);
+    /*
+      続けて2件作っても重ならない(FR-1)。
+
+      作った結果がスナップショットに現れるまでには IPC の往復がある。その間に
+      もう1件作ると、どちらも同じ空き桝を選ぶ。
+    */
+    await evaluate(`document.querySelector('.react-flow__controls-fitview').click(); return 1;`);
+    await wait(400);
+    const beforeBurst = await taskCount();
+    await evaluate(`
+      const b = [...document.querySelectorAll('.toolbar button')].find((x) => x.textContent.includes('Task'));
+      b.click();
+      b.click();
+      return 1;
+    `);
+    await wait(1200);
+    check('N-8a 続けて2件作ると2件増える', (await taskCount()) === beforeBurst + 2, {
+      before: beforeBurst,
+      after: await taskCount(),
+    });
+    const burstOverlaps = await evaluate(`
+      const cards = [...document.querySelectorAll('.react-flow__node-task')].map((n) => ({
+        名: n.querySelector('.task-title')?.textContent ?? '?',
+        r: n.getBoundingClientRect(),
+      }));
+      const hits = [];
+      for (let i = 0; i < cards.length; i += 1) {
+        for (let j = i + 1; j < cards.length; j += 1) {
+          const a = cards[i].r;
+          const b = cards[j].r;
+          if (a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom) {
+            hits.push(cards[i].名 + ' × ' + cards[j].名);
+          }
+        }
+      }
+      return hits;
+    `);
+    check('N-8b そのとき重ならない', burstOverlaps.length === 0, burstOverlaps);
+    await key({ key: 'Escape', code: 27 });
+    await wait(200);
   },
 };

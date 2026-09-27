@@ -298,17 +298,24 @@ export function App(): React.JSX.Element {
    * 作成が2件同時に飛んだときに1つ前を掴む(shared/ipc.ts の createdId)。
    */
   const addTask = useCallback(
-    (position: { x: number; y: number }) => {
-      void (async () => {
-        const result = await dispatch({ type: 'createTask', title: '新しいタスク', position });
-        log.debug('Task を作った', { id: result?.ok ? result.createdId : null });
-        if (result?.ok && result.createdId !== null) {
-          setAutoEdit({ id: result.createdId, caret: 'all' });
-        }
-      })();
+    async (position: { x: number; y: number }): Promise<void> => {
+      const result = await dispatch({ type: 'createTask', title: '新しいタスク', position });
+      log.debug('Task を作った', { id: result?.ok ? result.createdId : null });
+      if (result?.ok && result.createdId !== null) {
+        setAutoEdit({ id: result.createdId, caret: 'all' });
+      }
     },
     [dispatch],
   );
+
+  /**
+   * 作成中の Task が占める場所(FR-1)。
+   *
+   * 作った結果がスナップショットに現れるまでには IPC の往復がある。その間に
+   * もう1件作ると、どちらも同じ空き桝を選んで重なる —— Cmd+N を続けて押すと
+   * 起こる。押した時点で場所を押さえておき、結果が返ったら外す。
+   */
+  const reservedSpots = useRef<Rect[]>([]);
 
   /**
    * 今見えている範囲を、キャンバスの座標で返す。
@@ -358,7 +365,12 @@ export function App(): React.JSX.Element {
       width: measured.get(task.id)?.width ?? NEW_TASK_SIZE.width,
       height: measured.get(task.id)?.height ?? NEW_TASK_SIZE.height,
     }));
-    addTask(findFreeTaskSlot(taken, visibleArea()));
+    const spot = findFreeTaskSlot([...taken, ...reservedSpots.current], visibleArea());
+    const reservation: Rect = { ...spot, ...NEW_TASK_SIZE };
+    reservedSpots.current = [...reservedSpots.current, reservation];
+    void addTask(spot).finally(() => {
+      reservedSpots.current = reservedSpots.current.filter((r) => r !== reservation);
+    });
   }, [addTask, snapshot, getNodes, visibleArea]);
 
   /** childTask を1件足し、そのまま名前の入力に入る。Shift+Enter で連続して足せる。 */
