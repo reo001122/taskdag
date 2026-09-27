@@ -643,5 +643,34 @@ export default {
     check('N-3c 同じ行で続けて押しても開く', (await memoAt()).欄 === true, await memoAt());
     await key({ key: 'Escape', code: 27 });
     await wait(200);
+
+    /*
+      新しい Task は、空いている場所に置く(FR-1)。
+
+      重なると、下のカードの行が上のカードに覆われて押せなくなる。押した先は
+      覆っている側の Task なので、印はそちらの親に出る —— 「childTask を
+      押したのに親に印が出る」という報告の実体がこれだった。
+
+      ここまでで Task を数件作ってある。運んではいないので、重なりがあれば
+      置き場所の決め方が原因である。
+    */
+    const overlaps = await evaluate(`
+      const cards = [...document.querySelectorAll('.react-flow__node-task')].map((n) => ({
+        名: n.querySelector('.task-title')?.textContent ?? '?',
+        r: n.getBoundingClientRect(),
+      }));
+      const hits = [];
+      for (let i = 0; i < cards.length; i += 1) {
+        for (let j = i + 1; j < cards.length; j += 1) {
+          const a = cards[i].r;
+          const b = cards[j].r;
+          if (a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom) {
+            hits.push(cards[i].名 + ' × ' + cards[j].名);
+          }
+        }
+      }
+      return hits;
+    `);
+    check('N-4 作った Task のカードはどれも重なっていない', overlaps.length === 0, overlaps);
   },
 };

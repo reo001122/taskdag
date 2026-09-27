@@ -179,6 +179,64 @@ export function computeLayout(
   return { positions, projects: frames };
 }
 
+/**
+ * 新しい Task の見積もりの大きさ。
+ *
+ * 実際の幅は名前の長さで、高さは childTask とメモで変わる。空き場所を探す時点
+ * ではまだ描かれていないので測れない。最大幅(styles.css の max-width)と、
+ * 1行の Task の高さに余裕を見た値を使う。
+ */
+export const NEW_TASK_SIZE: NodeSize = { width: 280, height: 72 };
+
+/**
+ * 空き場所を探すときの桝の間隔。
+ *
+ * 見積もりより狭くしてある。桝が触れ合っていても、置いてよいかは実測した矩形で
+ * 判定するので重なりはしない。広く取ると、拡大しているときに見えている範囲へ
+ * 2列目が入らず、すぐ画面の外へ送ることになる。
+ */
+const SLOT_STEP = { x: 260, y: 100 };
+
+/**
+ * 新しい Task を置ける場所を探す(FR-1)。
+ *
+ * かつては作った順に少しずつずらして置いていた(カスケード)。重なった Task の
+ * 行は上のカードに覆われ、そこを押すと別の Task を押したことになる ——
+ * 印とフォーカスを行ごとに持つようにしたことで、これが実害として出た。
+ * 名前を編集するとカードが広がるため、何が何を覆うかは操作のたびに変わる。
+ *
+ * 探すのは**今見えている範囲の中**。キャンバス全体の左上から探すと、拡大して
+ * いるときや別の場所を見ているときに、作ったものが画面の外に出る。見えている
+ * 範囲を格子に切って、どの Task にも重ならない最初の桝を返す。
+ *
+ * 既にある Task の寸法は呼び出し側が実測して渡す —— childTask やメモで背が
+ * 伸びた Task を1行分と見積もると、その下に重ねてしまう。
+ */
+export function findFreeTaskSlot(existing: readonly Rect[], area: Rect): Position {
+  const columns = Math.max(1, Math.floor(area.width / SLOT_STEP.x));
+  const rows = Math.max(1, Math.floor(area.height / SLOT_STEP.y));
+
+  for (let n = 0; n < columns * rows; n += 1) {
+    const candidate: Rect = {
+      x: area.x + (n % columns) * SLOT_STEP.x,
+      y: area.y + Math.floor(n / columns) * SLOT_STEP.y,
+      ...NEW_TASK_SIZE,
+    };
+    if (!existing.some((rect) => rectsOverlap(candidate, rect))) {
+      return { x: candidate.x, y: candidate.y };
+    }
+  }
+
+  /*
+    見えている範囲が埋まっている。一番下の Task の下に置く。
+
+    画面の外になるが、重ねるよりはよい —— 重なると下のカードの行に触れなく
+    なる。「全体を表示」で戻せる(FR-6)。
+  */
+  const bottom = existing.reduce((lowest, rect) => Math.max(lowest, rect.y + rect.height), area.y);
+  return { x: area.x, y: bottom + ROW_GAP };
+}
+
 /** 新しい Project の枠の大きさ。 */
 export const NEW_PROJECT_SIZE = { width: 460, height: 340 };
 

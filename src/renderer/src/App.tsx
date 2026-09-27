@@ -21,7 +21,14 @@ import type { Command, CommandResult, DeletePlan, GraphSnapshot } from '../../sh
 import { clearDropFeedback, type DropPoint, findDropPoint, showDropFeedback } from './childDrag';
 import { PROJECT_COLOR_COUNT, projectColorAt } from './colors';
 import { DependencyEdge, type DependencyEdgeData } from './DependencyEdge';
-import { computeLayout, findFreeProjectSlot, NEW_PROJECT_SIZE, type NodeSize } from './layout';
+import {
+  computeLayout,
+  findFreeProjectSlot,
+  findFreeTaskSlot,
+  NEW_PROJECT_SIZE,
+  NEW_TASK_SIZE,
+  type NodeSize,
+} from './layout';
 import { logger } from './log';
 import { clearOverlapMarks, showOverlapMarks } from './overlapMark';
 import {
@@ -304,15 +311,55 @@ export function App(): React.JSX.Element {
   );
 
   /**
+   * 今見えている範囲を、キャンバスの座標で返す。
+   *
+   * 画面の寸法ではなくキャンバスの矩形を見る。拡大していれば見えている範囲は
+   * 狭く、縮小していれば広い。実際の枠(.react-flow)から読むので、ツールバーの
+   * 高さを別に覚えておく必要がない。
+   */
+  const visibleArea = useCallback((): Rect => {
+    const pane = document.querySelector('.react-flow');
+    // 描画前は分からない。原点まわりを当てる。
+    if (!pane) return { x: 80, y: 80, width: 1200, height: 800 };
+    const box = pane.getBoundingClientRect();
+    const margin = 24;
+    const topLeft = screenToFlowPosition({ x: box.left + margin, y: box.top + margin });
+    const bottomRight = screenToFlowPosition({
+      x: box.right - margin,
+      y: box.bottom - margin,
+    });
+    return {
+      x: topLeft.x,
+      y: topLeft.y,
+      width: bottomRight.x - topLeft.x,
+      height: bottomRight.y - topLeft.y,
+    };
+  }, [screenToFlowPosition]);
+
+  /**
    * Task を1件足す。ツールバーのボタンと Cmd+N の両方から呼ぶ(FR-1)。
    *
-   * 置き場所は少しずつずらす。同じ座標に重ねると、作ったものが前のものの
-   * 真下に隠れて、増えたことが見えない。
+   * 置き場所は、既にある Task に重ならないところを選ぶ。かつては作った順に
+   * 少しずつずらしていたが、重なった Task の行は上のカードに覆われ、そこを
+   * 押すと別の Task を押したことになる(実測。印が別の Task の親に出た)。
+   *
+   * 寸法は React Flow が測った値を使う。まだ測れていないもの(作った直後など)は
+   * 見積もりで代える —— 測れないぶんは1行の Task として扱う。
    */
   const addTaskHere = useCallback(() => {
-    const n = snapshot?.tasks.length ?? 0;
-    addTask({ x: 120 + (n % 6) * 40, y: 120 + (n % 6) * 70 });
-  }, [addTask, snapshot]);
+    const measured = new Map(
+      getNodes()
+        .filter((n) => n.type === 'task')
+        .map((n) => [n.id, n.measured]),
+    );
+    const taken: Rect[] = (snapshot?.tasks ?? []).map((task) => ({
+      x: task.position.x,
+      y: task.position.y,
+      width: measured.get(task.id)?.width ?? NEW_TASK_SIZE.width,
+      height: measured.get(task.id)?.height ?? NEW_TASK_SIZE.height,
+    }));
+    addTask(findFreeTaskSlot(taken, visibleArea()));
+  }, [addTask, snapshot, getNodes, visibleArea]);
 
   /** childTask を1件足し、そのまま名前の入力に入る。Shift+Enter で連続して足せる。 */
   const addChild = useCallback(

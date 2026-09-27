@@ -47,6 +47,32 @@ export default {
     await key({ key: 'Enter', code: 13 });
     await waitFor('枠が現れる', `return !!document.querySelector('.project-frame')`);
 
+    /*
+      Task を枠の中へ運ぶ。
+
+      所属は Task の左上の点から導かれる(FR-4)ので、中に入れておかないと
+      以降の検査が成り立たない。新しい Task が置かれる場所は「空いている所」で
+      決まる(FR-1)ため、たまたま枠の中にいることを当てにしてはならない ——
+      かつてはカスケードの座標と枠の座標が偶然重なっていた。
+    */
+    const intoFrame = await evaluate(`
+      const frame = document.querySelector('.project-frame').getBoundingClientRect();
+      const grip = document.querySelector('.task-grip').getBoundingClientRect();
+      const from = {
+        x: Math.round(grip.left + grip.width / 2),
+        y: Math.round(grip.top + grip.height / 2),
+      };
+      const inWindow = (x, y) => x > 8 && y > 8 && x < innerWidth - 8 && y < innerHeight - 8;
+      for (const x of [frame.left + 90, frame.left + 160, (frame.left + frame.right) / 2]) {
+        for (const y of [frame.top + 80, frame.top + 140, (frame.top + frame.bottom) / 2]) {
+          if (inWindow(x, y)) return { from, to: { x: Math.round(x), y: Math.round(y) } };
+        }
+      }
+      throw new Error('枠の中に運べる点が見つからない');
+    `);
+    await drag(intoFrame.from, intoFrame.to);
+    await wait(400);
+
     // 枠を選択する(ラベルを押す)
     await evaluate(`document.querySelector('.project-frame-label').click(); return 1;`);
     await wait(200);
