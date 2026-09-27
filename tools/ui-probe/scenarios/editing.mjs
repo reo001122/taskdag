@@ -311,15 +311,33 @@ export default {
     await key({ key: 'Escape', code: 27 });
     await wait(300);
 
-    // 名前を打っている最中は届かない。書きかけを置き去りにしないため。
+    /*
+      名前を打っている最中でも増える。まず確定してから作る(FR-1)。
+
+      書きかけを置き去りにしないために、かつては「打っている間は効かない」に
+      していた。ところが ＋ Task のボタンは同じ場面で効く —— ボタンでは作れて
+      キーでは作れない、という食い違いが残っていた。確定してから作れば、どちらも
+      同じ結果になる。
+    */
     const duringEdit = await taskCount();
     await editName();
+    await type('打ちかけの名前');
     await key({ key: 'n', code: 78, meta: true });
-    await wait(600);
-    check('K-2 名前を打っている間は増えない', (await taskCount()) === duringEdit, {
+    await wait(700);
+    check('K-2a 名前を打っている最中の Cmd+N でも増える', (await taskCount()) === duringEdit + 1, {
       duringEdit,
       after: await taskCount(),
     });
+    check(
+      'K-2b 打ちかけの名前は確定する',
+      await evaluate(
+        `return [...document.querySelectorAll('.task-title')].some((t) => t.textContent === '打ちかけの名前')`,
+      ),
+      await evaluate(
+        `return [...document.querySelectorAll('.task-title')].map((t) => t.textContent)`,
+      ),
+    );
+    check('K-2c そのまま新しい Task の名前を打ち始められる', (await waitForFocus()) >= 0);
     await key({ key: 'Escape', code: 27 });
     await wait(200);
 
@@ -456,6 +474,16 @@ export default {
     await key({ key: 'Enter', code: 13 });
     await wait(300);
 
+    /*
+      全体を表示してから押す。
+
+      新しい Task は空いている場所に置かれ、見えている範囲が埋まっていれば
+      下へ送られる(FR-1)。ここまでで何件も作っているので、そのままでは
+      窓の外の座標を押すことになる。
+    */
+    await evaluate(`document.querySelector('.react-flow__controls-fitview').click(); return 1;`);
+    await wait(500);
+
     const mark = () =>
       evaluate(`
         return {
@@ -523,11 +551,24 @@ export default {
     */
     // 名前やボタンを避け、行の左寄りの余白を押す
     const pressRow = async (selector, index) => {
+      /*
+        その行そのものに当たる点を探す。
+
+        「左から 120px」のような当て方はできない。拡大率で行の幅が変わり、
+        同じ位置が名前のボタンになったり余白になったりする —— 実際、全体を
+        表示したあとに名前の編集へ入ってしまった。
+      */
       const at = await evaluate(`
         const el = document.querySelectorAll(${JSON.stringify(selector)})[${index}];
         if (!el) throw new Error('行が見つからない');
-        const r = el.getBoundingClientRect();
-        return { x: Math.round(r.left + 120), y: Math.round(r.top + 14) };
+        const row = el.querySelector('.child-row') ?? el;
+        const r = row.getBoundingClientRect();
+        const y = Math.round(r.top + r.height / 2);
+        for (let x = Math.round(r.left + 2); x < Math.round(r.right); x += 4) {
+          const hit = document.elementFromPoint(x, y);
+          if (hit === el || hit === row) return { x, y };
+        }
+        throw new Error('行の余白が見つからない');
       `);
       await mouse('mousePressed', at.x, at.y, { buttons: 1 });
       await mouse('mouseReleased', at.x, at.y, { buttons: 0 });

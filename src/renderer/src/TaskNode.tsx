@@ -324,6 +324,20 @@ function EditableText({
       }}
       onKeyDown={(e) => {
         /*
+          Cmd+N だけは通す(FR-1)。
+
+          打っている途中で新しい Task に移るのは、書きかけを置き去りにする
+          操作なので、まずここで確定させる。そのうえで作成はキャンバス側に
+          任せる —— ＋ Task のボタンを押したときと同じ結果になる。
+          かつては「打っている間は効かない」にしていたが、ボタンでは作れて
+          キーでは作れない、という食い違いが残っていた。
+        */
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
+          finishRef.current(false);
+          return;
+        }
+
+        /*
           キャンバスのショートカット(Cmd+Z など)へ渡さない。
 
           止めるのは capture ではなく、この bubble 側でなければならない。
@@ -455,6 +469,12 @@ function Memo({
       onMouseDown={(e) => e.stopPropagation()}
       onBlur={finish}
       onKeyDown={(e) => {
+        // Cmd+N は通す。ここで確定させ、作成はキャンバス側に任せる(名前の欄と同じ)。
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
+          finish();
+          return;
+        }
+
         // キャンバスのショートカットへ渡さない。capture 側で止めると
         // このハンドラ自体が呼ばれなくなる(上と同じ理由)。
         e.stopPropagation();
