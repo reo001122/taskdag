@@ -841,5 +841,65 @@ export default {
     check('N-8b そのとき重ならない', burstOverlaps.length === 0, burstOverlaps);
     await key({ key: 'Escape', code: 27 });
     await wait(200);
+
+    /*
+      入力欄の中のキーは、キャンバスへ渡らない。
+
+      **この境界は壊れても画面に出ない。** 実際に、入力欄側で止める処理を外して
+      probe を全部走らせても1件も落ちなかった(実測)。落ちないまま、名前を
+      打っている最中の Cmd+Z がグラフを1手戻す、という壊れ方になる。
+      キーの扱いを整理するときに真っ先に踏むところなので、ここで固定する。
+    */
+    await key({ key: 'Escape', code: 27 });
+    await wait(200);
+    const namesNow = () =>
+      evaluate(`return [...document.querySelectorAll('.task-title')].map((t) => t.textContent)`);
+    await pressRow('.task-head', heads - 1);
+    await key({ key: 'Enter', code: 13 });
+    await waitFor(
+      '名前の入力欄が開く',
+      `return !!document.querySelector('.task-head .text-input')`,
+    );
+    await waitForFocus();
+    const graphBefore = { tasks: await taskCount(), names: await namesNow() };
+    await type('打っている途中');
+    await key({ key: 'z', code: 90, meta: true });
+    await wait(500);
+    const graphAfter = { tasks: await taskCount(), names: await namesNow() };
+    check(
+      'O-1 名前を打っている最中の Cmd+Z は、グラフを戻さない',
+      graphAfter.tasks === graphBefore.tasks &&
+        JSON.stringify(graphAfter.names) === JSON.stringify(graphBefore.names),
+      { before: graphBefore, after: graphAfter },
+    );
+    check(
+      'O-1b そのとき入力欄は開いたまま',
+      await evaluate(`return !!document.querySelector('.task-head .text-input')`),
+    );
+    await key({ key: 'Escape', code: 27 });
+    await wait(300);
+
+    /*
+      Cmd+Shift+Z でやり直せる(FR-8)。Undo だけを見ていて、戻す側は見ていなかった。
+    */
+    const beforeUndo = await taskCount();
+    await evaluate(
+      `[...document.querySelectorAll('.toolbar button')].find((b) => b.textContent.includes('Task')).click(); return 1;`,
+    );
+    await wait(600);
+    await key({ key: 'Escape', code: 27 });
+    await wait(200);
+    const afterAdd = await taskCount();
+    await key({ key: 'z', code: 90, meta: true });
+    await wait(600);
+    const afterUndo = await taskCount();
+    await key({ key: 'z', code: 90, meta: true, shift: true });
+    await wait(600);
+    const afterRedo = await taskCount();
+    check(
+      'O-2 Cmd+Shift+Z で、戻した1手をやり直せる',
+      afterAdd === beforeUndo + 1 && afterUndo === beforeUndo && afterRedo === afterAdd,
+      { beforeUndo, afterAdd, afterUndo, afterRedo },
+    );
   },
 };
