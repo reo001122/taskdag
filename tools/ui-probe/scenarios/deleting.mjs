@@ -4,51 +4,15 @@
  * 再接続の規則は条件で挙動が変わる(FR-3)。特に入力・出力の双方が複数だと
  * 何も繋ぎ直されない。何が起きるかを事前に見せることでこの非対称さを許容
  * 可能にする、というのが FR-1 の趣旨なので、提示の内容そのものが要件にあたる。
- */
+ */ import { actions } from '../actions.mjs';
+
 export default {
   name: 'deleting',
   description: 'F. 削除前に、何がなくなり何が繋ぎ直されるかを見せる',
 
-  async run({ evaluate, waitFor, waitForFocus, wait, key, type, drag, mouse, check }) {
-    const click = (text) =>
-      evaluate(
-        `[...document.querySelectorAll('.toolbar button')].find((b) => b.textContent.includes(${JSON.stringify(text)})).click(); return 1;`,
-      );
-
-    const addTask = async (title, children = []) => {
-      const before = await evaluate(`return document.querySelectorAll('.task').length`);
-      await click('Task');
-      await waitFor('増える', `return document.querySelectorAll('.task').length === ${before + 1}`);
-      await waitForFocus();
-      await type(title);
-      for (const child of children) {
-        await key({ key: 'Enter', code: 13, shift: true });
-        await waitForFocus();
-        await type(child);
-      }
-      await key({ key: 'Enter', code: 13 });
-      await wait(250);
-    };
-
-    const fitView = async () => {
-      await evaluate(`document.querySelector('.react-flow__controls-fitview').click(); return 1;`);
-      await wait(400);
-    };
-
-    const connect = async (from, to) => {
-      const points = await evaluate(`
-        const find = (title) => [...document.querySelectorAll('.react-flow__node')]
-          .find((n) => n.querySelector('.task-title')?.textContent === title);
-        const s = find(${JSON.stringify(from)}).querySelector('.react-flow__handle.source').getBoundingClientRect();
-        const t = find(${JSON.stringify(to)}).querySelector('.react-flow__handle.target').getBoundingClientRect();
-        return {
-          from: { x: s.left + s.width / 2, y: s.top + s.height / 2 },
-          to: { x: t.left + t.width / 2, y: t.top + t.height / 2 },
-        };
-      `);
-      await drag(points.from, points.to);
-      await wait(400);
-    };
+  async run(ctx) {
+    const { evaluate, waitFor, wait, key, mouse, check } = ctx;
+    const { addTask, fitView, connect, edgeCount } = actions(ctx);
 
     /*
       × は押した時点で効く(onClick ではなく onPointerDown)。名前を編集している
@@ -104,8 +68,6 @@ export default {
         return [...document.querySelectorAll('dialog[open] .edge-list.is-${kind} li')]
           .map((li) => [...li.children].map((c) => c.textContent).join(''));
       `);
-    const edgeCount = () =>
-      evaluate(`return document.querySelectorAll('.react-flow__edge').length`);
     /** Cmd+Z。削除も、その削除で消えた矢印も、まとめて戻るはず(FR-8)。 */
     const undo = async () => {
       await evaluate(`

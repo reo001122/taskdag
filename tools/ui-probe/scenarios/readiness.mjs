@@ -4,35 +4,15 @@
  * 壊れたら製品が成立しない部分。 依存が外れているかどうかは枠線の実線と点線
  * だけで示しているので、判定そのものが狂っても画面は「それらしく」見える。
  * バッジを置いていない以上、目視では気づきにくい。
- */
+ */ import { actions } from '../actions.mjs';
+
 export default {
   name: 'readiness',
   description: 'B. 依存の向き、Ready/Blocked、完了の非表示',
 
-  async run({ evaluate, waitFor, waitForFocus, wait, key, type, drag, check }) {
-    /*
-      全体が入るように表示を合わせる。
-
-      Task の配置は固定のカスケードで、4つ目あたりから画面の外へ出る。
-      端をドラッグして繋ぐには両端が画面に入っている必要がある。
-      (配置そのものの是非は QA へ回す。ここでは操作できる状態を作るだけ。)
-    */
-    const fitView = async () => {
-      await evaluate(`document.querySelector('.react-flow__controls-fitview').click(); return 1;`);
-      await wait(400);
-    };
-
-    /** Task を1つ作って名前を確定する。 */
-    const addTask = async (title) => {
-      await evaluate(
-        `[...document.querySelectorAll('.toolbar button')].find((b) => b.textContent.includes('Task')).click(); return 1;`,
-      );
-      await waitFor('入力欄が開く', `return !!document.querySelector('.task-head .text-input')`);
-      await waitForFocus();
-      await type(title);
-      await key({ key: 'Enter', code: 13 });
-      await wait(250);
-    };
+  async run(ctx) {
+    const { evaluate, waitFor, wait, check } = ctx;
+    const { addTask, fitView, connect, edgeCount } = actions(ctx);
 
     /** 名前から Task の見え方を読む。 */
     const look = (title) =>
@@ -52,27 +32,6 @@ export default {
       `);
 
     /** 端をドラッグして繋ぐ。ドメインの循環判定はここを通ってしか働かない。 */
-    const connect = async (from, to) => {
-      const points = await evaluate(`
-        const find = (title) => [...document.querySelectorAll('.react-flow__node')]
-          .find((n) => n.querySelector('.task-title')?.textContent === title);
-        const source = find(${JSON.stringify(from)})?.querySelector('.react-flow__handle.source');
-        const target = find(${JSON.stringify(to)})?.querySelector('.react-flow__handle.target');
-        if (!source || !target) return null;
-        const a = source.getBoundingClientRect();
-        const b = target.getBoundingClientRect();
-        return {
-          from: { x: a.left + a.width / 2, y: a.top + a.height / 2 },
-          to: { x: b.left + b.width / 2, y: b.top + b.height / 2 },
-        };
-      `);
-      if (!points) throw new Error(`端が見つからない: ${from} → ${to}`);
-      await drag(points.from, points.to);
-      await wait(400);
-    };
-
-    const edgeCount = () =>
-      evaluate(`return document.querySelectorAll('.react-flow__edge').length`);
 
     /** 矢印の本数が n 本に落ち着くまで待つ(コマンドの往復ぶん)。 */
     const edgesSettle = (n) =>

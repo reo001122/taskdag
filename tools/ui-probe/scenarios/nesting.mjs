@@ -3,36 +3,15 @@
  *
  * childTask は React Flow のノードではなく、Task ノードの中の DOM でしかない。
  * 掴んで運ぶ仕組みは自前で持っているので、実際にマウスを送って確かめる。
- */
+ */ import { actions } from '../actions.mjs';
+
 export default {
   name: 'nesting',
   description: 'W-3. 手順を並べ替える / 別の Task へ移す / 独立させる / 入れ子にする',
 
-  async run({ evaluate, waitFor, waitForFocus, wait, key, type, mouse, check }) {
-    const click = (text) =>
-      evaluate(
-        `[...document.querySelectorAll('.toolbar button')].find((b) => b.textContent.includes(${JSON.stringify(text)})).click(); return 1;`,
-      );
-
-    const addTask = async (title, children = []) => {
-      const before = await evaluate(`return document.querySelectorAll('.task').length`);
-      await click('Task');
-      await waitFor('増える', `return document.querySelectorAll('.task').length === ${before + 1}`);
-      await waitForFocus();
-      await type(title);
-      for (const child of children) {
-        await key({ key: 'Enter', code: 13, shift: true });
-        await waitForFocus();
-        await type(child);
-      }
-      await key({ key: 'Enter', code: 13 });
-      await wait(300);
-    };
-
-    const fitView = async () => {
-      await evaluate(`document.querySelector('.react-flow__controls-fitview').click(); return 1;`);
-      await wait(600);
-    };
+  async run(ctx) {
+    const { evaluate, wait, mouse, check } = ctx;
+    const { addTask, fitView } = actions(ctx);
 
     /** Task ごとの childTask の並び。 */
     const structure = () =>
