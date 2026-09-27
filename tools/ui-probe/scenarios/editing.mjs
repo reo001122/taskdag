@@ -713,5 +713,28 @@ export default {
       return hits;
     `);
     check('N-4 作った Task のカードはどれも重なっていない', overlaps.length === 0, overlaps);
+    /*
+      印のある状態の Shift+Enter で、その Task に childTask を1件足す(FR-2)。
+
+      名前を打っている最中の Shift+Enter と同じ結果になる。一度確定したあと
+      もう1件足すのに、マウスへ手を戻す必要がなくなる。
+    */
+    await key({ key: 'Escape', code: 27 });
+    await wait(200);
+    await pressRow('.task-head', heads - 1);
+    const rowsBeforeAdd = await evaluate(`return document.querySelectorAll('.child').length`);
+    await key({ key: 'Enter', code: 13, shift: true });
+    await wait(700);
+    check(
+      'N-5a 印のある状態の Shift+Enter で childTask が1件増える',
+      (await evaluate(`return document.querySelectorAll('.child').length`)) === rowsBeforeAdd + 1,
+      {
+        before: rowsBeforeAdd,
+        after: await evaluate(`return document.querySelectorAll('.child').length`),
+      },
+    );
+    check('N-5b そのまま名前を打ち始められる', (await waitForFocus()) >= 0);
+    await key({ key: 'Escape', code: 27 });
+    await wait(200);
   },
 };

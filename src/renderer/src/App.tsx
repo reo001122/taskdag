@@ -529,6 +529,25 @@ export function App(): React.JSX.Element {
       }
 
       /*
+        Shift+Enter で、印の付いている Task に childTask を1件足す(FR-2)。
+
+        名前を打っている最中の Shift+Enter と同じ結果になる。一度確定したあと
+        もう1件足すのに、マウスへ手を戻す必要がなくなる。足す先は末尾 ——
+        入力中の Shift+Enter と揃える。印が childTask にあっても、足すのは
+        その Task の末尾である。
+      */
+      if (e.key === 'Enter' && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const from = e.target as HTMLElement | null;
+        if (from?.closest('input, textarea, dialog')) return;
+
+        const selected = getNodes().find((n) => n.selected && n.type === 'task');
+        if (!selected) return;
+        e.preventDefault();
+        addChild(selected.id);
+        return;
+      }
+
+      /*
         Delete / Backspace で、印の付いている行を消す(FR-1)。
 
         消すのは印の1件だけ。React Flow の既定は「選んでいるものを全部」で、
@@ -651,7 +670,7 @@ export function App(): React.JSX.Element {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keydown', onArrow, true);
     };
-  }, [send, addTaskHere, getNodes, cursorIn, moveRowCursor, requestDelete]);
+  }, [send, addTaskHere, addChild, getNodes, cursorIn, moveRowCursor, requestDelete]);
 
   /*
     作った直後の Task を選んでおく(FR-1)。
