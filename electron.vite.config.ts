@@ -4,7 +4,8 @@ import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 
 export default defineConfig({
   main: {
-    // better-sqlite3 はネイティブモジュールのためバンドルせず外部依存として扱う
+    // Electron 本体と node の組み込みモジュールはバンドルせず、外部依存として扱う
+    // (DB は node:sqlite。native モジュールは使っていない。D-9)
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {

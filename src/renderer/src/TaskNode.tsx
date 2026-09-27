@@ -885,7 +885,7 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
 
         {/*
         左上の頂点に重なる丸点。どの Project に属しているかの印。
-        移動は本体のどこを掴んでもできるので、ここは掴む場所ではない。
+        移動は見出しの左端の取っ手からだけできる(FR-6)。ここは掴む場所ではない。
       */}
         <div
           className="task-project-mark"

@@ -833,9 +833,6 @@ export function App(): React.JSX.Element {
           dragHandle: '.task-grip',
           position: task.position,
           data: data as never,
-          // dragHandle は指定しない。本体のどこを掴んでも動く。
-          // 名前・メモ・各ボタンには nodrag が付いているので、
-          // そこをクリックしても移動にはならない。
         };
       });
 
