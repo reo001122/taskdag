@@ -564,6 +564,25 @@ export default {
     await pressRow('.task-head', heads - 1);
     check('N-2c 親の見出しを押すと、印は親へ戻る', (await markOn()).親 === true, await markOn());
 
+    /*
+      取っ手を押したときも印が移る。
+
+      取っ手は運搬を始めるために pointerdown を止めている(childDrag.ts)。
+      行の受け取りを bubble 側に置くと、取っ手を押したときだけ印が動かない ——
+      「取っ手の左の余白では移るのに、取っ手では移らない」という形で出た。
+    */
+    const gripAt = await evaluate(`
+      const grips = document.querySelectorAll('.child-grip');
+      const g = grips[grips.length - 2];
+      if (!g) throw new Error('取っ手が足りない');
+      const r = g.getBoundingClientRect();
+      return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+    `);
+    await mouse('mousePressed', gripAt.x, gripAt.y, { buttons: 1 });
+    await mouse('mouseReleased', gripAt.x, gripAt.y, { buttons: 0 });
+    await wait(300);
+    check('N-2d 取っ手を押しても印が移る', (await markOn()).行 === '手順あ', await markOn());
+
     await pressRow('.child', rows - 1);
     await key({ key: 'Enter', code: 13 });
     await wait(400);
@@ -572,7 +591,7 @@ export default {
       return { 値: a?.value ?? null, 場所: a?.closest('.child') ? 'childTask' : '親' };
     `);
     check(
-      'N-2d 押した行が、そのまま Enter の開く相手になる',
+      'N-2e 押した行が、そのまま Enter の開く相手になる',
       afterPress.場所 === 'childTask' && afterPress.値 === '手順い',
       afterPress,
     );

@@ -578,7 +578,7 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
           <div
             className={`task-own${selected && cursorRow === null ? ' is-cursor' : ''}`}
             tabIndex={-1}
-            onPointerDown={(e) => {
+            onPointerDownCapture={(e) => {
               onRowPressed(task.id, null);
               e.currentTarget.focus();
             }}
@@ -703,7 +703,12 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
                       selected && cursorRow === child.id ? ' is-cursor' : ''
                     }`}
                     tabIndex={-1}
-                    onPointerDown={(e) => {
+                    /*
+                      捕捉の段階で受ける。取っ手は運搬を始めるために pointerdown を
+                      止めており(childDrag.ts)、bubble 側では届かない —— 取っ手を
+                      押したときだけ印が動かない、という形で実際に出た。
+                    */
+                    onPointerDownCapture={(e) => {
                       onRowPressed(task.id, child.id);
                       e.currentTarget.focus();
                     }}
