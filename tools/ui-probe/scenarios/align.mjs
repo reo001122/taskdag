@@ -4,32 +4,15 @@
  * 所属は位置から導かれる(FR-4)。**枠から Task がはみ出すことは、そのまま
  * 所属が消えることを意味する。** 見た目の粗さではなく、データが変わる。
  * 枠どうしの重なりも同じで、重なった領域に置かれた Task の所属が入れ替わる。
- */
+ */ import { actions } from '../actions.mjs';
+
 export default {
   name: 'align',
   description: 'D. 整列しても所属が壊れないこと(はみ出さない・枠が重ならない)',
 
-  async run({ evaluate, waitFor, waitForFocus, wait, key, type, mouse, drag, check }) {
-    const click = (text) =>
-      evaluate(
-        `[...document.querySelectorAll('.toolbar button')].find((b) => b.textContent.includes(${JSON.stringify(text)})).click(); return 1;`,
-      );
-
-    /** Task を1つ作る。children を渡すと子タスクも足す(背が伸びる)。 */
-    const addTask = async (title, children = []) => {
-      const before = await evaluate(`return document.querySelectorAll('.task').length`);
-      await click('Task');
-      await waitFor('増える', `return document.querySelectorAll('.task').length === ${before + 1}`);
-      await waitForFocus();
-      await type(title);
-      for (const child of children) {
-        await key({ key: 'Enter', code: 13, shift: true });
-        await waitForFocus();
-        await type(child);
-      }
-      await key({ key: 'Enter', code: 13 });
-      await wait(250);
-    };
+  async run(ctx) {
+    const { evaluate, waitFor, waitForFocus, wait, key, type, mouse, drag, check } = ctx;
+    const { clickToolbar: click, addTask } = actions(ctx);
 
     const addProject = async (name) => {
       await click('Project');
