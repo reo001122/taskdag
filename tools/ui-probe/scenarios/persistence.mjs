@@ -88,7 +88,7 @@ export default {
     // メモ、状態、折りたたみ
     await evaluate(`document.querySelector('.task-title').click(); return 1;`);
     await waitForFocus();
-    await key({ key: 'Tab', code: 9 });
+    await key({ key: 'Enter', code: 13, ctrl: true });
     await waitFor('メモ欄', `return !!document.querySelector('.memo-input')`);
     await waitForFocus();
     await type('あとで見返す');

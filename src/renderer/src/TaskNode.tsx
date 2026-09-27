@@ -24,6 +24,12 @@ export type TaskNodeData = {
   hideCompleted: boolean;
   /** 追加・削除の直後に編集へ入れる相手。Task と childTask のどちらの id も入る。 */
   autoEdit: AutoEdit;
+  /**
+   * Shift+↑↓ で選んでいる行(FR-1)。childTask の id。null なら親 Task 自身。
+   *
+   * 選ばれている Task の分だけ意味を持つ。選ばれていなければ印は出さない。
+   */
+  cursorChildId: string | null;
   send: (command: Command) => void;
   requestDelete: (id: string) => void;
   onAutoEditConsumed: () => void;
@@ -33,6 +39,11 @@ export type TaskNodeData = {
   onChildRemoveWhileEditing: (childId: string) => void;
   /** childTask が掴まれて、画面上のその点で離された(W-3)。to は入る先。 */
   onChildDropped: (childId: string, at: { x: number; y: number }, to: DropPoint | null) => void;
+  /** 行が押された。押した行に印を移す。childId が null なら親 Task 自身。 */
+  onRowPressed: (taskId: string, childId: string | null) => void;
+  /** メモの入力を開く相手(FR-10)。Task と childTask のどちらの id も入る。 */
+  autoMemo: string | null;
+  onAutoMemoConsumed: () => void;
 };
 
 /**
@@ -141,7 +152,15 @@ const NodeMeasured = createContext(true);
 function focusInput(el: HTMLInputElement | HTMLTextAreaElement | null, caret: Caret): void {
   if (!el || !document.contains(el)) return;
 
-  el.focus();
+  /*
+    preventScroll: ブラウザに画面を動かさせない。
+
+    既定では、フォーカスした要素が見えるところまで入れ物を巻き上げる。
+    キャンバスは巻き上げて使うものではないので、React Flow がすぐ 0 へ戻す ——
+    その1往復が画面のちらつきとして出る(実測: 592.5px へ飛んで同じミリ秒に 0)。
+    画面の外に置かれた Task を作ったときに見える。
+  */
+  el.focus({ preventScroll: true });
   if (document.activeElement !== el) {
     log.warn('入力欄にフォーカスできなかった', { タグ: el.tagName });
     return;
@@ -199,7 +218,7 @@ function EditableText({
   onEditEnd?: () => void;
   /** Shift+Enter で確定したときに呼ばれる。確定して、続けて次の項目を足す用。 */
   onCommitAndAdd?: () => void;
-  /** Tab が押されたときに呼ばれる。確定して、メモの入力へ移る用。 */
+  /** Ctrl+Enter が押されたときに呼ばれる。確定して、メモの入力へ移る用。 */
   onCommitAndMemo?: () => void;
   /**
    * 名前が空の状態で Backspace が押されたときに呼ばれる。渡さなければ何も起きない。
@@ -305,6 +324,20 @@ function EditableText({
       }}
       onKeyDown={(e) => {
         /*
+          Cmd+N だけは通す(FR-1)。
+
+          打っている途中で新しい Task に移るのは、書きかけを置き去りにする
+          操作なので、まずここで確定させる。そのうえで作成はキャンバス側に
+          任せる —— ＋ Task のボタンを押したときと同じ結果になる。
+          かつては「打っている間は効かない」にしていたが、ボタンでは作れて
+          キーでは作れない、という食い違いが残っていた。
+        */
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
+          finishRef.current(false);
+          return;
+        }
+
+        /*
           キャンバスのショートカット(Cmd+Z など)へ渡さない。
 
           止めるのは capture ではなく、この bubble 側でなければならない。
@@ -319,22 +352,33 @@ function EditableText({
         // 入力を終える意思表示ではない。
         if (e.nativeEvent.isComposing) return;
 
+        /*
+          Enter の3つ。確定だけ / 確定して childTask へ / 確定してメモへ。
+
+          修飾キーで対にしてある。分解を書き出している間、次に書きたいものが
+          手順なのかメモなのかで手の形だけが変わる。ボタンへ手を戻さずに済む。
+        */
         if (e.key === 'Enter') {
           e.preventDefault();
-          // Enter は確定だけ。Shift+Enter は確定して次の項目へ進む。
-          // 分解を一気に書き出す間、ボタンへ手を戻さずに済む。
+          if ((e.ctrlKey || e.metaKey) && onCommitAndMemo) {
+            finishRef.current(false);
+            onCommitAndMemo();
+            return;
+          }
           finishRef.current(e.shiftKey);
+          return;
         }
-        /*
-          Tab は「次の欄へ」。名前の次にあるのはメモなので、そこへ移る。
 
-          名前を打ち終えてメモを書きたいたびにマウスへ持ち替えるのでは、
-          書き出しの流れが切れる。Tab 本来の意味から外れてもいない。
+        /*
+          Tab は何もしない。
+
+          かつてはメモへ移る操作だったが、Ctrl+Enter に移した。既定の動きに
+          任せると入力欄から焦点が外れるが、この入力欄は焦点を取り返すので、
+          一瞬だけどこかへ移って戻る形になる。止めておく。
         */
-        if (e.key === 'Tab' && !e.shiftKey && onCommitAndMemo) {
+        if (e.key === 'Tab') {
           e.preventDefault();
-          finishRef.current(false);
-          onCommitAndMemo();
+          return;
         }
 
         // 空の名前で Backspace は「この項目を取り消す」。Shift+Enter で
@@ -425,11 +469,32 @@ function Memo({
       onMouseDown={(e) => e.stopPropagation()}
       onBlur={finish}
       onKeyDown={(e) => {
-        // Enter で改行できるよう、キャンバスのショートカットへ渡さない。
-        // capture 側で止めるとこのハンドラ自体が呼ばれなくなる(上と同じ理由)。
+        // Cmd+N は通す。ここで確定させ、作成はキャンバス側に任せる(名前の欄と同じ)。
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
+          finish();
+          return;
+        }
+
+        // キャンバスのショートカットへ渡さない。capture 側で止めると
+        // このハンドラ自体が呼ばれなくなる(上と同じ理由)。
         e.stopPropagation();
 
-        // Enter は改行。Escape で編集をやめる。
+        // IME 変換中の Enter は「変換を決める」ためのもの。書き終える合図ではない。
+        if (e.nativeEvent.isComposing) return;
+
+        /*
+          Enter は確定、Shift+Enter は改行。
+
+          名前の欄と同じで、Enter は「書き終えた」を意味する。改行のほうを
+          修飾キー側へ置いた —— メモは1行で済むことのほうが多く、そのたびに
+          枠の外を押して閉じるのでは手数が増える。
+        */
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          finish();
+          return;
+        }
+
         if (e.key === 'Escape') {
           setEditing(false);
           onEditEnd();
@@ -440,13 +505,17 @@ function Memo({
   );
 }
 
-export function TaskNode({ data, width }: NodeProps): React.JSX.Element {
+export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Element {
   const {
     task,
     children,
     projectColor,
     hideCompleted,
     autoEdit,
+    cursorChildId,
+    onRowPressed,
+    autoMemo,
+    onAutoMemoConsumed,
     send,
     requestDelete,
     onAutoEditConsumed,
@@ -465,8 +534,31 @@ export function TaskNode({ data, width }: NodeProps): React.JSX.Element {
   // ✎ を押した対象。'task' か childTask の id。押された側だけが編集に入る。
   const [memoTarget, setMemoTarget] = useState<string | null>(null);
 
+  /*
+    メモを閉じたら、開く合図も下ろす(FR-10)。
+
+    下ろさないと、合図が立ったまま残る。次に同じ行でメモを開こうとしても
+    値が変わらないので、開く効果が走らない —— 2回目が効かなくなる。
+  */
+  const endMemo = (id: string): void => {
+    setMemoTarget(null);
+    if (autoMemo === id) onAutoMemoConsumed();
+  };
+
   const visibleChildren = hideCompleted ? children.filter((c) => c.progress !== 'done') : children;
   const showChildren = !task.collapsed && children.length > 0;
+
+  /*
+    印を出す行(FR-1)。Enter が触る相手と同じでなければならない。
+
+    指している childTask が見当たらなければ親へ戻す。完了を非表示にした、
+    別の Task へ移した、消した —— 指す先が消える経路は複数ある。そのまま
+    どこにも印が出ない状態にすると、Enter が何を開くのか画面から読めない。
+  */
+  const cursorRow =
+    cursorChildId !== null && visibleChildren.some((c) => c.id === cursorChildId)
+      ? cursorChildId
+      : null;
 
   const className = [
     'task',
@@ -495,101 +587,126 @@ export function TaskNode({ data, width }: NodeProps): React.JSX.Element {
         }
       >
         <div className={className}>
-          <div className="task-head">
-            {/*
-            掴み手。ここからだけ動かせる(FR-6)。
+          {/*
+          親 Task 自身の部分。選ばれたときに囲むのはここまでで、childTask の
+          並びは含めない。Enter が触るのは親の名前で、メモも親のものだが、
+          childTask はそれぞれ別の対象だから。
+        */}
+          {/*
+          押された行に印を移し、フォーカスもその行へ移す(FR-1)。
 
-            childTask 側に取っ手を出したことで、取っ手の無いものは掴めない、と
-            読めるようになった。実際 Task 本体は掴む場所が分からない、という
-            報告が出た。同じ形の取っ手を同じ位置に置いて揃える。
-          */}
-            <span className="task-grip" title="ドラッグして動かす" />
-            <StateToggle
-              progress={task.progress}
-              onToggle={() =>
-                send({
-                  type: 'setTaskProgress',
-                  id: task.id,
-                  progress: nextProgress(task.progress),
-                })
-              }
-            />
+          押した時点で移す。クリックの成立を待つと、名前を編集している間に
+          レイアウトが動いたときに取りこぼす —— ボタンで実際に起きた。
 
-            <EditableText
-              value={task.title}
-              className="task-title"
-              startEditing={autoEdit?.id === task.id}
-              caret={autoEdit?.caret}
-              onEditEnd={onAutoEditConsumed}
-              onCommit={(title) => send({ type: 'updateTaskTitle', id: task.id, title })}
-              // Shift+Enter で、Task 名を打ち終えた勢いのまま分解に入れる
-              onCommitAndAdd={() => onChildChainAdd(task.id)}
-              // Tab で、そのままメモへ
-              onCommitAndMemo={() => setMemoTarget('task')}
-            />
+          フォーカスを行が受けるのは、印と食い違わせないため。放っておくと
+          React Flow が Task ノード全体に当てるので、childTask を押したのに
+          フォーカスは親、という状態になる。見た目には出ないが、ここから先の
+          キー操作の起点になる値である。
+        */}
+          <div
+            className={`task-own${selected && cursorRow === null ? ' is-cursor' : ''}`}
+            tabIndex={-1}
+            onPointerDownCapture={(e) => {
+              onRowPressed(task.id, null);
+              e.currentTarget.focus();
+            }}
+          >
+            <div className="task-head">
+              {/*
+              掴み手。ここからだけ動かせる(FR-6)。
+  
+              childTask 側に取っ手を出したことで、取っ手の無いものは掴めない、と
+              読めるようになった。実際 Task 本体は掴む場所が分からない、という
+              報告が出た。同じ形の取っ手を同じ位置に置いて揃える。
+            */}
+              <span className="task-grip" title="ドラッグして動かす" />
+              <StateToggle
+                progress={task.progress}
+                onToggle={() =>
+                  send({
+                    type: 'setTaskProgress',
+                    id: task.id,
+                    progress: nextProgress(task.progress),
+                  })
+                }
+              />
 
-            <span className="task-actions nodrag">
-              {children.length > 0 && (
-                /*
-                折りたたんでいる間は件数を出す。畳んだ Task は1行の Task と
-                見た目が変わらず、中身があること自体が画面から消える。
-                件数は畳んでいるときだけ出す —— 開いていれば数えられる。
-              */
+              <EditableText
+                value={task.title}
+                className="task-title"
+                startEditing={autoEdit?.id === task.id}
+                caret={autoEdit?.caret}
+                onEditEnd={onAutoEditConsumed}
+                onCommit={(title) => send({ type: 'updateTaskTitle', id: task.id, title })}
+                // Shift+Enter で、Task 名を打ち終えた勢いのまま分解に入れる
+                onCommitAndAdd={() => onChildChainAdd(task.id)}
+                // Ctrl+Enter で、そのままメモへ
+                onCommitAndMemo={() => setMemoTarget('task')}
+              />
+
+              <span className="task-actions nodrag">
+                {children.length > 0 && (
+                  /*
+                  折りたたんでいる間は件数を出す。畳んだ Task は1行の Task と
+                  見た目が変わらず、中身があること自体が画面から消える。
+                  件数は畳んでいるときだけ出す —— 開いていれば数えられる。
+                */
+                  <button
+                    type="button"
+                    className={`state-button${task.collapsed ? ' is-collapsed' : ''}`}
+                    title={task.collapsed ? `展開 (${children.length} 件)` : '折りたたむ'}
+                    onClick={() =>
+                      send({ type: 'setTaskCollapsed', id: task.id, collapsed: !task.collapsed })
+                    }
+                  >
+                    {task.collapsed ? `▸ ${children.length}` : '▾'}
+                  </button>
+                )}
+                {/*
+                  押した時点で効かせる(onClick ではなく onPointerDown)。
+  
+                  名前を編集している間、入力欄のぶんノードが広い。押した瞬間に
+                  編集が閉じてノードが縮み、ボタンが左へ動く(実測 201px)。
+                  離す位置にはもうボタンが無いので、click は成立しない ——
+                  名前の編集中はこの3つが一度も効かなかった。
+  
+                  代償として、押したまま指をずらして取り消すことができない。
+                  3つとも取り返しのつかない操作ではない(× も確認を出すだけ)。
+                */}
                 <button
                   type="button"
-                  className={`state-button${task.collapsed ? ' is-collapsed' : ''}`}
-                  title={task.collapsed ? `展開 (${children.length} 件)` : '折りたたむ'}
-                  onClick={() =>
-                    send({ type: 'setTaskCollapsed', id: task.id, collapsed: !task.collapsed })
-                  }
+                  className="state-button"
+                  title="メモ"
+                  onPointerDown={onPress(() => setMemoTarget('task'))}
                 >
-                  {task.collapsed ? `▸ ${children.length}` : '▾'}
+                  ✎
                 </button>
-              )}
-              {/*
-                押した時点で効かせる(onClick ではなく onPointerDown)。
+                <button
+                  type="button"
+                  className="state-button"
+                  title="子タスクを追加"
+                  onPointerDown={onPress(() => onChildChainAdd(task.id))}
+                >
+                  ＋
+                </button>
+                <button
+                  type="button"
+                  className="state-button"
+                  title="この Task を削除"
+                  onPointerDown={onPress(() => requestDelete(task.id))}
+                >
+                  ×
+                </button>
+              </span>
+            </div>
 
-                名前を編集している間、入力欄のぶんノードが広い。押した瞬間に
-                編集が閉じてノードが縮み、ボタンが左へ動く(実測 201px)。
-                離す位置にはもうボタンが無いので、click は成立しない ——
-                名前の編集中はこの3つが一度も効かなかった。
-
-                代償として、押したまま指をずらして取り消すことができない。
-                3つとも取り返しのつかない操作ではない(× も確認を出すだけ)。
-              */}
-              <button
-                type="button"
-                className="state-button"
-                title="メモ"
-                onPointerDown={onPress(() => setMemoTarget('task'))}
-              >
-                ✎
-              </button>
-              <button
-                type="button"
-                className="state-button"
-                title="子タスクを追加"
-                onPointerDown={onPress(() => onChildChainAdd(task.id))}
-              >
-                ＋
-              </button>
-              <button
-                type="button"
-                className="state-button"
-                title="この Task を削除"
-                onPointerDown={onPress(() => requestDelete(task.id))}
-              >
-                ×
-              </button>
-            </span>
+            <Memo
+              memo={task.memo}
+              startEditing={memoTarget === 'task' || autoMemo === task.id}
+              onCommit={(memo) => send({ type: 'setTaskMemo', id: task.id, memo })}
+              onEditEnd={() => endMemo(task.id)}
+            />
           </div>
-
-          <Memo
-            memo={task.memo}
-            startEditing={memoTarget === 'task'}
-            onCommit={(memo) => send({ type: 'setTaskMemo', id: task.id, memo })}
-            onEditEnd={() => setMemoTarget(null)}
-          />
 
           {showChildren && (
             <div className="task-children">
@@ -610,7 +727,19 @@ export function TaskNode({ data, width }: NodeProps): React.JSX.Element {
                   <div
                     key={child.id}
                     data-child-id={child.id}
-                    className={`child${child.progress === 'done' ? ' is-done' : ''}`}
+                    className={`child${child.progress === 'done' ? ' is-done' : ''}${
+                      selected && cursorRow === child.id ? ' is-cursor' : ''
+                    }`}
+                    tabIndex={-1}
+                    /*
+                      捕捉の段階で受ける。取っ手は運搬を始めるために pointerdown を
+                      止めており(childDrag.ts)、bubble 側では届かない —— 取っ手を
+                      押したときだけ印が動かない、という形で実際に出た。
+                    */
+                    onPointerDownCapture={(e) => {
+                      onRowPressed(task.id, child.id);
+                      e.currentTarget.focus();
+                    }}
                   >
                     <div className="child-row">
                       {/*
@@ -648,7 +777,7 @@ export function TaskNode({ data, width }: NodeProps): React.JSX.Element {
                         // Shift+Enter で確定したら、続けてもう1件足す。
                         // 分解は一気に書き出したいので、都度ボタンへ手を戻したくない。
                         onCommitAndAdd={() => onChildChainAdd(task.id)}
-                        // Tab で、そのままメモへ
+                        // Ctrl+Enter で、そのままメモへ
                         onCommitAndMemo={() => setMemoTarget(child.id)}
                         // 名前を空にして Backspace で、この項目を取り消す
                         onRemoveWhenEmpty={() => onChildRemoveWhileEditing(child.id)}
@@ -708,9 +837,9 @@ export function TaskNode({ data, width }: NodeProps): React.JSX.Element {
 
                     <Memo
                       memo={child.memo}
-                      startEditing={memoTarget === child.id}
+                      startEditing={memoTarget === child.id || autoMemo === child.id}
                       onCommit={(memo) => send({ type: 'setChildTaskMemo', id: child.id, memo })}
-                      onEditEnd={() => setMemoTarget(null)}
+                      onEditEnd={() => endMemo(child.id)}
                     />
                   </div>
                 );

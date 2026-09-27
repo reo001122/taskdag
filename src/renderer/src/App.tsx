@@ -21,7 +21,14 @@ import type { Command, CommandResult, DeletePlan, GraphSnapshot } from '../../sh
 import { clearDropFeedback, type DropPoint, findDropPoint, showDropFeedback } from './childDrag';
 import { PROJECT_COLOR_COUNT, projectColorAt } from './colors';
 import { DependencyEdge, type DependencyEdgeData } from './DependencyEdge';
-import { computeLayout, findFreeProjectSlot, NEW_PROJECT_SIZE, type NodeSize } from './layout';
+import {
+  computeLayout,
+  findFreeProjectSlot,
+  findFreeTaskSlot,
+  NEW_PROJECT_SIZE,
+  NEW_TASK_SIZE,
+  type NodeSize,
+} from './layout';
 import { logger } from './log';
 import { clearOverlapMarks, showOverlapMarks } from './overlapMark';
 import {
@@ -40,7 +47,7 @@ const nodeTypes: NodeTypes = { task: TaskNode, projectFrame: ProjectFrameNode };
 
 export function App(): React.JSX.Element {
   const [snapshot, setSnapshot] = useState<GraphSnapshot | null>(null);
-  const { screenToFlowPosition, flowToScreenPosition } = useReactFlow();
+  const { screenToFlowPosition, flowToScreenPosition, getNodes } = useReactFlow();
   const [error, setError] = useState<string | null>(null);
   const [deletePlan, setDeletePlan] = useState<DeletePlan | null>(null);
   const [askProjectName, setAskProjectName] = useState(false);
@@ -53,6 +60,27 @@ export function App(): React.JSX.Element {
    * 1つ上へ戻して、手をキーボードに置いたまま続けられるようにする。
    */
   const [autoEdit, setAutoEdit] = useState<AutoEdit>(null);
+
+  /**
+   * 印が付いている childTask(FR-1)。null なら親 Task 自身を指している。
+   *
+   * どの Task が選ばれているかは React Flow が持っている。こちらが足すのは
+   * その中のどの行か、だけ。選択そのものを自前で持つと、クリックでの選択と
+   * 食い違う。
+   *
+   * 親の id も一緒に持つ。別の Task を選んだときに「前の Task の何行目」を
+   * 引き継がないため —— 引き継ぐと、選び直した直後の Enter が思っていない
+   * childTask を開く。消す処理を別に書くより、見るときに確かめるほうが確実。
+   */
+  const [cursor, setCursor] = useState<{ taskId: string; childId: string } | null>(null);
+
+  /**
+   * メモの入力を開く相手(FR-10)。Task と childTask のどちらの id も入る。
+   *
+   * 印の付いている行のメモを Ctrl+Enter で開くために要る。開くかどうかを
+   * 決めているのはノード側の状態なので、外から起こすには合図を渡すしかない。
+   */
+  const [autoMemo, setAutoMemo] = useState<string | null>(null);
 
   /**
    * React Flow に描画を任せるための状態。
@@ -283,15 +311,55 @@ export function App(): React.JSX.Element {
   );
 
   /**
+   * 今見えている範囲を、キャンバスの座標で返す。
+   *
+   * 画面の寸法ではなくキャンバスの矩形を見る。拡大していれば見えている範囲は
+   * 狭く、縮小していれば広い。実際の枠(.react-flow)から読むので、ツールバーの
+   * 高さを別に覚えておく必要がない。
+   */
+  const visibleArea = useCallback((): Rect => {
+    const pane = document.querySelector('.react-flow');
+    // 描画前は分からない。原点まわりを当てる。
+    if (!pane) return { x: 80, y: 80, width: 1200, height: 800 };
+    const box = pane.getBoundingClientRect();
+    const margin = 24;
+    const topLeft = screenToFlowPosition({ x: box.left + margin, y: box.top + margin });
+    const bottomRight = screenToFlowPosition({
+      x: box.right - margin,
+      y: box.bottom - margin,
+    });
+    return {
+      x: topLeft.x,
+      y: topLeft.y,
+      width: bottomRight.x - topLeft.x,
+      height: bottomRight.y - topLeft.y,
+    };
+  }, [screenToFlowPosition]);
+
+  /**
    * Task を1件足す。ツールバーのボタンと Cmd+N の両方から呼ぶ(FR-1)。
    *
-   * 置き場所は少しずつずらす。同じ座標に重ねると、作ったものが前のものの
-   * 真下に隠れて、増えたことが見えない。
+   * 置き場所は、既にある Task に重ならないところを選ぶ。かつては作った順に
+   * 少しずつずらしていたが、重なった Task の行は上のカードに覆われ、そこを
+   * 押すと別の Task を押したことになる(実測。印が別の Task の親に出た)。
+   *
+   * 寸法は React Flow が測った値を使う。まだ測れていないもの(作った直後など)は
+   * 見積もりで代える —— 測れないぶんは1行の Task として扱う。
    */
   const addTaskHere = useCallback(() => {
-    const n = snapshot?.tasks.length ?? 0;
-    addTask({ x: 120 + (n % 6) * 40, y: 120 + (n % 6) * 70 });
-  }, [addTask, snapshot]);
+    const measured = new Map(
+      getNodes()
+        .filter((n) => n.type === 'task')
+        .map((n) => [n.id, n.measured]),
+    );
+    const taken: Rect[] = (snapshot?.tasks ?? []).map((task) => ({
+      x: task.position.x,
+      y: task.position.y,
+      width: measured.get(task.id)?.width ?? NEW_TASK_SIZE.width,
+      height: measured.get(task.id)?.height ?? NEW_TASK_SIZE.height,
+    }));
+    addTask(findFreeTaskSlot(taken, visibleArea()));
+  }, [addTask, snapshot, getNodes, visibleArea]);
 
   /** childTask を1件足し、そのまま名前の入力に入る。Shift+Enter で連続して足せる。 */
   const addChild = useCallback(
@@ -341,33 +409,62 @@ export function App(): React.JSX.Element {
     [dispatch, snapshot],
   );
 
-  // Cmd+Z / Cmd+Shift+Z(FR-8)。AI が行った操作もこれで戻せる。
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent): void => {
-      if (!(e.metaKey || e.ctrlKey)) return;
-      const key = e.key.toLowerCase();
+  /**
+   * その Task の中で、印を動かせる childTask の id を上から順に返す。
+   *
+   * 画面に出ている行だけを対象にする。完了を隠しているときに隠れた行へ
+   * 印を送ると、押した Enter が画面のどこにも見えないものを開く。
+   * 折りたたんでいる間は行が無いので、印は親から動かない。
+   */
+  const rowsOf = useCallback(
+    (taskId: string): string[] => {
+      const task = snapshot?.tasks.find((t) => t.id === taskId);
+      if (!snapshot || !task || task.collapsed) return [];
+      return task.childTaskIds.filter((id) => {
+        const child = snapshot.childTasks.find((c) => c.id === id);
+        return child !== undefined && (!snapshot.hideCompleted || child.progress !== 'done');
+      });
+    },
+    [snapshot],
+  );
 
-      if (key === 'z') {
-        e.preventDefault();
-        send({ type: e.shiftKey ? 'redo' : 'undo' });
-        return;
-      }
+  /** その Task で印が付いている childTask。指していなければ null(= 親自身)。 */
+  const cursorIn = useCallback(
+    (taskId: string): string | null =>
+      cursor !== null && cursor.taskId === taskId && rowsOf(taskId).includes(cursor.childId)
+        ? cursor.childId
+        : null,
+    [cursor, rowsOf],
+  );
 
-      /*
-        Cmd+N で Task を1件足す(FR-1)。
+  /**
+   * 押された行に印を移す(FR-1)。
+   *
+   * クリックで選んだ Task の印が、前に見ていた行に残っていてはならない。
+   * 選択そのものは React Flow が付け替えるが、行の位置までは知らない ——
+   * 同じ Task を選び直したときには選択が変わらないので、こちらで動かす。
+   */
+  const focusRow = useCallback((taskId: string, childId: string | null) => {
+    setCursor(childId === null ? null : { taskId, childId });
+  }, []);
 
-        名前や メモ を打っている間は届かない —— 入力欄が keydown を止めている。
-        打っている途中で新しい Task に移るのは、書きかけを置き去りにする操作なので、
-        そこは Enter で確定してからにする。
-      */
-      if (key === 'n') {
-        e.preventDefault();
-        addTaskHere();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [send, addTaskHere]);
+  /**
+   * 印を1行動かす(FR-1)。親 Task を先頭に、childTask が続く並びの上を動く。
+   *
+   * 端は端で止める。次の Task へ回り込ませると、選択そのものが動くことになり、
+   * 「今どの Task を見ているか」がキーを押すたびに変わる。
+   */
+  const moveRowCursor = useCallback(
+    (delta: 1 | -1) => {
+      const taskId = getNodes().find((n) => n.selected && n.type === 'task')?.id;
+      if (taskId === undefined) return;
+      const order: (string | null)[] = [null, ...rowsOf(taskId)];
+      const at = Math.max(0, order.indexOf(cursorIn(taskId)));
+      const childId = order[Math.min(order.length - 1, Math.max(0, at + delta))];
+      setCursor(childId == null ? null : { taskId, childId });
+    },
+    [getNodes, rowsOf, cursorIn],
+  );
 
   const requestDelete = useCallback(
     (id: string) => {
@@ -397,8 +494,209 @@ export function App(): React.JSX.Element {
     [send],
   );
 
+  // Cmd+Z / Cmd+Shift+Z(FR-8)。AI が行った操作もこれで戻せる。
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent): void => {
+      /*
+        選んでいる Task の名前を Enter で編集する(FR-1)。
+
+        入力欄の中では届かない —— 入力欄が keydown を止めている。選んでいる
+        ものが無ければ何もしない。「最後に触れたもの」を自前で覚えず、React Flow の
+        選択をそのまま使う。クリックで選ばれ、余白のクリックで外れる。
+      */
+      if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+        /*
+          どこかの入力欄から来た Enter は、そこで意味を持っている。
+
+          Task 名の入力欄は自分で keydown を止めているが、Project 名を聞く
+          ダイアログは止めていない。そのままだと、名前を確定した Enter が
+          ここまで届いて、選ばれている Task の編集が開く。実際に起きた。
+        */
+        const from = e.target as HTMLElement | null;
+        if (from?.closest('input, textarea, dialog')) return;
+
+        const selected = getNodes().find((n) => n.selected && n.type === 'task');
+        if (!selected) return;
+        e.preventDefault();
+        /*
+          開くのは印の付いている行。印が childTask にあればその名前へ。
+
+          指していた childTask が消えていれば親を開く。画面の印も同じときに
+          親へ戻る(TaskNode.tsx)ので、見えているものと開くものが揃う。
+        */
+        setAutoEdit({ id: cursorIn(selected.id) ?? selected.id, caret: 'all' });
+        return;
+      }
+
+      /*
+        Shift+Enter で、印の付いている Task に childTask を1件足す(FR-2)。
+
+        名前を打っている最中の Shift+Enter と同じ結果になる。一度確定したあと
+        もう1件足すのに、マウスへ手を戻す必要がなくなる。足す先は末尾 ——
+        入力中の Shift+Enter と揃える。印が childTask にあっても、足すのは
+        その Task の末尾である。
+      */
+      if (e.key === 'Enter' && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const from = e.target as HTMLElement | null;
+        if (from?.closest('input, textarea, dialog')) return;
+
+        const selected = getNodes().find((n) => n.selected && n.type === 'task');
+        if (!selected) return;
+        e.preventDefault();
+        addChild(selected.id);
+        return;
+      }
+
+      /*
+        Delete / Backspace で、印の付いている行を消す(FR-1)。
+
+        消すのは印の1件だけ。React Flow の既定は「選んでいるものを全部」で、
+        Task は残るのに繋がっていた依存だけが黙って消える、という形になって
+        いた(FR-3)。そちらは切ったままにする(deleteKeyCode={null})。
+
+        入力欄が**画面のどこかに開いていれば何もしない。** フォーカスが入力欄に
+        あれば keydown はそこで止まるが、「入力欄は出ているのにフォーカスが
+        移っていない」状態が実際に起きている(TaskNode.tsx が warn に残す)。
+        その1打が文字ではなく Task に効くのでは、打ち間違いの代償が大きすぎる。
+        開いて見えているなら、その打鍵は入力欄のものとして扱う。
+      */
+      if (
+        (e.key === 'Delete' || e.key === 'Backspace') &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        !e.shiftKey
+      ) {
+        const from = e.target as HTMLElement | null;
+        if (from?.closest('input, textarea, dialog')) return;
+        if (document.querySelector('.text-input, .memo-input')) return;
+
+        const selected = getNodes().find((n) => n.selected && n.type === 'task');
+        if (!selected) return;
+        e.preventDefault();
+
+        /*
+          childTask は即座に消す。× と同じ扱い —— 消えるのはその1行だけで、
+          依存も childTask も巻き添えにならないため、見せるものがない。
+          Task は × と同じ確認を通す(見せるものが無ければそのまま消える)。
+        */
+        const childId = cursorIn(selected.id);
+        if (childId !== null) send({ type: 'deleteChildTask', id: childId });
+        else requestDelete(selected.id);
+        return;
+      }
+
+      /*
+        Ctrl+Enter で、印の付いている行のメモを開く(FR-10)。
+
+        名前を打っている最中の Ctrl+Enter と同じ相手が開く。編集に入ってから
+        でないとメモへ行けないのでは、直すつもりのない名前を一度開くことになる。
+      */
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
+        const from = e.target as HTMLElement | null;
+        if (from?.closest('input, textarea, dialog')) return;
+
+        const selected = getNodes().find((n) => n.selected && n.type === 'task');
+        if (!selected) return;
+        e.preventDefault();
+        setAutoMemo(cursorIn(selected.id) ?? selected.id);
+        return;
+      }
+
+      if (!(e.metaKey || e.ctrlKey)) return;
+      const key = e.key.toLowerCase();
+
+      if (key === 'z') {
+        e.preventDefault();
+        send({ type: e.shiftKey ? 'redo' : 'undo' });
+        return;
+      }
+
+      /*
+        Cmd+N で Task を1件足す(FR-1)。
+
+        名前や メモ を打っている間は届かない —— 入力欄が keydown を止めている。
+        打っている途中で新しい Task に移るのは、書きかけを置き去りにする操作なので、
+        そこは Enter で確定してからにする。
+      */
+      if (key === 'n') {
+        e.preventDefault();
+        addTaskHere();
+      }
+    };
+    /*
+      矢印キーの扱い。印を動かす(FR-1)か、何もさせない(FR-6)かのどちらか。
+
+      React Flow は既定で、焦点のあるノードを矢印キーで動かす。ところがこの
+      アプリが座標を確定させるのはドラッグを離したときだけなので、矢印キーで
+      動かしても保存されない —— 画面では動いたのに、開き直すと戻る。
+      削除キーで起きていたのと同じ形(FR-3)で、選択が見えるようになったぶん、
+      これから踏まれる側になった。
+
+      捕捉の段階で止める。React Flow の処理はノードの上にあり、こちらの
+      window のリスナより先に走るため、後から preventDefault しても遅い。
+      入力欄の中では止めない —— 文字の移動に使うため。
+    */
+    const onArrow = (e: KeyboardEvent): void => {
+      if (!e.key.startsWith('Arrow')) return;
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('input, textarea')) return;
+
+      /*
+        Shift+↑↓ で、印を親 Task と childTask の間で動かす(FR-1)。
+
+        ここで受けるのは、こちらもノードより先に取る必要があるため。
+        Shift を足すと React Flow は移動の幅を広げるだけで、動かすことには
+        変わりがない。捕捉の段階で取らなければ、先に動かされる。
+
+        ダイアログが開いている間は何もしない —— そこでのキーはそちらのもの。
+      */
+      if (e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        if (target?.closest('dialog')) return;
+        e.stopPropagation();
+        e.preventDefault();
+        moveRowCursor(e.key === 'ArrowDown' ? 1 : -1);
+        return;
+      }
+
+      if (!target?.closest('.react-flow__node')) return;
+      e.stopPropagation();
+      e.preventDefault();
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keydown', onArrow, true);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keydown', onArrow, true);
+    };
+  }, [send, addTaskHere, addChild, getNodes, cursorIn, moveRowCursor, requestDelete]);
+
+  /*
+    作った直後の Task を選んでおく(FR-1)。
+
+    作ってすぐ名前を打ち、Enter で確定したあと、そのまま Enter でもう一度
+    開ける。選ばれていなければ、作ったばかりのものにもう一度触るのに
+    クリックが要る。
+
+    ノードは次のスナップショットで現れる。この効果はノードが変わるたびに
+    走らせ、現れた時点で選ぶ —— 作った直後に一度走らせるだけでは、まだ
+    存在していないので空振りする。
+  */
+  useEffect(() => {
+    const id = autoEdit?.id;
+    if (!id) return;
+    const target = nodes.find((n) => n.id === id && n.type === 'task');
+    if (!target || target.selected) return;
+    setNodes((current) => current.map((n) => ({ ...n, selected: n.id === id })));
+  }, [autoEdit, nodes, setNodes]);
+
   const onAutoEditConsumed = useCallback(() => {
     setAutoEdit(null);
+  }, []);
+
+  const onAutoMemoConsumed = useCallback(() => {
+    setAutoMemo(null);
   }, []);
 
   /** 依存を1本外す(FR-3)。線の上の × から呼ばれる。 */
@@ -494,7 +792,11 @@ export function App(): React.JSX.Element {
           projectColor: task.projectId === null ? null : (colorOf.get(task.projectId) ?? null),
           hideCompleted: snapshot.hideCompleted,
           onChildDropped,
+          onRowPressed: focusRow,
+          autoMemo,
+          onAutoMemoConsumed,
           autoEdit,
+          cursorChildId: cursorIn(task.id),
           send,
           requestDelete,
           onAutoEditConsumed,
@@ -541,7 +843,11 @@ export function App(): React.JSX.Element {
     removeChildWhileEditing,
     removeEdge,
     onAutoEditConsumed,
+    onAutoMemoConsumed,
     autoEdit,
+    autoMemo,
+    cursorIn,
+    focusRow,
     markFrameBlocked,
     wouldOverlap,
     restoreFrameSize,

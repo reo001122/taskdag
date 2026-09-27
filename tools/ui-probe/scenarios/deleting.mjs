@@ -245,11 +245,11 @@ export default {
     check('F-3c なくなる依存関係は4本とも挙がる', removed.length === 4, removed);
 
     /*
-      Delete / Backspace では消えない。
+      Delete / Backspace は、印の付いている行を消す(FR-1)。
 
-      **この道は Task の削除と依存の削除を一緒くたにしており、確認(FR-1)を
-      迂回する。** 実際、Task 自体は消えないのに、繋がっていた依存だけが
-      黙って消えていた。
+      消すのは印の1件だけ。React Flow の既定(選んでいるものを全部)は切って
+      ある —— Task 自体は消えないのに、繋がっていた依存だけが黙って消えて
+      いた。Task を消すときは × と同じ確認を通す。
     */
     await dismiss();
     await evaluate(`
@@ -260,19 +260,90 @@ export default {
     `);
     await wait(300);
     const edgesBefore = await edgeCount();
-    await key({ key: 'Backspace', code: 8 });
     await key({ key: 'Delete', code: 46 });
     await wait(500);
     check(
-      'F-7a Delete / Backspace では Task が消えない',
+      'F-7a Delete は消す前に確認を出す',
+      await evaluate(`return !!document.querySelector('dialog[open]')`),
+    );
+
+    await dismiss();
+    await wait(300);
+    check(
+      'F-7b 取り消せば Task は残る',
       await evaluate(
         `return [...document.querySelectorAll('.task-title')].some((t) => t.textContent === 'B')`,
       ),
     );
-    check('F-7b そのとき依存も消えない', (await edgeCount()) === edgesBefore, {
+    check('F-7c そのとき依存も残る', (await edgeCount()) === edgesBefore, {
       before: edgesBefore,
       after: await edgeCount(),
     });
+
+    /*
+      入力欄が開いている間は効かない。
+
+      フォーカスが入力欄にあれば keydown はそこで止まる。止まらないのは
+      「入力欄は出ているのにフォーカスが移っていない」場合で、これは実際に
+      起きている。その1打が文字ではなく Task に効くのでは代償が大きすぎる
+      ので、開いて見えているなら入力欄のものとして扱う。
+    */
+    await evaluate(`
+      const node = [...document.querySelectorAll('.react-flow__node-task')]
+        .find((n) => n.querySelector('.task-title')?.textContent === 'B');
+      node.querySelector('.task-title').click();
+      return 1;
+    `);
+    await waitFor('入力欄が開く', `return !!document.querySelector('.task-head .text-input')`);
+    // フォーカスだけ落とす(入力欄は開いたまま)。報告された状態の再現。
+    await evaluate(`document.activeElement?.blur(); return 1;`);
+    await wait(200);
+    const tasksBefore = await evaluate(`return document.querySelectorAll('.task').length`);
+    await key({ key: 'Backspace', code: 8 });
+    await key({ key: 'Delete', code: 46 });
+    await wait(500);
+    const after = {
+      tasks: await evaluate(`return document.querySelectorAll('.task').length`),
+      edges: await edgeCount(),
+      dialog: await evaluate(`return !!document.querySelector('dialog[open]')`),
+    };
+    check(
+      'F-7d 入力欄が開いている間は、フォーカスが外れていても消えない',
+      after.tasks === tasksBefore && after.edges === edgesBefore && !after.dialog,
+      { before: { tasks: tasksBefore, edges: edgesBefore }, after },
+    );
+    await key({ key: 'Escape', code: 27 });
+    await wait(300);
+
+    /*
+      印が childTask にあれば、その1行だけが消える。
+
+      確認は挟まない —— × と同じ扱いで、巻き添えになるものが無いため
+      見せるものがない。誤ったら Undo で戻す(FR-8)。
+    */
+    const childNames = () =>
+      evaluate(`return [...document.querySelectorAll('.child-title')].map((c) => c.textContent)`);
+    const childrenBefore = await childNames();
+    await evaluate(`
+      const row = [...document.querySelectorAll('.child')]
+        .find((c) => c.querySelector('.child-title')?.textContent === '子2');
+      if (!row) throw new Error('子2 が見つからない');
+      const r = row.getBoundingClientRect();
+      row.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, clientX: Math.round(r.left + 8), clientY: Math.round(r.top + 8) }));
+      return 1;
+    `);
+    await wait(300);
+    await key({ key: 'Delete', code: 46 });
+    await wait(500);
+    const childrenAfter = await childNames();
+    check(
+      'F-7e 印が childTask にあれば、その1行だけが消える',
+      !childrenAfter.includes('子2') && childrenAfter.includes('子1'),
+      { before: childrenBefore, after: childrenAfter },
+    );
+    await key({ key: 'z', code: 90, meta: true });
+    await wait(500);
+    check('F-7f 1回の Undo で戻る', (await childNames()).includes('子2'), await childNames());
 
     // --- 実行すると、提示どおりになる ---
     await dismiss();
