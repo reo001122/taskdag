@@ -736,5 +736,170 @@ export default {
     check('N-5b そのまま名前を打ち始められる', (await waitForFocus()) >= 0);
     await key({ key: 'Escape', code: 27 });
     await wait(200);
+
+    /*
+      メモの中を押しても、メモは閉じない(FR-10)。
+
+      行がフォーカスを受け取るようにしたとき、入力欄の中の押下でも行へ移して
+      いた。メモはフォーカスが外れた時点で確定する作りなので、キャレットを
+      動かそうとしただけで閉じていた。
+    */
+    await pressRow('.task-head', heads - 1);
+    await key({ key: 'Enter', code: 13, ctrl: true });
+    await waitFor('メモの入力欄が開く', `return !!document.querySelector('.memo-input')`);
+    await type('一行目のメモ');
+    const inMemo = await evaluate(`
+      const el = document.querySelector('.memo-input');
+      const r = el.getBoundingClientRect();
+      return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+    `);
+    await mouse('mousePressed', inMemo.x, inMemo.y, { buttons: 1 });
+    await mouse('mouseReleased', inMemo.x, inMemo.y, { buttons: 0 });
+    await wait(300);
+    const memoStill = await evaluate(`
+      const a = document.activeElement;
+      return {
+        開いている: !!document.querySelector('.memo-input'),
+        焦点が欄にある: a?.className?.includes?.('memo-input') ?? false,
+        値: document.querySelector('.memo-input')?.value ?? null,
+      };
+    `);
+    check(
+      'N-6 メモの中を押しても閉じない',
+      memoStill.開いている && memoStill.焦点が欄にある && memoStill.値 === '一行目のメモ',
+      memoStill,
+    );
+    await key({ key: 'Escape', code: 27 });
+    await wait(300);
+    /*
+      取り消した下書きは戻らない(FR-1)。
+
+      Escape で取り消したあと Enter で開き直すと、取り消したはずの文字列が
+      入力欄に現れていた。クリックで入る経路だけが下書きを詰め替えていたため。
+    */
+    await pressRow('.task-head', heads - 1);
+    await key({ key: 'Enter', code: 13 });
+    await waitFor(
+      '名前の入力欄が開く',
+      `return !!document.querySelector('.task-head .text-input')`,
+    );
+    await waitForFocus();
+    const beforeEscape = await evaluate(
+      `return document.querySelector('.task-head .text-input')?.value ?? null`,
+    );
+    await type('捨てる文字列');
+    await key({ key: 'Escape', code: 27 });
+    await wait(300);
+    await key({ key: 'Enter', code: 13 });
+    await waitFor(
+      '名前の入力欄が開き直す',
+      `return !!document.querySelector('.task-head .text-input')`,
+    );
+    const reopened = await evaluate(
+      `return document.querySelector('.task-head .text-input')?.value ?? null`,
+    );
+    check('N-7 取り消した下書きは戻らない', reopened === beforeEscape, { beforeEscape, reopened });
+    await key({ key: 'Escape', code: 27 });
+    await wait(200);
+    /*
+      続けて2件作っても重ならない(FR-1)。
+
+      作った結果がスナップショットに現れるまでには IPC の往復がある。その間に
+      もう1件作ると、どちらも同じ空き桝を選ぶ。
+    */
+    await evaluate(`document.querySelector('.react-flow__controls-fitview').click(); return 1;`);
+    await wait(400);
+    const beforeBurst = await taskCount();
+    await evaluate(`
+      const b = [...document.querySelectorAll('.toolbar button')].find((x) => x.textContent.includes('Task'));
+      b.click();
+      b.click();
+      return 1;
+    `);
+    await wait(1200);
+    check('N-8a 続けて2件作ると2件増える', (await taskCount()) === beforeBurst + 2, {
+      before: beforeBurst,
+      after: await taskCount(),
+    });
+    const burstOverlaps = await evaluate(`
+      const cards = [...document.querySelectorAll('.react-flow__node-task')].map((n) => ({
+        名: n.querySelector('.task-title')?.textContent ?? '?',
+        r: n.getBoundingClientRect(),
+      }));
+      const hits = [];
+      for (let i = 0; i < cards.length; i += 1) {
+        for (let j = i + 1; j < cards.length; j += 1) {
+          const a = cards[i].r;
+          const b = cards[j].r;
+          if (a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom) {
+            hits.push(cards[i].名 + ' × ' + cards[j].名);
+          }
+        }
+      }
+      return hits;
+    `);
+    check('N-8b そのとき重ならない', burstOverlaps.length === 0, burstOverlaps);
+    await key({ key: 'Escape', code: 27 });
+    await wait(200);
+
+    /*
+      入力欄の中のキーは、キャンバスへ渡らない。
+
+      **この境界は壊れても画面に出ない。** 実際に、入力欄側で止める処理を外して
+      probe を全部走らせても1件も落ちなかった(実測)。落ちないまま、名前を
+      打っている最中の Cmd+Z がグラフを1手戻す、という壊れ方になる。
+      キーの扱いを整理するときに真っ先に踏むところなので、ここで固定する。
+    */
+    await key({ key: 'Escape', code: 27 });
+    await wait(200);
+    const namesNow = () =>
+      evaluate(`return [...document.querySelectorAll('.task-title')].map((t) => t.textContent)`);
+    await pressRow('.task-head', heads - 1);
+    await key({ key: 'Enter', code: 13 });
+    await waitFor(
+      '名前の入力欄が開く',
+      `return !!document.querySelector('.task-head .text-input')`,
+    );
+    await waitForFocus();
+    const graphBefore = { tasks: await taskCount(), names: await namesNow() };
+    await type('打っている途中');
+    await key({ key: 'z', code: 90, meta: true });
+    await wait(500);
+    const graphAfter = { tasks: await taskCount(), names: await namesNow() };
+    check(
+      'O-1 名前を打っている最中の Cmd+Z は、グラフを戻さない',
+      graphAfter.tasks === graphBefore.tasks &&
+        JSON.stringify(graphAfter.names) === JSON.stringify(graphBefore.names),
+      { before: graphBefore, after: graphAfter },
+    );
+    check(
+      'O-1b そのとき入力欄は開いたまま',
+      await evaluate(`return !!document.querySelector('.task-head .text-input')`),
+    );
+    await key({ key: 'Escape', code: 27 });
+    await wait(300);
+
+    /*
+      Cmd+Shift+Z でやり直せる(FR-8)。Undo だけを見ていて、戻す側は見ていなかった。
+    */
+    const beforeUndo = await taskCount();
+    await evaluate(
+      `[...document.querySelectorAll('.toolbar button')].find((b) => b.textContent.includes('Task')).click(); return 1;`,
+    );
+    await wait(600);
+    await key({ key: 'Escape', code: 27 });
+    await wait(200);
+    const afterAdd = await taskCount();
+    await key({ key: 'z', code: 90, meta: true });
+    await wait(600);
+    const afterUndo = await taskCount();
+    await key({ key: 'z', code: 90, meta: true, shift: true });
+    await wait(600);
+    const afterRedo = await taskCount();
+    check(
+      'O-2 Cmd+Shift+Z で、戻した1手をやり直せる',
+      afterAdd === beforeUndo + 1 && afterUndo === beforeUndo && afterRedo === afterAdd,
+      { beforeUndo, afterAdd, afterUndo, afterRedo },
+    );
   },
 };
