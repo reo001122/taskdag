@@ -4,12 +4,15 @@
  * 枠は Task の背面にいなければならない。選択したときに前面へ出ると、
  * 枠の中の Task に触れなくなる。**画面を見ても「枠が選択されている」以上のことは
  * 分からず、触れないことに気づくのは触ろうとしたときだけ。**
- */
+ */ import { actions } from '../actions.mjs';
+
 export default {
   name: 'project',
   description: 'Project の枠が Task を覆わないこと、色パレットが閉じること',
 
-  async run({ evaluate, waitFor, waitForFocus, wait, key, type, drag, wheel, mouse, check }) {
+  async run(ctx) {
+    const { evaluate, waitFor, waitForFocus, wait, key, type, drag, wheel, mouse, check } = ctx;
+    const { clickToolbar, fitView } = actions(ctx);
     /** ノードの画面上の位置。動いたかどうかを見るためだけに使う。 */
     const spots = () =>
       evaluate(`
@@ -28,9 +31,7 @@ export default {
       after[name] &&
       (before[name][0] !== after[name][0] || before[name][1] !== after[name][1]);
     // Task を1つ作り、名前を確定させておく
-    await evaluate(
-      `[...document.querySelectorAll('.toolbar button')].find((b) => b.textContent.includes('Task')).click(); return 1;`,
-    );
+    await clickToolbar('Task');
     await waitFor('Task が現れる', `return document.querySelectorAll('.task').length === 1`);
     await waitForFocus();
     await type('中の作業');
@@ -38,9 +39,7 @@ export default {
     await wait(300);
 
     // Project を作る。名前は dialog で聞かれる。
-    await evaluate(
-      `[...document.querySelectorAll('.toolbar button')].find((b) => b.textContent.includes('Project')).click(); return 1;`,
-    );
+    await clickToolbar('Project');
     await waitFor('名前を聞く dialog が開く', `return !!document.querySelector('dialog[open]')`);
     await waitForFocus();
     await type('プロジェクトA');
@@ -351,8 +350,7 @@ export default {
         return m ? [Math.round(+m[1]), Math.round(+m[2])] : null;
       `);
     // N-1〜N-4 で表示を動かしているので、戻してから測る。
-    await evaluate(`document.querySelector('.react-flow__controls-fitview').click(); return 1;`);
-    await wait(600);
+    await fitView();
     const grip = await evaluate(`
       const g = document.querySelector('.task-grip');
       if (!g) throw new Error('Task の取っ手が見つからない(Task が無い?)');

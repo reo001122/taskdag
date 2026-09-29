@@ -4,12 +4,15 @@
  * ここで見ているのは「入力欄が出たか」ではなく 「打った文字がその欄に入るか」。
  * 実際に、入力欄は出ているのにフォーカスが移っておらず、打鍵がどこにも
  * 入らない、という不具合が出たことがある。
- */
+ */ import { actions } from '../actions.mjs';
+
 export default {
   name: 'editing',
   description: '名前の編集、Shift+Enter での書き出し、Backspace での取り消し',
 
-  async run({ evaluate, waitFor, waitForFocus, wait, key, type, mouse, check }) {
+  async run(ctx) {
+    const { evaluate, waitFor, waitForFocus, wait, key, type, mouse, check } = ctx;
+    const { clickToolbar, taskCount, fitView } = actions(ctx);
     const state = () =>
       evaluate(`
         const active = document.activeElement;
@@ -55,9 +58,7 @@ export default {
       return s;
     };
 
-    await evaluate(
-      `[...document.querySelectorAll('.toolbar button')].find((b) => b.textContent.includes('Task')).click(); return 1;`,
-    );
+    await clickToolbar('Task');
     await waitFor('Task が現れる', `return document.querySelectorAll('.task').length === 1`);
     await focusedInput('作った直後の Task 名にフォーカスが移る');
 
@@ -280,7 +281,6 @@ export default {
       Electron の既定メニューに横取りされていないかも、ここで分かる。
       取られていれば renderer まで届かず、件数が増えない。
     */
-    const taskCount = () => evaluate(`return document.querySelectorAll('.task').length`);
     const countBefore = await taskCount();
     await key({ key: 'n', code: 78, meta: true });
     await wait(600);
@@ -459,9 +459,7 @@ export default {
     */
     await key({ key: 'Escape', code: 27 });
     await wait(200);
-    await evaluate(
-      `[...document.querySelectorAll('.toolbar button')].find((b) => b.textContent.includes('Task')).click(); return 1;`,
-    );
+    await clickToolbar('Task');
     await waitForFocus();
     await type('鍵を回す');
     // 確定して childTask へ。作った Task は選ばれたままになる。
@@ -481,8 +479,7 @@ export default {
       下へ送られる(FR-1)。ここまでで何件も作っているので、そのままでは
       窓の外の座標を押すことになる。
     */
-    await evaluate(`document.querySelector('.react-flow__controls-fitview').click(); return 1;`);
-    await wait(500);
+    await fitView();
 
     const mark = () =>
       evaluate(`
@@ -807,8 +804,7 @@ export default {
       作った結果がスナップショットに現れるまでには IPC の往復がある。その間に
       もう1件作ると、どちらも同じ空き桝を選ぶ。
     */
-    await evaluate(`document.querySelector('.react-flow__controls-fitview').click(); return 1;`);
-    await wait(400);
+    await fitView();
     const beforeBurst = await taskCount();
     await evaluate(`
       const b = [...document.querySelectorAll('.toolbar button')].find((x) => x.textContent.includes('Task'));
@@ -883,9 +879,7 @@ export default {
       Cmd+Shift+Z でやり直せる(FR-8)。Undo だけを見ていて、戻す側は見ていなかった。
     */
     const beforeUndo = await taskCount();
-    await evaluate(
-      `[...document.querySelectorAll('.toolbar button')].find((b) => b.textContent.includes('Task')).click(); return 1;`,
-    );
+    await clickToolbar('Task');
     await wait(600);
     await key({ key: 'Escape', code: 27 });
     await wait(200);

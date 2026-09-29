@@ -26,32 +26,15 @@ const READ_SCREEN = `
   };
 `;
 
+import { actions } from '../actions.mjs';
+
 export default {
   name: 'persistence',
   description: 'E / I. 再起動しても残ること、Undo がセッションを跨がないこと',
 
   async run(ctx) {
     const { evaluate, waitFor, waitForFocus, wait, key, type, drag, check } = ctx;
-
-    const click = (text) =>
-      evaluate(
-        `[...document.querySelectorAll('.toolbar button')].find((b) => b.textContent.includes(${JSON.stringify(text)})).click(); return 1;`,
-      );
-
-    const addTask = async (title, children = []) => {
-      const before = await evaluate(`return document.querySelectorAll('.task').length`);
-      await click('Task');
-      await waitFor('増える', `return document.querySelectorAll('.task').length === ${before + 1}`);
-      await waitForFocus();
-      await type(title);
-      for (const child of children) {
-        await key({ key: 'Enter', code: 13, shift: true });
-        await waitForFocus();
-        await type(child);
-      }
-      await key({ key: 'Enter', code: 13 });
-      await wait(250);
-    };
+    const { clickToolbar: click, addTask, fitView } = actions(ctx);
 
     const snapshot = () => evaluate(READ_SCREEN);
 
@@ -65,8 +48,7 @@ export default {
 
     await addTask('要件を洗う', ['聞き取り', '整理']);
     await addTask('実装する');
-    await evaluate(`document.querySelector('.react-flow__controls-fitview').click(); return 1;`);
-    await wait(400);
+    await fitView();
 
     // 依存を張る
     const points = await evaluate(`
