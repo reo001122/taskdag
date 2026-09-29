@@ -5,3 +5,6 @@ dist/
 *.log
 .vite/
 ui-probe-*.png
+# 道具が作る作業用のもの(エージェントの worktree、手元の設定)。
+# 中にも biome.json があるため、除外しないと Biome が設定の重複で止まる。
+.claude/
