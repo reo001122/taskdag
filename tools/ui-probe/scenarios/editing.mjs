@@ -11,8 +11,8 @@ export default {
   description: '名前の編集、Shift+Enter での書き出し、Backspace での取り消し',
 
   async run(ctx) {
-    const { evaluate, waitFor, waitForFocus, wait, key, type, mouse, check } = ctx;
-    const { clickToolbar, taskCount, fitView } = actions(ctx);
+    const { evaluate, waitFor, waitForFocus, wait, key, type, mouse, wheel, check } = ctx;
+    const { clickToolbar, addTask, taskCount, fitView } = actions(ctx);
     const state = () =>
       evaluate(`
         const active = document.activeElement;
@@ -894,6 +894,325 @@ export default {
       'O-2 Cmd+Shift+Z で、戻した1手をやり直せる',
       afterAdd === beforeUndo + 1 && afterUndo === beforeUndo && afterRedo === afterAdd,
       { beforeUndo, afterAdd, afterUndo, afterRedo },
+    );
+
+    /*
+      ここから先は、印(Shift+↑↓ が動かす、Enter / Delete の相手)が
+      「画面に出ている行だけを対象にする」という規則(requirements.md FR-1)の
+      抜けを塞ぐ。折りたたみ・完了非表示は、どちらも childTask の行を画面
+      から消すが、消し方が違う(前者は task.collapsed、後者は表示のフィルタ)。
+      同じ「隠れている」でも経路が違うため、それぞれ別に確かめる。
+    */
+
+    /** 名前で探した Task ノード(.react-flow__node-task)を返す式。 */
+    const taskNodeExpr = (title) =>
+      `[...document.querySelectorAll('.react-flow__node-task')].find((n) => n.querySelector('.task-title')?.textContent === ${JSON.stringify(title)})`;
+    /** 名前で探した childTask の行(.child)を返す式。 */
+    const childRowExpr = (title) =>
+      `[...document.querySelectorAll('.child')].find((c) => c.querySelector('.child-title')?.textContent === ${JSON.stringify(title)})`;
+    /** 名前の Task の見出し(.task-head)が、document 内で何番目かを返す。pressRow に渡す。 */
+    const taskHeadIndexOf = (title) =>
+      evaluate(`
+        return [...document.querySelectorAll('.task-head')].findIndex(
+          (h) => h.querySelector('.task-title')?.textContent === ${JSON.stringify(title)}
+        );
+      `);
+    /**
+     * 式が指す要素を実際のマウスで押す。ボタンに限らず、行の中の要素なら何でもよい
+     * (state-toggle は button だが onClick、childTask の取っ手などは onPointerDown で
+     * 効くため、pressButton のように onPointerDown 専用にはしない)。
+     */
+    const clickElement = async (expr) => {
+      const at = await evaluate(`
+        const el = ${expr};
+        if (!el) throw new Error('要素が見つからない');
+        const r = el.getBoundingClientRect();
+        const p = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+        // state-toggle は中に .state-box を持つので、当たった相手が el 自身とは
+        // 限らない。el の中であればよい(pressButton と同様、覆われてはいないこと)。
+        if (!el.contains(document.elementFromPoint(p.x, p.y))) {
+          throw new Error('要素が覆われている');
+        }
+        return p;
+      `);
+      await mouse('mousePressed', at.x, at.y, { buttons: 1 });
+      await mouse('mouseReleased', at.x, at.y, { buttons: 0 });
+      await wait(300);
+    };
+
+    /*
+      折りたたんだ Task(requirements.md FR-1「折りたたんでいる間の childTask には
+      移らない」/ FR-6「折りたたんでいる間は、隠れている childTask の件数を表示」)。
+
+      畳んでいる間、childTask の行は画面に無い。Shift+↑↓ で印は動かず、
+      Enter は親の名前を開き、Delete は親そのものの削除確認を開くはず ——
+      隠れている childTask のどれかが代わりに巻き添えになってはならない。
+    */
+    await key({ key: 'Escape', code: 27 });
+    await wait(200);
+    await addTask('折りたたみ確認', ['かくれ1', 'かくれ2']);
+    await fitView();
+
+    let headIdx = await taskHeadIndexOf('折りたたみ確認');
+    await pressRow('.task-head', headIdx);
+    check('P-1a 作った直後、印は親に出ている', (await markOn()).親 === true, await markOn());
+
+    await clickElement(
+      `${taskNodeExpr('折りたたみ確認')}?.querySelector('.state-button[title="折りたたむ"]')`,
+    );
+    const collapsedChildCount = await evaluate(
+      `return ${taskNodeExpr('折りたたみ確認')}.querySelectorAll('.child').length;`,
+    );
+    check('P-1b 畳むと childTask の行が画面から消える', collapsedChildCount === 0, {
+      collapsedChildCount,
+    });
+
+    headIdx = await taskHeadIndexOf('折りたたみ確認');
+    await pressRow('.task-head', headIdx);
+    check('P-2a 畳んだ Task を選ぶと印は親に出る', (await markOn()).親 === true, await markOn());
+
+    await key({ key: 'ArrowDown', code: 40, shift: true });
+    await wait(200);
+    check(
+      'P-2b 畳んでいる間は Shift+↓ を押しても印が動かない',
+      (await markOn()).親 === true,
+      await markOn(),
+    );
+
+    await key({ key: 'ArrowUp', code: 38, shift: true });
+    await wait(200);
+    check(
+      'P-2c 畳んでいる間は Shift+↑ を押しても印が動かない',
+      (await markOn()).親 === true,
+      await markOn(),
+    );
+
+    await key({ key: 'Enter', code: 13 });
+    await wait(400);
+    const collapsedEnter = await evaluate(`
+      const a = document.activeElement;
+      return {
+        値: a?.value ?? null,
+        場所: a?.closest('.child') ? 'childTask' : a?.closest('.task-head') ? '親' : 'その他',
+      };
+    `);
+    check(
+      'P-2d 畳んでいる間の Enter は、隠れた childTask ではなく親の名前を開く',
+      collapsedEnter.場所 === '親' && collapsedEnter.値 === '折りたたみ確認',
+      collapsedEnter,
+    );
+    await key({ key: 'Escape', code: 27 });
+    await wait(200);
+
+    headIdx = await taskHeadIndexOf('折りたたみ確認');
+    await pressRow('.task-head', headIdx);
+    await key({ key: 'Delete', code: 46 });
+    await wait(400);
+    const collapsedDelete = await evaluate(`
+      return {
+        開いている: !!document.querySelector('dialog[open]'),
+        対象: document.querySelector('dialog[open] .doomed')?.textContent ?? null,
+      };
+    `);
+    check(
+      'P-2e 畳んでいる間の Delete は、childTask ではなく親そのものの削除確認を開く',
+      collapsedDelete.開いている && collapsedDelete.対象 === '折りたたみ確認',
+      collapsedDelete,
+    );
+    await key({ key: 'Escape', code: 27 });
+    await wait(300);
+    const afterCancelledDelete = await evaluate(
+      `return ${taskNodeExpr('折りたたみ確認')}?.querySelector('.state-button.is-collapsed')?.textContent ?? null;`,
+    );
+    check(
+      'P-2f 取り消すと畳んだ Task はそのまま残る(childTask も2件のまま)',
+      afterCancelledDelete === '▸ 2',
+      { afterCancelledDelete },
+    );
+
+    /*
+      「完了を非表示」(requirements.md FR-6)を点けている間、隠れている
+      childTask に印が移らないこと。完了は state-toggle で切り替える
+      (FR-5)。折りたたみと違い、こちらは表示側のフィルタで隠す。
+    */
+    await key({ key: 'Escape', code: 27 });
+    await wait(200);
+    await addTask('完了非表示確認', ['済ませる', '残す']);
+    await fitView();
+
+    // '済ませる' を完了にする(未着手 → 着手中 → 完了、と2回押して進める)
+    const doneToggleExpr = `${childRowExpr('済ませる')}?.querySelector('.state-toggle')`;
+    await clickElement(doneToggleExpr);
+    await clickElement(doneToggleExpr);
+    const doneClass = await evaluate(`return ${childRowExpr('済ませる')}?.className ?? null;`);
+    check('Q-0 「済ませる」を完了の状態にできた', (doneClass ?? '').includes('is-done'), {
+      doneClass,
+    });
+
+    await clickElement(`document.querySelector('.toolbar input[type="checkbox"]')`);
+    await wait(300);
+    const hiddenAfterToggle = await evaluate(`return ${childRowExpr('済ませる')} === undefined;`);
+    check(
+      'Q-1 完了を非表示にすると、完了した childTask の行が画面から消える',
+      hiddenAfterToggle === true,
+      { hiddenAfterToggle },
+    );
+
+    headIdx = await taskHeadIndexOf('完了非表示確認');
+    await pressRow('.task-head', headIdx);
+    check('Q-2a 選んだ直後、印は親に出ている', (await markOn()).親 === true, await markOn());
+
+    await key({ key: 'ArrowDown', code: 40, shift: true });
+    await wait(200);
+    check(
+      'Q-2b Shift+↓ で印は隠れていない行(残す)へ移る',
+      (await markOn()).行 === '残す',
+      await markOn(),
+    );
+
+    await key({ key: 'ArrowDown', code: 40, shift: true });
+    await wait(200);
+    check(
+      'Q-2c 続けて Shift+↓ を押しても、隠れている「済ませる」へは移らない(一番下で止まる)',
+      (await markOn()).行 === '残す',
+      await markOn(),
+    );
+
+    await key({ key: 'Delete', code: 46 });
+    await wait(400);
+    const afterVisibleDelete = await evaluate(`
+      return {
+        残す: !!${childRowExpr('残す')},
+        済ませる: !!${childRowExpr('済ませる')},
+      };
+    `);
+    check(
+      'Q-3a Delete は印のある「残す」だけを消す',
+      afterVisibleDelete.残す === false,
+      afterVisibleDelete,
+    );
+
+    // 完了を非表示を解除して、隠れていた「済ませる」が巻き添えで消えていないことを確かめる
+    await clickElement(`document.querySelector('.toolbar input[type="checkbox"]')`);
+    await wait(300);
+    const stillThere = await evaluate(`return !!${childRowExpr('済ませる')};`);
+    check('Q-3b 隠れていた「済ませる」は削除の巻き添えにならず残っている', stillThere === true, {
+      stillThere,
+    });
+
+    /*
+      状態の四角(.state-toggle)を押したときにも、押した行へ印が移ること
+      (requirements.md FR-1「押した行にも印が移る」)。N-2 は行の余白と
+      取っ手で確かめている。ここは同じ行にあるボタンの上で確かめる ——
+      ボタンの上だけ例外的に印が動かない、という抜けを塞ぐ。
+
+      フォーカスは別に見る。state-toggle は button であり、クリックすると
+      ブラウザの既定でボタン自身にフォーカスが着く(preventDefault していない)。
+      pressRow が先にフォーカスを行へ移していても、その既定に後から上書き
+      される ——「押した行にフォーカスも移る」(requirements.md FR-1)が
+      state-toggle の上だけ効いていない。これは実際に確かめて分かったこと
+      であり、直さずに報告する(印そのものは正しく動く。上の check で見ている)。
+    */
+    await key({ key: 'Escape', code: 27 });
+    await wait(200);
+    await addTask('状態四角確認', ['状態あ', '状態い']);
+    await fitView();
+
+    headIdx = await taskHeadIndexOf('状態四角確認');
+    await pressRow('.task-head', headIdx);
+    check('R-1a 選んだ直後、印は親に出ている', (await markOn()).親 === true, await markOn());
+
+    await clickElement(`${childRowExpr('状態い')}?.querySelector('.state-toggle')`);
+    check(
+      'R-1b 状態の四角を押すと、その行へ印が移る',
+      (await markOn()).行 === '状態い',
+      await markOn(),
+    );
+
+    await clickElement(
+      `${taskNodeExpr('状態四角確認')}?.querySelector('.task-head .state-toggle')`,
+    );
+    check(
+      'R-1d 親の状態の四角を押すと、印は親へ戻る',
+      (await markOn()).親 === true,
+      await markOn(),
+    );
+
+    /*
+      拡大率を上げた状態で Task を作っても、カードは重ならない(requirements.md
+      FR-1「新しい Task は、既にある Task に重ならない場所に置く。探すのは今
+      見えている範囲の中」)。拡大するとその範囲(キャンバス座標)は狭くなる ——
+      桝の数が減っても重ならずに置けることを確かめる。
+    */
+    await key({ key: 'Escape', code: 27 });
+    await wait(200);
+    await fitView();
+
+    const viewport = () =>
+      evaluate(`
+        const t = getComputedStyle(document.querySelector('.react-flow__viewport')).transform;
+        const m = new DOMMatrixReadOnly(t);
+        return { x: Math.round(m.e), y: Math.round(m.f), zoom: Number(m.a.toFixed(3)) };
+      `);
+    const paneCentre = await evaluate(`
+      const r = document.querySelector('.react-flow__pane').getBoundingClientRect();
+      return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+    `);
+
+    const zoomBefore = (await viewport()).zoom;
+    /*
+      トラックパッドのピンチは、macOS では ctrlKey 付きの wheel として届く
+      (project.mjs の N-3 と同じ)。ピンチそのものは送れないので、同じ形の
+      入力で確かめる。負の deltaY が拡大方向(project.mjs の N-3 で、正の
+      deltaY を縮小方向と確かめている)。
+    */
+    for (let i = 0; i < 25; i += 1) {
+      await wheel(paneCentre, { deltaY: -120, modifiers: 2 });
+      await wait(30);
+    }
+    await wait(300);
+    const zoomAfter = (await viewport()).zoom;
+    check('S-1 ピンチ相当の入力を繰り返すと拡大率が上がる', zoomAfter > zoomBefore, {
+      zoomBefore,
+      zoomAfter,
+    });
+
+    const beforeZoomedCount = await taskCount();
+    for (let i = 0; i < 3; i += 1) {
+      await clickToolbar('Task');
+      await waitFor(
+        `拡大した状態で ${i + 1} 件目の Task が増える`,
+        `return document.querySelectorAll('.task').length === ${beforeZoomedCount + i + 1}`,
+      );
+      await key({ key: 'Escape', code: 27 });
+      await wait(200);
+    }
+    check(
+      'S-2a 拡大した状態で続けて3件作ると3件増える',
+      (await taskCount()) === beforeZoomedCount + 3,
+      { before: beforeZoomedCount, after: await taskCount() },
+    );
+    const zoomedOverlaps = await evaluate(`
+      const cards = [...document.querySelectorAll('.react-flow__node-task')].map((n) => ({
+        名: n.querySelector('.task-title')?.textContent ?? '?',
+        r: n.getBoundingClientRect(),
+      }));
+      const hits = [];
+      for (let i = 0; i < cards.length; i += 1) {
+        for (let j = i + 1; j < cards.length; j += 1) {
+          const a = cards[i].r;
+          const b = cards[j].r;
+          if (a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom) {
+            hits.push(cards[i].名 + ' × ' + cards[j].名);
+          }
+        }
+      }
+      return hits;
+    `);
+    check(
+      'S-2b 拡大した状態で作ってもカードは重ならない',
+      zoomedOverlaps.length === 0,
+      zoomedOverlaps,
     );
   },
 };
