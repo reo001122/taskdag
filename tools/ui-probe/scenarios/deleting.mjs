@@ -386,8 +386,7 @@ export default {
     */
     await addTask('ひとりだけ');
     // 新しい Task は画面の外に出ることがある(既知の弱点)。戻してから押す。
-    await evaluate(`document.querySelector('.react-flow__controls-fitview').click(); return 1;`);
-    await wait(600);
+    await fitView();
     const countBefore = await evaluate(`return document.querySelectorAll('.task').length`);
     await pressDelete('ひとりだけ');
     check(

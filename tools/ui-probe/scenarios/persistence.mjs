@@ -34,7 +34,7 @@ export default {
 
   async run(ctx) {
     const { evaluate, waitFor, waitForFocus, wait, key, type, drag, check } = ctx;
-    const { clickToolbar: click, addTask } = actions(ctx);
+    const { clickToolbar: click, addTask, fitView } = actions(ctx);
 
     const snapshot = () => evaluate(READ_SCREEN);
 
@@ -48,8 +48,7 @@ export default {
 
     await addTask('要件を洗う', ['聞き取り', '整理']);
     await addTask('実装する');
-    await evaluate(`document.querySelector('.react-flow__controls-fitview').click(); return 1;`);
-    await wait(400);
+    await fitView();
 
     // 依存を張る
     const points = await evaluate(`

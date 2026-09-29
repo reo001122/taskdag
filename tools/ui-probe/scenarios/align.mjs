@@ -12,7 +12,7 @@ export default {
 
   async run(ctx) {
     const { evaluate, waitFor, waitForFocus, wait, key, type, mouse, drag, check } = ctx;
-    const { clickToolbar: click, addTask } = actions(ctx);
+    const { clickToolbar: click, addTask, fitView } = actions(ctx);
 
     const addProject = async (name) => {
       await click('Project');
@@ -110,8 +110,7 @@ export default {
     */
     await click('整列');
     await wait(700);
-    await evaluate(`document.querySelector('.react-flow__controls-fitview').click(); return 1;`);
-    await wait(500);
+    await fitView();
 
     await assign(NAME.spec, '設計');
     await assign(NAME.screen, '実装');
@@ -127,8 +126,7 @@ export default {
 
     await click('整列');
     await wait(700);
-    await evaluate(`document.querySelector('.react-flow__controls-fitview').click(); return 1;`);
-    await wait(500);
+    await fitView();
 
     const { tasks, frames } = await geometry();
 
