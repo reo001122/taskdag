@@ -505,7 +505,24 @@ export default {
       );
 
     const before = await positionOfSelected();
-    check('N-1a 選んだ直後は親 Task を指している', (await mark()).親 === true, await mark());
+    /*
+      childTask を足した直後、印は**最後に足した行**にある(FR-2)。
+
+      かつては親にあった。足したあとの Delete / Ctrl+Enter が前の行を相手に
+      していて、見ている行と相手になる行が違ったため、印を足した行へ移すように
+      した(#9)。
+    */
+    check(
+      'N-1a childTask を足した直後、印は最後に足した行にある',
+      (await mark()).行 === '手順い',
+      await mark(),
+    );
+
+    // ここから先は親を起点に見るので、印を親へ戻しておく(この戻り方自体は N-1d で見る)
+    await key({ key: 'ArrowUp', code: 38, shift: true });
+    await wait(200);
+    await key({ key: 'ArrowUp', code: 38, shift: true });
+    await wait(200);
 
     await key({ key: 'ArrowDown', code: 40, shift: true });
     await wait(200);
@@ -742,6 +759,50 @@ export default {
       },
     );
     check('N-5b そのまま名前を打ち始められる', (await waitForFocus()) >= 0);
+
+    /*
+      足した行へ印も移る(FR-2)。
+
+      打ち終わったあとの Delete / Ctrl+Enter / Shift+↑↓ は印を相手にするので、
+      印が前の行に残っていると **見ている行と相手になる行が違う**。画面では
+      区別が付かないため、目で見る確認では捕まらない種類の食い違いである。
+    */
+    await type('足した行');
+    await key({ key: 'Enter', code: 13 });
+    await waitFor('入力欄が閉じる', `return !document.querySelector('.text-input')`);
+    await wait(200);
+    check(
+      'N-5c 打ち終わると、印は足した行に付いている',
+      (await markOn()).行 === '足した行',
+      await markOn(),
+    );
+
+    /*
+      取り消して行が消えたときは、印も戻り先へ移る(FR-2)。既定の名前は選択
+      された状態で入っているので、Backspace 2回 —— 1回目で空にし、2回目で
+      その childTask を消す。
+    */
+    await key({ key: 'Enter', code: 13, shift: true });
+    await waitForFocus();
+    await key({ key: 'Backspace', code: 8 });
+    await key({ key: 'Backspace', code: 8 });
+    /*
+      ここで入力欄は閉じない。消したぶん1つ上の名前へ移る(FR-2)ので、
+      「閉じるのを待つ」ではなく「上の名前が入っているのを待つ」。
+    */
+    await waitFor(
+      '1つ上の名前の入力へ戻る',
+      `return document.querySelector('.text-input')?.value === '足した行'`,
+    );
+    // 編集中の行は名前が入力欄になっていて読めないので、閉じてから印を見る。
+    await key({ key: 'Escape', code: 27 });
+    await waitFor('入力欄が閉じる', `return !document.querySelector('.text-input')`);
+    await wait(200);
+    check(
+      'N-5d 取り消して行が消えると、印は戻り先の行に付いている',
+      (await markOn()).行 === '足した行',
+      await markOn(),
+    );
     await key({ key: 'Escape', code: 27 });
     await wait(200);
 

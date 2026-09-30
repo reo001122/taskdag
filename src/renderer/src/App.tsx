@@ -377,6 +377,15 @@ export function App(): React.JSX.Element {
         log.debug('childTask を作った', { id: result?.ok ? result.createdId : null });
         if (result?.ok && result.createdId !== null) {
           setAutoEdit({ id: result.createdId, caret: 'all' });
+          /*
+            印も足した行へ移す(FR-2)。
+
+            打ち終わったあとの Delete / Ctrl+Enter / Shift+↑↓ が、いま打った行を
+            相手にする。移さないと印は前の行に残り、**見ている行と相手になる行が
+            違う** —— 画面では区別が付かないまま、別の行が消える。
+            足す先は常に末尾なので、印を残しておく利点はない。
+          */
+          setCursor({ taskId: parentId, childId: result.createdId });
         }
       })();
     },
@@ -412,6 +421,15 @@ export function App(): React.JSX.Element {
           previous !== null && result.snapshot.childTasks.some((c) => c.id === previous);
         log.debug('空の childTask を消した', { childId, backTo: stillThere ? previous : null });
         setAutoEdit(stillThere ? { id: previous, caret: 'end' } : null);
+        /*
+          印も戻り先へ移す(FR-2)。消した行を指したままにはしない —— 上へ戻る
+          ならその行、戻り先が無ければ親へ返す(印が無い状態 = 親自身)。
+        */
+        if (parent !== undefined) {
+          setCursor(
+            stillThere && previous !== null ? { taskId: parent.id, childId: previous } : null,
+          );
+        }
       })();
     },
     [dispatch, snapshot],
