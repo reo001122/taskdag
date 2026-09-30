@@ -12,52 +12,48 @@ export default {
 
   async run(ctx) {
     const { evaluate, waitFor, wait, key, mouse, check } = ctx;
-    const { addTask, fitView, connect, edgeCount } = actions(ctx);
+    const { addTask, fitView, connect, edgeCount, locatePoint } = actions(ctx);
 
-    /*
-      × は押した時点で効く(onClick ではなく onPointerDown)。名前を編集している
-      間にノードの幅が変わってボタンが動くため、離す位置では成立しないことが
-      あるのが理由。ここも本物のマウスで押す —— click() では pointerdown が
-      出ないので反応しない。
-    */
-    /** × を押す。押した時点で効く(FR-1)。 */
+    /**
+     * × の座標。同じ名前の Task が複数あれば探索の側(locatePoint)が投げる。
+     *
+     * × は押した時点で効く(onClick ではなく onPointerDown)。名前を編集している
+     * 間にノードの幅が変わってボタンが動くため、離す位置では成立しないことが
+     * あるのが理由。ここも本物のマウスで押す —— click() では pointerdown が
+     * 出ないので反応しない。
+     */
+    const deleteButtonOf = (title) =>
+      locatePoint({
+        container: '.task-wrap',
+        nameSelector: '.task-title',
+        name: title,
+        partAll: '.task-actions .state-button',
+        partText: '×',
+      });
+
+    /** × を押す。確認を出さずにその場で消えるはずの相手にだけ使う(FR-9a)。 */
     const pressDelete = async (title) => {
-      const at = await evaluate(`
-        const wrap = [...document.querySelectorAll('.task-wrap')]
-          .find((w) => w.querySelector('.task-title')?.textContent === ${JSON.stringify(title)});
-        const btn = [...wrap.querySelectorAll('.task-actions .state-button')]
-          .find((b) => b.textContent === '×');
-        const r = btn.getBoundingClientRect();
-        const p = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
-        if (document.elementFromPoint(p.x, p.y) !== btn) {
-          const over = document.elementFromPoint(p.x, p.y);
-          throw new Error(
-            '× が覆われている: ' + (over?.className?.toString?.().slice(0, 40) ?? '?') +
-            ' / 画面内=' + (p.x > 0 && p.y > 0 && p.x < innerWidth && p.y < innerHeight),
-          );
-        }
-        return p;
-      `);
+      const at = await deleteButtonOf(title);
+      const countBefore = await evaluate(`return document.querySelectorAll('.task').length`);
       await mouse('mousePressed', at.x, at.y, { buttons: 1 });
       await mouse('mouseReleased', at.x, at.y, { buttons: 0 });
-      await wait(500);
+      await waitFor(
+        '件数が1つ減る',
+        `return document.querySelectorAll('.task').length === ${countBefore} - 1`,
+      );
     };
 
     const openDeleteFor = async (title) => {
-      const at = await evaluate(`
-        const wrap = [...document.querySelectorAll('.task-wrap')]
-          .find((w) => w.querySelector('.task-title')?.textContent === ${JSON.stringify(title)});
-        const btn = [...wrap.querySelectorAll('.task-actions .state-button')]
-          .find((b) => b.textContent === '×');
-        const r = btn.getBoundingClientRect();
-        const p = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
-        if (document.elementFromPoint(p.x, p.y) !== btn) throw new Error('× が覆われている');
-        return p;
-      `);
+      const at = await deleteButtonOf(title);
       await mouse('mousePressed', at.x, at.y, { buttons: 1 });
       await mouse('mouseReleased', at.x, at.y, { buttons: 0 });
       await waitFor('確認が開く', `return !!document.querySelector('dialog[open]')`);
-      await wait(200);
+      // 削除ボタンまで描画されているかで、中身が出揃ったことを見る
+      // (開閉と中身は同じ描画で決まるはずだが、念のため確かめてから読む)。
+      await waitFor(
+        '確認の中身が描画される',
+        `return !!document.querySelector('dialog[open] .danger')`,
+      );
     };
 
     const dialogText = () =>

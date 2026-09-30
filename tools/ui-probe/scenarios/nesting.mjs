@@ -10,8 +10,8 @@ export default {
   description: 'W-3. 手順を並べ替える / 別の Task へ移す / 独立させる / 入れ子にする',
 
   async run(ctx) {
-    const { evaluate, wait, mouse, check } = ctx;
-    const { addTask, fitView } = actions(ctx);
+    const { evaluate, wait, waitFor, mouse, check } = ctx;
+    const { addTask, fitView, locatePoint } = actions(ctx);
 
     /** Task ごとの childTask の並び。 */
     const structure = () =>
@@ -24,33 +24,39 @@ export default {
         return out;
       `);
 
-    const undo = async () => {
+    /**
+     * Cmd+Z。反映されるまで待つ。
+     *
+     * 「戻ったこと」の中身はシナリオごとに違う(並びが戻る、消えたものが
+     * 戻る、など)ので、何を待つかは呼ぶ側が条件式で渡す。渡さなければ
+     * 固定時間で待つが、Undo が効いたことまでは確かめない。
+     */
+    const undo = async (settleCondition) => {
       await evaluate(`
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', metaKey: true, bubbles: true }));
         return 1;
       `);
-      await wait(600);
+      if (settleCondition) {
+        await waitFor('Undo が反映される', settleCondition);
+      } else {
+        await wait(600);
+      }
     };
 
     /**
      * 掴み手の座標。
      *
      * 他の Task に覆われていないことを確かめてから返す。覆われていると押した先が
-     * 上に乗っているほうになり、別のものを運んでしまう。
+     * 上に乗っているほうになり、別のものを運んでしまう。同じ名前の childTask が
+     * 複数あるときは、探索の側が投げる(locatePoint)。
      */
     const gripOf = (childTitle) =>
-      evaluate(`
-        const row = [...document.querySelectorAll('.child')]
-          .find((c) => c.querySelector('.child-title')?.textContent === ${JSON.stringify(childTitle)});
-        if (!row) throw new Error('その childTask が見つからない: ' + ${JSON.stringify(childTitle)});
-        const el = row.querySelector('.child-grip');
-        const r = el.getBoundingClientRect();
-        const p = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
-        if (document.elementFromPoint(p.x, p.y) !== el) {
-          throw new Error('掴み手が覆われている: ' + ${JSON.stringify(childTitle)});
-        }
-        return p;
-      `);
+      locatePoint({
+        container: '.child',
+        nameSelector: '.child-title',
+        name: childTitle,
+        part: '.child-grip',
+      });
 
     /** その行の「手前」に当たる高さ。入れる位置を狙うのに使う。 */
     const aboveRow = (childTitle) =>
@@ -61,21 +67,29 @@ export default {
         return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + 3) };
       `);
 
-    /** その Task の見出しの上。 */
+    /** その Task の見出しの上。同じ名前の Task が複数あるときは探索の側が投げる。 */
     const headOf = (title) =>
-      evaluate(`
-        const n = [...document.querySelectorAll('.react-flow__node-task')]
-          .find((x) => x.querySelector('.task-title')?.textContent === ${JSON.stringify(title)});
-        const r = n.querySelector('.task-head').getBoundingClientRect();
-        const p = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
-        if (document.elementFromPoint(p.x, p.y)?.closest('.react-flow__node-task') !== n) {
-          throw new Error('見出しが覆われている: ' + ${JSON.stringify(title)});
-        }
-        return p;
-      `);
+      locatePoint({
+        container: '.react-flow__node-task',
+        nameSelector: '.task-title',
+        name: title,
+        part: '.task-head',
+        // 見出しの中の要素に当たっても、同じ Task の中であれば構わない
+        hitSelector: '.react-flow__node-task',
+      });
 
-    /** 掴んで運ぶ。途中の見え方(影・線・光り)も返す。 */
-    const carry = async (from, to) => {
+    /**
+     * 掴んで運ぶ。途中の見え方(影・線・光り)も返す。
+     *
+     * 離したあと、運んでいる間だけ出ていた印(影・線・光り)は消える。ただし
+     * それは「見た目の後片付けが終わった」ことしか意味しない —— 実際に
+     * childTask が動いたかどうかは、ドメインへの反映を経て別に決まる。
+     * **見た目が消えたタイミングで structure() を読むと、まだ反映前の
+     * 値を拾うことがある(実測)。** そのため、動いた先の状態を表す条件
+     * (settleCondition)を呼ぶ側から渡し、それが満たされるまで待つ。
+     * 渡さない場合(例: 何も変わらないはずの操作)は見た目の後片付けだけを待つ。
+     */
+    const carry = async (from, to, settleCondition) => {
       await mouse('mousePressed', from.x, from.y, { buttons: 1 });
       for (let i = 1; i <= 8; i += 1) {
         await mouse(
@@ -96,7 +110,14 @@ export default {
         };
       `);
       await mouse('mouseReleased', to.x, to.y, { buttons: 0 });
-      await wait(500);
+      await waitFor(
+        '運んでいる印が消える',
+        `return !document.querySelector('.drag-ghost') && !document.querySelector('.drop-line')
+          && document.querySelectorAll('.is-drop-target').length === 0`,
+      );
+      if (settleCondition) {
+        await waitFor('運んだ結果がグラフに反映される', settleCondition);
+      }
       return mid;
     };
 
@@ -110,8 +131,17 @@ export default {
       await structure(),
     );
 
-    // 1. 運んでいる様子が見える
-    const seen = await carry(await gripOf('手順3'), await aboveRow('手順1'));
+    // 1. 運んでいる様子が見える(この操作自体が W-3-2a の並べ替えでもある)
+    const seen = await carry(
+      await gripOf('手順3'),
+      await aboveRow('手順1'),
+      `
+        const n = [...document.querySelectorAll('.react-flow__node-task')]
+          .find((x) => x.querySelector('.task-title')?.textContent === '親A');
+        const titles = n ? [...n.querySelectorAll('.child-title')].map((c) => c.textContent) : [];
+        return JSON.stringify(titles) === '["手順3","手順1","手順2"]';
+      `,
+    );
     check('W-3-1a 掴んでいるものが影として出る', seen.影 === '手順3', seen);
     check('W-3-1b 入る場所に線が引かれる', typeof seen.線 === 'number', seen);
     check('W-3-1c 受け取る Task が光る', seen.光 === 1, seen);
@@ -122,7 +152,12 @@ export default {
       JSON.stringify((await structure())['親A']) === '["手順3","手順1","手順2"]',
       await structure(),
     );
-    await undo();
+    await undo(`
+      const n = [...document.querySelectorAll('.react-flow__node-task')]
+        .find((x) => x.querySelector('.task-title')?.textContent === '親A');
+      const titles = n ? [...n.querySelectorAll('.child-title')].map((c) => c.textContent) : [];
+      return JSON.stringify(titles) === '["手順1","手順2","手順3"]';
+    `);
     check(
       'W-3-2b 並べ替えは1回の Undo で戻る',
       JSON.stringify((await structure())['親A']) === '["手順1","手順2","手順3"]',
@@ -130,7 +165,16 @@ export default {
     );
 
     // 3. 別の Task の、狙った位置へ移す
-    await carry(await gripOf('手順1'), await aboveRow('既にある'));
+    await carry(
+      await gripOf('手順1'),
+      await aboveRow('既にある'),
+      `
+        const n = [...document.querySelectorAll('.react-flow__node-task')]
+          .find((x) => x.querySelector('.task-title')?.textContent === '親B');
+        const titles = n ? [...n.querySelectorAll('.child-title')].map((c) => c.textContent) : [];
+        return JSON.stringify(titles) === '["手順1","既にある"]';
+      `,
+    );
     const moved = await structure();
     check('W-3-3a 元の親から外れる', JSON.stringify(moved['親A']) === '["手順2","手順3"]', moved);
     check(
@@ -138,7 +182,12 @@ export default {
       JSON.stringify(moved['親B']) === '["手順1","既にある"]',
       moved,
     );
-    await undo();
+    // 続きの検査(4)は 親A の childTask を掴むので、3件へ戻っていることを待つ
+    await undo(`
+      const n = [...document.querySelectorAll('.react-flow__node-task')]
+        .find((x) => x.querySelector('.task-title')?.textContent === '親A');
+      return (n?.querySelectorAll('.child-title').length ?? 0) === 3;
+    `);
 
     // 4. 余白へ落として独立させる
     const before = await evaluate(`return document.querySelectorAll('.task').length`);
@@ -149,7 +198,20 @@ export default {
         y: Math.round(Math.min(innerHeight - 40, Math.max(...ns.map((r) => r.bottom)) + 90)),
       };
     `);
-    await carry(await gripOf('手順3'), empty);
+    await carry(
+      await gripOf('手順3'),
+      empty,
+      // 件数が増えるだけでなく、続く手順5が taskBody で掴めるところまで待つ。
+      // 独立した直後は React Flow がまだ寸法を測り終えておらず、取っ手の
+      // 矩形が0のことがある(実測)。
+      `
+        if (document.querySelectorAll('.task').length !== ${before} + 1) return false;
+        const n = [...document.querySelectorAll('.react-flow__node-task')]
+          .find((x) => x.querySelector('.task-title')?.textContent === '手順3');
+        const g = n?.querySelector('.task-grip');
+        return !!g && g.getBoundingClientRect().width > 0;
+      `,
+    );
     const promoted = await structure();
     check(
       'W-3-4a Task が1つ増える',
@@ -171,18 +233,22 @@ export default {
     // 5. Task を、別の Task の見出しへ運んで入れ子にする
     /** Task を掴む点。掴めるのは見出しの取っ手だけ(FR-6)。 */
     const taskBody = (title) =>
-      evaluate(`
+      locatePoint({
+        container: '.react-flow__node-task',
+        nameSelector: '.task-title',
+        name: title,
+        part: '.task-grip',
+      });
+    const nestSeen = await carry(
+      await taskBody('手順3'),
+      await headOf('親B'),
+      `
         const n = [...document.querySelectorAll('.react-flow__node-task')]
-          .find((x) => x.querySelector('.task-title')?.textContent === ${JSON.stringify(title)});
-        const g = n.querySelector('.task-grip');
-        const r = g.getBoundingClientRect();
-        const p = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
-        if (document.elementFromPoint(p.x, p.y) !== g) {
-          throw new Error('Task の取っ手が覆われている: ' + ${JSON.stringify(title)});
-        }
-        return p;
-      `);
-    const nestSeen = await carry(await taskBody('手順3'), await headOf('親B'));
+          .find((x) => x.querySelector('.task-title')?.textContent === '親B');
+        const titles = n ? [...n.querySelectorAll('.child-title')].map((c) => c.textContent) : [];
+        return JSON.stringify(titles) === '["手順3","既にある"]';
+      `,
+    );
     check('W-3-5a 入れ子でも、入る場所に線が引かれる', typeof nestSeen.線 === 'number', nestSeen);
 
     const nested = await structure();
@@ -192,7 +258,15 @@ export default {
       JSON.stringify(nested['親B']) === '["手順3","既にある"]',
       nested,
     );
-    await undo();
+    // 独立して戻ってきた直後は、React Flow がまだ寸法を測り終えておらず
+    // 取っ手の矩形が0のことがある(実測)。続く手順6が taskBody で掴む点を
+    // 求めるので、ここで測り終わるまで待つ。
+    await undo(`
+      const n = [...document.querySelectorAll('.react-flow__node-task')]
+        .find((x) => x.querySelector('.task-title')?.textContent === '手順3');
+      const g = n?.querySelector('.task-grip');
+      return !!g && g.getBoundingClientRect().width > 0;
+    `);
     check(
       'W-3-5d 入れ子は1回の Undo で戻る',
       Object.hasOwn(await structure(), '手順3'),
@@ -201,6 +275,8 @@ export default {
 
     // 6. 何もない場所へ落としたときは、動くだけで入れ子にならない
     const countBefore = await evaluate(`return document.querySelectorAll('.task').length`);
+    // 「何も変わらないはず」の操作には待つべき条件が無いので、見た目の
+    // 後片付け(carry 内)だけを待って進む。
     await carry(await taskBody('手順3'), empty);
     check(
       'W-3-6 余白へ落としても入れ子にならない',

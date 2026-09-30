@@ -88,5 +88,90 @@ export function actions(probe) {
   /** 今ある依存の本数。 */
   const edgeCount = () => evaluate(`return document.querySelectorAll('.react-flow__edge').length`);
 
-  return { clickToolbar, addTask, fitView, connect, taskCount, edgeCount };
+  /**
+   * クリック/ドラッグの起点となる点を求める。
+   *
+   * 各シナリオが「名前で1件探し、その中の一部分の矩形から中心点を求め、
+   * elementFromPoint で本当にそこへ当たるか確かめる」処理を、少しずつ違う
+   * 形で書き写していた。ここではその形を1つにする。
+   *
+   * 対象の絞り方は2通り:
+   * - `id` を渡すと、`idAttr`(既定 `data-id`。React Flow のノードはこれを持つ。
+   *   childTask には `data-child-id` がある)でちょうど1件に絞る。
+   * - `id` を渡さなければ `container` の中から `nameSelector` の文字列が
+   *   `name` と一致するものを探す。**一致が複数あれば投げる** —— 名前は
+   *   利用者が自由に付けられるので重複しうる。黙って1件目を選ぶと、
+   *   探していたのと違うものを操作してしまう。
+   *
+   * 求めた点は、`hitSelector` を渡せばその祖先までを、渡さなければ `part`
+   * (省略時は対象自身)そのものを elementFromPoint が返すかで確かめる。
+   * 覆われていれば、押しても別のものに当たるということなので投げる。
+   *
+   * 部分の指定は2通り:
+   * - `part`: 対象の中を1つの CSS セレクタで絞る(`.task-grip` など)。
+   * - `partAll` + `partText`: 対象の中に同じセレクタの要素が複数あるとき
+   *   (× ▾ ↑ などのボタン群)、文字列の完全一致で選ぶ。ここでも一致が
+   *   複数あれば投げる。
+   *
+   * 期待する状態(見つかるはず・覆われていないはず)はここでは確かめない。
+   * それを check() するかどうかはシナリオ側の判断。ここで投げるのは
+   * 「押しても意図した相手に届かない」という、操作そのものが成立しない場合だけ。
+   */
+  const locatePoint = ({
+    id,
+    idAttr = 'data-id',
+    container,
+    nameSelector,
+    name,
+    part,
+    partAll,
+    partText,
+    hitSelector,
+  }) => {
+    const findExpr =
+      id !== undefined
+        ? `document.querySelector(\`[${idAttr}="\${CSS.escape(${JSON.stringify(id)})}"]\`)`
+        : `(() => {
+            const matches = [...document.querySelectorAll(${JSON.stringify(container)})]
+              .filter((el) => el.querySelector(${JSON.stringify(nameSelector)})?.textContent === ${JSON.stringify(name)});
+            if (matches.length > 1) {
+              throw new Error('同じ名前が複数ある(' + matches.length + '件): ' + ${JSON.stringify(name)});
+            }
+            return matches[0] ?? null;
+          })()`;
+    const label = JSON.stringify(id !== undefined ? id : name);
+    const partLabel = JSON.stringify(part ?? partText ?? '');
+    const targetExpr = part
+      ? `found.querySelector(${JSON.stringify(part)})`
+      : partAll
+        ? `(() => {
+            const cands = [...found.querySelectorAll(${JSON.stringify(partAll)})]
+              .filter((el) => el.textContent === ${JSON.stringify(partText)});
+            if (cands.length > 1) {
+              throw new Error(
+                '部分の候補が複数一致した(' + cands.length + '件): ' + ${JSON.stringify(partText)},
+              );
+            }
+            return cands[0] ?? null;
+          })()`
+        : 'found';
+    return evaluate(`
+      const found = ${findExpr};
+      if (!found) throw new Error('見つからない: ' + ${label});
+      const target = ${targetExpr};
+      if (!target) throw new Error('対象の中に無い(' + ${partLabel} + '): ' + ${label});
+      const r = target.getBoundingClientRect();
+      const p = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+      const hit = document.elementFromPoint(p.x, p.y);
+      const ok = ${hitSelector ? `hit?.closest(${JSON.stringify(hitSelector)}) === found` : 'hit === target'};
+      if (!ok) {
+        throw new Error(
+          '覆われている(' + ${label} + '): ' + (hit?.className?.toString?.().slice(0, 60) ?? '?'),
+        );
+      }
+      return p;
+    `);
+  };
+
+  return { clickToolbar, addTask, fitView, connect, taskCount, edgeCount, locatePoint };
 }
