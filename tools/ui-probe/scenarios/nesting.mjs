@@ -201,7 +201,16 @@ export default {
     await carry(
       await gripOf('手順3'),
       empty,
-      `return document.querySelectorAll('.task').length === ${before} + 1;`,
+      // 件数が増えるだけでなく、続く手順5が taskBody で掴めるところまで待つ。
+      // 独立した直後は React Flow がまだ寸法を測り終えておらず、取っ手の
+      // 矩形が0のことがある(実測)。
+      `
+        if (document.querySelectorAll('.task').length !== ${before} + 1) return false;
+        const n = [...document.querySelectorAll('.react-flow__node-task')]
+          .find((x) => x.querySelector('.task-title')?.textContent === '手順3');
+        const g = n?.querySelector('.task-grip');
+        return !!g && g.getBoundingClientRect().width > 0;
+      `,
     );
     const promoted = await structure();
     check(
@@ -249,9 +258,14 @@ export default {
       JSON.stringify(nested['親B']) === '["手順3","既にある"]',
       nested,
     );
+    // 独立して戻ってきた直後は、React Flow がまだ寸法を測り終えておらず
+    // 取っ手の矩形が0のことがある(実測)。続く手順6が taskBody で掴む点を
+    // 求めるので、ここで測り終わるまで待つ。
     await undo(`
-      return [...document.querySelectorAll('.react-flow__node-task .task-title')]
-        .some((t) => t.textContent === '手順3');
+      const n = [...document.querySelectorAll('.react-flow__node-task')]
+        .find((x) => x.querySelector('.task-title')?.textContent === '手順3');
+      const g = n?.querySelector('.task-grip');
+      return !!g && g.getBoundingClientRect().width > 0;
     `);
     check(
       'W-3-5d 入れ子は1回の Undo で戻る',
