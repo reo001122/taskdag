@@ -32,13 +32,8 @@ import {
 } from './layout';
 import { logger } from './log';
 import { clearOverlapMarks, showOverlapMarks } from './overlapMark';
-import {
-  type AutoEdit,
-  ProjectFrameNode,
-  type ProjectNodeData,
-  TaskNode,
-  type TaskNodeData,
-} from './TaskNode';
+import { ProjectFrameNode, type ProjectNodeData } from './ProjectNode';
+import { type AutoEdit, TaskNode, type TaskNodeData } from './TaskNode';
 
 const log = logger('graph');
 
