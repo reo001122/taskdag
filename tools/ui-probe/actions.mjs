@@ -107,6 +107,12 @@ export function actions(probe) {
    * (省略時は対象自身)そのものを elementFromPoint が返すかで確かめる。
    * 覆われていれば、押しても別のものに当たるということなので投げる。
    *
+   * 部分の指定は2通り:
+   * - `part`: 対象の中を1つの CSS セレクタで絞る(`.task-grip` など)。
+   * - `partAll` + `partText`: 対象の中に同じセレクタの要素が複数あるとき
+   *   (× ▾ ↑ などのボタン群)、文字列の完全一致で選ぶ。ここでも一致が
+   *   複数あれば投げる。
+   *
    * 期待する状態(見つかるはず・覆われていないはず)はここでは確かめない。
    * それを check() するかどうかはシナリオ側の判断。ここで投げるのは
    * 「押しても意図した相手に届かない」という、操作そのものが成立しない場合だけ。
@@ -118,6 +124,8 @@ export function actions(probe) {
     nameSelector,
     name,
     part,
+    partAll,
+    partText,
     hitSelector,
   }) => {
     const findExpr =
@@ -132,11 +140,26 @@ export function actions(probe) {
             return matches[0] ?? null;
           })()`;
     const label = JSON.stringify(id !== undefined ? id : name);
+    const partLabel = JSON.stringify(part ?? partText ?? '');
+    const targetExpr = part
+      ? `found.querySelector(${JSON.stringify(part)})`
+      : partAll
+        ? `(() => {
+            const cands = [...found.querySelectorAll(${JSON.stringify(partAll)})]
+              .filter((el) => el.textContent === ${JSON.stringify(partText)});
+            if (cands.length > 1) {
+              throw new Error(
+                '部分の候補が複数一致した(' + cands.length + '件): ' + ${JSON.stringify(partText)},
+              );
+            }
+            return cands[0] ?? null;
+          })()`
+        : 'found';
     return evaluate(`
       const found = ${findExpr};
       if (!found) throw new Error('見つからない: ' + ${label});
-      const target = ${part ? `found.querySelector(${JSON.stringify(part)})` : 'found'};
-      if (!target) throw new Error('対象の中に無い(' + ${JSON.stringify(part ?? '')} + '): ' + ${label});
+      const target = ${targetExpr};
+      if (!target) throw new Error('対象の中に無い(' + ${partLabel} + '): ' + ${label});
       const r = target.getBoundingClientRect();
       const p = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
       const hit = document.elementFromPoint(p.x, p.y);
