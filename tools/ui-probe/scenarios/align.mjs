@@ -12,7 +12,7 @@ export default {
 
   async run(ctx) {
     const { evaluate, waitFor, waitForFocus, wait, key, type, mouse, drag, check } = ctx;
-    const { clickToolbar: click, addTask, fitView } = actions(ctx);
+    const { clickToolbar: click, addTask, fitView, locatePoint } = actions(ctx);
 
     const addProject = async (name) => {
       await click('Project');
@@ -67,27 +67,35 @@ export default {
      *
      * 掴む場所は左上に寄せる。 所属は Task の左上の点で決まる(FR-4)ので、
      * 中央を掴むと、狙った場所に落としても左上は枠の外に出ていることがある。
+     *
+     * 掴む点(取っ手)は locatePoint で求める —— 同じ名前の Task が複数あれば
+     * 投げるし、覆われていれば投げる。落とす先の点は、Task と枠の両方の
+     * 矩形から計算する値であって「そこに何かが在るか」を確かめる対象では
+     * ないので、そちらは今までどおり直接計算する。
      */
     const assign = async (title, projectName) => {
-      const points = await evaluate(`
+      const from = await locatePoint({
+        container: '.react-flow__node',
+        nameSelector: '.task-title',
+        name: title,
+        part: '.task-grip',
+      });
+      const to = await evaluate(`
         const find = (sel, text) => [...document.querySelectorAll('.react-flow__node')]
           .find((n) => n.querySelector(sel)?.textContent === text);
         const task = find('.task-title', ${JSON.stringify(title)});
         const frame = find('.project-name', ${JSON.stringify(projectName)});
-        // 掴めるのは見出しの取っ手だけ(FR-6)
+        if (!frame) throw new Error('その Project が見つからない: ' + ${JSON.stringify(projectName)});
         const g = task.querySelector('.task-grip').getBoundingClientRect();
         const t = task.getBoundingClientRect();
         const f = frame.getBoundingClientRect();
+        // 掴んだ点と Task の左上のずれ。所属は左上で決まるので、そのぶん戻す。
         return {
-          from: { x: Math.round(g.left + g.width / 2), y: Math.round(g.top + g.height / 2) },
-          // 掴んだ点と Task の左上のずれ。所属は左上で決まるので、そのぶん戻す。
-          to: {
-            x: Math.round(f.left + 70 + (g.left + g.width / 2 - t.left)),
-            y: Math.round(f.top + 70 + (g.top + g.height / 2 - t.top)),
-          },
+          x: Math.round(f.left + 70 + (g.left + g.width / 2 - t.left)),
+          y: Math.round(f.top + 70 + (g.top + g.height / 2 - t.top)),
         };
       `);
-      await drag(points.from, points.to);
+      await drag(from, to);
       await wait(450);
     };
 
