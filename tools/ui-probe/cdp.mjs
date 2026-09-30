@@ -146,24 +146,37 @@ export async function connect(port, { onConsole, expectedUrlPrefix, timeoutMs = 
   /**
    * 入力欄にフォーカスが移るまで待ち、待った時間(ms)を返す。移らなければ -1。
    *
-   * 打つ前に必ず通すこと。 入力欄が現れてから実際にフォーカスが着くまでには
-   * 間がある(React Flow がノードを測り終えるまで待つため、実測で初回 70ms 前後)。
+   * 打つ前に必ず通すこと。入力欄が現れてから実際にフォーカスが着くまでには
+   * 間がある(React Flow がノードを測り終えるまで待つため、実測で 70〜125ms)。
    * 着く前に打つと、最初の文字が黙って落ちる。
+   *
+   * **画面の中で requestAnimationFrame を回す形をやめ、Node 側から見る形にした。**
+   * 「フォーカスは入力欄に着いているのに -1 が返る」という失敗が、数回に1回の
+   * 頻度で出ていた(payload に activeClass: text-input が残っていた)。原因を
+   * 切り分けるために測ったもの:
+   *
+   * - 7つのシナリオが同時に走っている間、画面の中の rAF の間隔は最大 21ms から
+   *   **166ms** へ伸びた。setTimeout と Node 側からの往復は 18ms のままだった
+   * - 起動が重なる瞬間でも、フォーカスが着くまでは 125ms だった
+   *
+   * どちらも単独では 2000ms を使い切る説明にならない。**間引きと遅さのどちらでも
+   * 落ちないように**、待ち方を Node 側へ移し、締め切りを過ぎたあとに**もう一度
+   * 確かめてから** -1 を返す。締め切りも 5000ms へ伸ばした —— 通る場合の所要は
+   * 変わらず、「本当に着かない」ときに 3 秒遅く落ちるだけである。
+   *
+   * 見逃しには繋がらない。着かなければ最後の確認でも偽のままで、-1 を返す。
    */
-  const waitForFocus = (timeout = 2000) =>
-    evaluate(`
-      const t0 = performance.now();
-      return await new Promise((resolve) => {
-        const tick = () => {
-          if (document.activeElement?.classList?.contains('text-input')) {
-            return resolve(Math.round(performance.now() - t0));
-          }
-          if (performance.now() - t0 > ${timeout}) return resolve(-1);
-          requestAnimationFrame(tick);
-        };
-        tick();
-      });
-    `);
+  const waitForFocus = async (timeout = 5000) => {
+    const hasFocus = () =>
+      evaluate(`return document.activeElement?.classList?.contains('text-input') ?? false`);
+    const t0 = Date.now();
+    while (Date.now() - t0 < timeout) {
+      if (await hasFocus()) return Date.now() - t0;
+      await wait(10);
+    }
+    // 締め切りの判定と最後の確認の間に着いた場合を拾う。
+    return (await hasFocus()) ? Date.now() - t0 : -1;
+  };
 
   /**
    * キーを1打。
