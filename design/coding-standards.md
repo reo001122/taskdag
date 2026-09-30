@@ -56,6 +56,10 @@ Phase 4 で `src/main/mcp/`(AIとの境界)が加わる。`ipc/` と同じく ap
 
 - 変数・関数: `camelCase` / 型・クラス: `PascalCase` / 定数: `UPPER_SNAKE_CASE`
 - ファイル名: `kebab-case.ts`。Reactコンポーネントのみ `PascalCase.tsx`
+  - **検査**: Biome の `style/useFilenamingConvention`(`biome.json`)。`npm run check` が落とす。
+    書くだけでは静かに破れる —— 実際、renderer に camelCase の `.ts` が2件入っていた
+    (`childDrag.ts`・`overlapMark.ts`。2026-09-30 に改名した)。この規約が書かれた時点では
+    renderer に複数語の `.ts` が無く、**試されていなかった**ため気づかれなかった。
 - **要件で定義した用語は、コード上でも同じ語を使う。** `Task`, `childTask`, `Project`, `dependency edge`, `Ready`, `Blocked` など。
   - 独自の言い換え(`node`, `item`, `group`, `parent` 等)をドメイン層で使わない。要件とコードの対応が追えなくなるため。
   - ただしReact Flowのライブラリ境界では `node`/`edge` の語が出てくる。その変換は renderer 側に閉じる。

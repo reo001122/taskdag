@@ -22,10 +22,29 @@
         "noExplicitAny": "error"
       },
       "style": {
-        "useConst": "error"
+        "useConst": "error",
+        "useFilenamingConvention": {
+          "level": "error",
+          "options": { "filenameCases": ["kebab-case"], "strictCase": true }
+        }
       }
     }
   },
+  "overrides": [
+    {
+      "includes": ["**/*.tsx"],
+      "linter": {
+        "rules": {
+          "style": {
+            "useFilenamingConvention": {
+              "level": "error",
+              "options": { "filenameCases": ["PascalCase", "kebab-case"], "strictCase": true }
+            }
+          }
+        }
+      }
+    }
+  ],
   "javascript": {
     "formatter": {
       "quoteStyle": "single",
