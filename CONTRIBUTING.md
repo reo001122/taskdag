@@ -116,7 +116,7 @@ CI でも走ります。Electron に画面が要るため、仮想ディスプ�
 
 `npm install` が git の hook を `.githooks/` に向けます。以降、コミットのたびに
 型チェック・Biome・単体テストが走り、**画面に関わるものが含まれていれば
-`npm run probe` も走ります**(6秒ほど)。probe はウィンドウを出しません ——
+`npm run probe` も走ります**(181項目、40秒ほど)。probe はウィンドウを出しません ——
 コミットのたびに画面が割り込むのでは、常時走らせられないためです。
 
 まとめて手で走らせるなら `npm run verify`。急ぎで飛ばすなら `git commit --no-verify`
@@ -131,8 +131,14 @@ Issue は GitHub Issues で管理します(`gh` CLI 経由)。トリアージに
 
 ## コミット
 
-Conventional Commits(`feat:`, `fix:`, `refactor:`, `docs:`, `chore:`)、英語、1コミット
-1論点。**何をしたかではなく、なぜそうしたか**を書いてください。何をしたかは差分が語ります。
+Conventional Commits(`feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`, `style:`,
+`ci:`)、1コミット1論点。**件名は英語、本文は日本語**です —— 件名は `git log --oneline` や
+GitHub から外の人に読まれる場所で、本文はこのリポジトリの他の文書と同じ読み手に向けた
+ものだからです。
+
+**何をしたかではなく、なぜそうしたか**を書いてください。何をしたかは差分が語ります。
+
+件名は `.githooks/commit-msg` が見ています(型で始まるか、日本語が混ざっていないか)。
 
 ## スコープ
 

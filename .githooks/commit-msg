@@ -1,0 +1,43 @@
+#!/bin/sh
+#
+# コミットメッセージの検査。
+#
+# 見るのは件名(1行目)だけ。design/coding-standards.md §8 の2つ ——
+# Conventional Commits の型で始まること、英語で書かれていること。
+#
+# **本文は日本語なので、対象にしない。** 件名だけを見る。
+#
+# なぜ機械に見せるか: 規約に書くだけでは破れる。実際、作業を渡した相手が
+# 日本語の件名でコミットし、後から直すことになった。§8 自身にも「規約と履歴が
+# 食い違っていた」という前歴がある。
+#
+# 一時的に飛ばす: git commit --no-verify
+
+set -e
+
+subject=$(sed -n '1p' "$1")
+
+# git が作るものは対象外。型を付ける習慣のない形で決まっている。
+case "$subject" in
+  'Merge '* | 'Revert '* | 'fixup!'* | 'squash!'* | '#'* | '') exit 0 ;;
+esac
+
+fail() {
+  echo "commit-msg: $1" >&2
+  echo "  件名: $subject" >&2
+  echo "  規約: design/coding-standards.md §8" >&2
+  exit 1
+}
+
+# Conventional Commits の型で始まるか(§8 が挙げているもの)
+echo "$subject" |
+  grep -Eq '^(feat|fix|refactor|test|docs|chore|style|ci)(\([a-z0-9/._-]+\))?: .+' ||
+  fail '件名が feat: / fix: / refactor: / test: / docs: / chore: / style: / ci: で始まっていない'
+
+# 英語で書かれているか。
+#
+# ASCII 以外を一律に弾くと、英語の件名も落ちる —— 履歴には —(ダッシュ)・§・↑↓ を
+# 含むものが実際にある。仮名と漢字があるかどうかで見る。
+if printf '%s' "$subject" | LC_ALL=ja_JP.UTF-8 grep -q '[ぁ-んァ-ヶー一-龥々〆、。「」]'; then
+  fail '件名が日本語になっている(件名は英語、本文は日本語)'
+fi
