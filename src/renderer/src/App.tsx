@@ -18,7 +18,7 @@ import './styles.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { type Rect, rectIntersection, rectsOverlap } from '../../shared/geometry';
 import type { Command, CommandResult, DeletePlan, GraphSnapshot } from '../../shared/ipc';
-import { clearDropFeedback, type DropPoint, findDropPoint, showDropFeedback } from './childDrag';
+import { clearDropFeedback, type DropPoint, findDropPoint, showDropFeedback } from './child-drag';
 import { PROJECT_COLOR_COUNT, projectColorAt } from './colors';
 import { DependencyEdge, type DependencyEdgeData } from './DependencyEdge';
 import { DeleteDialog, TextPromptDialog } from './Dialogs';
@@ -31,7 +31,7 @@ import {
   type NodeSize,
 } from './layout';
 import { logger } from './log';
-import { clearOverlapMarks, showOverlapMarks } from './overlapMark';
+import { clearOverlapMarks, showOverlapMarks } from './overlap-mark';
 import { ProjectFrameNode, type ProjectNodeData } from './ProjectNode';
 import { type AutoEdit, TaskNode, type TaskNodeData } from './TaskNode';
 

@@ -1,7 +1,7 @@
 import { type NodeProps, NodeResizer } from '@xyflow/react';
 import { useContext, useEffect, useRef, useState } from 'react';
 import { PROJECT_COLORS } from './colors';
-import { focusInput, NodeMeasured, useCloseOnOutsidePointerDown } from './nodeEditing';
+import { focusInput, NodeMeasured, useCloseOnOutsidePointerDown } from './node-editing';
 
 /**
  * 枠の名前。Task 名と同じくワンクリックで改名に入る。

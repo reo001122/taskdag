@@ -1,9 +1,9 @@
 import { Handle, Position as HandlePosition, type NodeProps } from '@xyflow/react';
 import { useContext, useEffect, useRef, useState } from 'react';
 import type { ChildTaskSnapshot, Command, Progress, TaskSnapshot } from '../../shared/ipc';
-import { type DropPoint, startChildDrag } from './childDrag';
+import { type DropPoint, startChildDrag } from './child-drag';
 import { logger } from './log';
-import { type Caret, focusInput, NodeMeasured, useCloseOnOutsidePointerDown } from './nodeEditing';
+import { type Caret, focusInput, NodeMeasured, useCloseOnOutsidePointerDown } from './node-editing';
 
 /**
  * Task のカスタムノード(FR-2, FR-5, FR-6)
@@ -672,7 +672,7 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
                     tabIndex={-1}
                     /*
                       捕捉の段階で受ける。取っ手は運搬を始めるために pointerdown を
-                      止めており(childDrag.ts)、bubble 側では届かない —— 取っ手を
+                      止めており(child-drag.ts)、bubble 側では届かない —— 取っ手を
                       押したときだけ印が動かない、という形で実際に出た。
                     */
                     onPointerDownCapture={(e) => pressRow(e, () => onRowPressed(task.id, child.id))}
