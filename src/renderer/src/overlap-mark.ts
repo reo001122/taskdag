@@ -12,7 +12,7 @@ import type { Rect } from '../../shared/geometry';
  * 塗っていたときは、暖色の Project と見分けにくいという報告が出た。
  *
  * React の状態を通さず直接 DOM に置く。運搬中は1フレームごとに変わるので、
- * 再描画に載せると手応えが鈍る(childDrag と同じ理由)。
+ * 再描画に載せると手応えが鈍る(child-drag と同じ理由)。
  */
 
 const marks: HTMLElement[] = [];
