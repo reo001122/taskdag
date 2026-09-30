@@ -213,8 +213,15 @@ const SLOT_STEP = { x: 260, y: 100 };
  * 伸びた Task を1行分と見積もると、その下に重ねてしまう。
  */
 export function findFreeTaskSlot(existing: readonly Rect[], area: Rect): Position {
-  const columns = Math.max(1, Math.floor(area.width / SLOT_STEP.x));
-  const rows = Math.max(1, Math.floor(area.height / SLOT_STEP.y));
+  /*
+    桝の数は、**候補の矩形そのものが収まる数**で決める(FR-1)。
+
+    間隔(SLOT_STEP)だけで数えると、間隔より広い候補(NEW_TASK_SIZE)の右端が
+    表示範囲から欠ける。幅が 520 のときは桝2つと数えるが、2列目は
+    260 + 280 = 540 まで伸びるため 20 はみ出していた。
+  */
+  const columns = Math.max(1, Math.floor((area.width - NEW_TASK_SIZE.width) / SLOT_STEP.x) + 1);
+  const rows = Math.max(1, Math.floor((area.height - NEW_TASK_SIZE.height) / SLOT_STEP.y) + 1);
 
   for (let n = 0; n < columns * rows; n += 1) {
     const candidate: Rect = {
@@ -228,10 +235,16 @@ export function findFreeTaskSlot(existing: readonly Rect[], area: Rect): Positio
   }
 
   /*
-    見えている範囲が埋まっている。一番下の Task の下に置く。
+    ここへ来るのは2通りある: (a) 見えている範囲の桝がすべて Task で埋まって
+    いる、(b) 表示範囲そのものが NEW_TASK_SIZE より狭く、候補が1つも収まらない
+    (ウィンドウが狭い、大きく拡大している、など)。
 
-    画面の外になるが、重ねるよりはよい —— 重なると下のカードの行に触れなく
-    なる。「全体を表示」で戻せる(FR-6)。
+    どちらも「置けないから何も起きない」にはしない —— 利用者には「押したのに
+    増えない」としか見えず、原因を目で見て判断できないため(CLAUDE.md §3)。
+    重なりを許して一番下の Task の下に置く。画面の外になるが、重ねるよりは
+    よい —— 重なると下のカードの行に触れなくなる。「全体を表示」で戻せる
+    (FR-6)。(b) の場合はこの位置も表示範囲より広い矩形になりうるが、同じ
+    理由で許容する。
   */
   const bottom = existing.reduce((lowest, rect) => Math.max(lowest, rect.y + rect.height), area.y);
   return { x: area.x, y: bottom + ROW_GAP };
