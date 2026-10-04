@@ -11,7 +11,18 @@ export default {
   description: '名前の編集、Shift+Enter での書き出し、Backspace での取り消し',
 
   async run(ctx) {
-    const { evaluate, waitFor, waitForFocus, wait, key, type, mouse, wheel, check } = ctx;
+    const {
+      evaluate,
+      waitFor,
+      waitForFocus,
+      wait,
+      key,
+      type,
+      mouse,
+      wheel,
+      setViewportSize,
+      check,
+    } = ctx;
     const { clickToolbar, addTask, taskCount, fitView } = actions(ctx);
     const state = () =>
       evaluate(`
@@ -605,7 +616,7 @@ export default {
     /*
       取っ手を押したときも印が移る。
 
-      取っ手は運搬を始めるために pointerdown を止めている(childDrag.ts)。
+      取っ手は運搬を始めるために pointerdown を止めている(child-drag.ts)。
       行の受け取りを bubble 側に置くと、取っ手を押したときだけ印が動かない ——
       「取っ手の左の余白では移るのに、取っ手では移らない」という形で出た。
     */
@@ -1213,6 +1224,145 @@ export default {
       'S-2b 拡大した状態で作ってもカードは重ならない',
       zoomedOverlaps.length === 0,
       zoomedOverlaps,
+    );
+
+    /*
+      作った Task が表示範囲(.react-flow)に収まる(issue #10)。
+
+      findFreeTaskSlot は桝の数を SLOT_STEP(間隔 260)だけから決めていたため、
+      それより広い候補(NEW_TASK_SIZE の 280)の右端が表示範囲から欠けた。
+      表示範囲の幅が 520 のとき、2列目は 260+280=540 まで伸びる。
+
+      **既定の名前のままでは、この欠けは目に見えない。** 実測すると、名前が
+      「新しいタスク」のカードは 181px しかなく(拡大率2倍で 363px)、2列目に
+      置かれても表示範囲の内側に収まってしまう。280 は styles.css の
+      `.task { max-width: 280px }` —— つまり**名前が長いときの幅**である。
+      そのため、ここでは長い名前を打って最大幅まで広げた状態で確かめる。
+
+      既にある Task もそのまま残っているため、まずそれらの外側 —— まだ何も
+      ない場所までスクロールする。そうしないと桝がどれも既存の Task と重なり、
+      「一番下の下」へ逃げる既存の経路ばかりを踏むことになり、直したいはみ出し
+      そのものを確かめられない。
+    */
+    await setViewportSize(1088, 860);
+    await wait(300);
+    const paneCentreNarrow = await evaluate(`
+      const r = document.querySelector('.react-flow__pane').getBoundingClientRect();
+      return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+    `);
+    const flowArea = () =>
+      evaluate(`
+        const r = document.querySelector('.react-flow').getBoundingClientRect();
+        const t = getComputedStyle(document.querySelector('.react-flow__viewport')).transform;
+        const m = new DOMMatrixReadOnly(t);
+        const margin = 24;
+        const toFlow = (x, y) => ({ x: (x - m.e) / m.a, y: (y - m.f) / m.a });
+        const tl = toFlow(r.left + margin, r.top + margin);
+        const br = toFlow(r.right - margin, r.bottom - margin);
+        return { x: tl.x, y: tl.y, width: br.x - tl.x, height: br.y - tl.y };
+      `);
+
+    /*
+      窓の幅 1088 が「2列目がはみ出す幅」になるのは、拡大率が2倍のときだけ ——
+      (1088 - 余白48) / 2 = 520。S-1 で上限(React Flow の既定は2倍)まで
+      上げてあることに依存しているので、ここで確かめておく。上限が変わったら、
+      静かに別の条件を試すのではなく、この検査が落ちるようにする。
+    */
+    const zoomHere = (await viewport()).zoom;
+    const areaWidthHere = (await flowArea()).width;
+    check(
+      'S-2c 拡大率が2倍で、表示範囲の幅が 520(2列目がはみ出す条件)',
+      zoomHere === 2 && Math.round(areaWidthHere) === 520,
+      { zoomHere, areaWidthHere },
+    );
+
+    const graphMaxY = await evaluate(`
+      const t = getComputedStyle(document.querySelector('.react-flow__viewport')).transform;
+      const m = new DOMMatrixReadOnly(t);
+      const bottoms = [...document.querySelectorAll('.react-flow__node')].map(
+        (n) => (n.getBoundingClientRect().bottom - m.f) / m.a,
+      );
+      return Math.max(...bottoms);
+    `);
+    const clearance = 150;
+    for (let i = 0; i < 60 && (await flowArea()).y < graphMaxY + clearance; i += 1) {
+      await wheel(paneCentreNarrow, { deltaY: 300 });
+      await wait(20);
+    }
+    await wait(300);
+    const areaForNew = await flowArea();
+    check(
+      'S-2d 空き地までスクロールできる(既存の Task の外側)',
+      areaForNew.y >= graphMaxY + clearance,
+      { areaForNew, graphMaxY },
+    );
+
+    /*
+      2列目に置かれる条件は「1列目のカードが細いこと」である —— 桝の間隔は 260
+      なので、1件目が既に最大幅(280)まで広がっていると2列目の候補はそれと
+      重なり、桝は縦へ送られる。実測でここに1度はまった。
+
+      そのため、短い名前で2件作って2件目を2列目へ置かせ、**その後で名前を
+      長くして**最大幅まで広げる。NEW_TASK_SIZE が最大幅なのは「後から広がる
+      ぶんの場所を取っておく」ためなので、これがその取り置きが効いているかを
+      見る形になる。
+    */
+    await addTask('細1');
+    await wait(200);
+    await addTask('細2');
+    await wait(300);
+
+    const narrowWidths = await evaluate(`
+      const t = getComputedStyle(document.querySelector('.react-flow__viewport')).transform;
+      const m = new DOMMatrixReadOnly(t);
+      return ['細1', '細2'].map((name) => {
+        const n = [...document.querySelectorAll('.react-flow__node-task')].find(
+          (x) => x.querySelector('.task-title')?.textContent === name,
+        );
+        return n ? Math.round(n.getBoundingClientRect().width / m.a) : null;
+      });
+    `);
+    check(
+      'S-3a 短い名前の2件は、桝の間隔(260)より細い',
+      narrowWidths.every((w) => w !== null && w < 260),
+      { narrowWidths },
+    );
+
+    const longName = 'はみ出しの確認。名前が長いとカードは最大幅まで広がる';
+    const narrowIdx = await taskHeadIndexOf('細2');
+    await pressRow('.task-head', narrowIdx);
+    await key({ key: 'Enter', code: 13 });
+    await waitForFocus();
+    await type(longName);
+    await key({ key: 'Enter', code: 13 });
+    await waitFor('入力欄が閉じる', `return !document.querySelector('.text-input')`);
+    await wait(300);
+
+    const grown = await evaluate(`
+      const round = (n) => Math.round(n);
+      const t = getComputedStyle(document.querySelector('.react-flow__viewport')).transform;
+      const m = new DOMMatrixReadOnly(t);
+      const n = [...document.querySelectorAll('.react-flow__node-task')].find(
+        (x) => x.querySelector('.task-title')?.textContent === ${JSON.stringify(longName)},
+      );
+      if (!n) return null;
+      const r = n.getBoundingClientRect();
+      const a = document.querySelector('.react-flow').getBoundingClientRect();
+      return {
+        幅: round(r.width / m.a),
+        矩形: { left: round(r.left), top: round(r.top), right: round(r.right), bottom: round(r.bottom) },
+        表示範囲: { left: round(a.left), top: round(a.top), right: round(a.right), bottom: round(a.bottom) },
+      };
+    `);
+    check('S-3b 名前を長くするとカードは最大幅(280)まで広がる', grown?.幅 === 280, grown);
+    check(
+      'S-3c 広がったカードは表示範囲からはみ出さない',
+      grown !== null &&
+        grown.矩形.left >= grown.表示範囲.left &&
+        grown.矩形.right <= grown.表示範囲.right &&
+        grown.矩形.top >= grown.表示範囲.top &&
+        grown.矩形.bottom <= grown.表示範囲.bottom,
+      grown,
     );
   },
 };
