@@ -157,11 +157,25 @@ export default {
     check('F-6a 依存の線の上に、外すための印がある', cross !== null, cross);
     if (cross) {
       await mouse('mouseMoved', cross.x, cross.y);
-      await wait(200);
-      const shown = await evaluate(
-        `return getComputedStyle(document.querySelector('.edge-remove')).opacity`,
-      );
-      check('F-6b 線に触れると印が見える', Number(shown) > 0.5, shown);
+      /*
+        印は :hover ではなく React が付ける .is-shown で見えるようになり、
+        そのあと opacity の transition(0.1s)が走る(styles.css)。
+
+        **固定の 200ms では CI で間に合わなかった。** 落ちたときの値は "0" ——
+        transition の途中(0.3 など)ではなく、クラスがまだ付いていなかった。
+        上がるのを待ってから見る。待っても上がらなければ、最後に測った値で落ちる。
+      */
+      const markState = () =>
+        evaluate(`
+          const el = document.querySelector('.edge-remove');
+          return { opacity: getComputedStyle(el).opacity, 付いたクラス: el.className };
+        `);
+      let shown = await markState();
+      for (let i = 0; i < 40 && Number(shown.opacity) <= 0.5; i += 1) {
+        await wait(50);
+        shown = await markState();
+      }
+      check('F-6b 線に触れると印が見える', Number(shown.opacity) > 0.5, shown);
 
       await mouse('mousePressed', cross.x, cross.y);
       await mouse('mouseReleased', cross.x, cross.y);
