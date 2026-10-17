@@ -28,6 +28,8 @@
     意味(緑 = 着手できる、オレンジ = 着手中、赤 = 削除)を持っていない。
   */
   --select: #3b82f6;
+  /* ポインタが乗っている行に重ねる影。色味を変えずに沈めるため黒を薄く重ねる。 */
+  --hover-shade: rgb(0 0 0 / 4%);
   --blocked-border: #c9c9c2;
   --project: #8b8b84;
 
@@ -50,6 +52,7 @@
     --active: #fbbf24;
     --active-soft: #33260a;
     --select: #60a5fa;
+    --hover-shade: rgb(0 0 0 / 22%);
     --blocked-border: #3d3d45;
     --project: #6f6f78;
 
@@ -624,8 +627,16 @@ body.is-dragging-child .child-grip {
   border-radius: 50%;
   background: var(--active);
 }
+/*
+  ポインタが乗っている行を少し沈める。Task の本体と childTask の行で揃える。
+
+  背景色を置き換えず、上に重ねる。かつては childTask だけ background を
+  置き換えており、着手中(淡いオレンジ)の行ではポインタを乗せた間だけ着手中の
+  色が消えていた。親の本体には指定がなく、乗せても変化しなかった。
+*/
+.task-own:hover,
 .child:hover {
-  background: var(--bg);
+  background-image: linear-gradient(var(--hover-shade), var(--hover-shade));
 }
 .child-title {
   flex: 1;
