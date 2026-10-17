@@ -21,12 +21,13 @@
   --active: #b45309;
   --active-soft: #fdf3e3;
   /*
-    選ばれていることを示す線。--active より淡い。
+    選ばれていることを示す線。青系にして、着手中(オレンジの背景)と分ける。
 
-    --active をそのまま引くと、着手中のヘッダより印のほうが濃くなり、
-    目が先にそちらへ行く。印は「ここが対象」を伝えれば足りる。
+    かつては淡いオレンジだった。着手中の行の背景と色が近く、印が2つあるように
+    見えたうえ、着手中の行に印が付くと見分けられなかった。青はこの画面で状態の
+    意味(緑 = 着手できる、オレンジ = 着手中、赤 = 削除)を持っていない。
   */
-  --select: #f59e0b;
+  --select: #3b82f6;
   --blocked-border: #c9c9c2;
   --project: #8b8b84;
 
@@ -48,7 +49,7 @@
     --ready-soft: #14301f;
     --active: #fbbf24;
     --active-soft: #33260a;
-    --select: #e0a23f;
+    --select: #60a5fa;
     --blocked-border: #3d3d45;
     --project: #6f6f78;
 
@@ -283,7 +284,8 @@ body {
   着手中。枠線には触れない —— 枠線を奪うと、着手した Task の依存が
   外れているかどうかが画面から読めなくなる。ヘッダの色で示す。
 */
-.task.is-active .task-head {
+.task.is-active .task-head,
+.child.is-active {
   background: var(--active-soft);
 }
 

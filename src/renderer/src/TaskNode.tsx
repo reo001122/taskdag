@@ -683,8 +683,8 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
                     key={child.id}
                     data-child-id={child.id}
                     className={`child${child.progress === 'done' ? ' is-done' : ''}${
-                      selected && cursorRow === child.id ? ' is-cursor' : ''
-                    }`}
+                      child.progress === 'in_progress' ? ' is-active' : ''
+                    }${selected && cursorRow === child.id ? ' is-cursor' : ''}`}
                     tabIndex={-1}
                     /*
                       捕捉の段階で受ける。取っ手は運搬を始めるために pointerdown を

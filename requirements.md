@@ -189,6 +189,8 @@
 - 軸b(Not Done/In Progress/Done)は、TaskおよびchildTaskの両方に対して、ユーザーが直接設定できる。
 - 軸aの値(特にBlocked)は、Taskの編集や軸bの設定を一切制限しない。
 - 親Taskの軸bと、childTaskの軸bは、互いに自動連動しない。
+- **In Progress は、Task の見出しと childTask の行の背景を淡いオレンジにして示す。** 状態の四角だけでは、いま手を付けているものが一目で分からない。
+  - 行の印(選んでいる行)は青系にして、この背景と取り違えないようにする。
 - 受け入れ条件: あるTaskがBlockedであっても、そのTaskの名称編集・childTask追加・軸bをIn Progressに設定する、といった操作が全て通常通り行える。
 
 ### FR-6 可視化(単一キャンバス)
