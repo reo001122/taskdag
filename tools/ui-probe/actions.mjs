@@ -162,6 +162,17 @@ export function actions(probe) {
       if (!target) throw new Error('対象の中に無い(' + ${partLabel} + '): ' + ${label});
       const r = target.getBoundingClientRect();
       const p = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+      /*
+        窓の外は「覆われている」と区別する。elementFromPoint は窓の外の点に
+        対して null を返すので、同じ文言にすると原因を取り違える
+        (実際、下端からはみ出したカードを掴もうとして「覆われている」と出た)。
+      */
+      if (p.x < 0 || p.y < 0 || p.x > innerWidth || p.y > innerHeight) {
+        throw new Error(
+          '画面の外にある(' + ${label} + '): ' + JSON.stringify(p) +
+            ' 窓は ' + innerWidth + 'x' + innerHeight,
+        );
+      }
       const hit = document.elementFromPoint(p.x, p.y);
       const ok = ${hitSelector ? `hit?.closest(${JSON.stringify(hitSelector)}) === found` : 'hit === target'};
       if (!ok) {

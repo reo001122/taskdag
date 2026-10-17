@@ -177,8 +177,25 @@ export default {
       }
       check('F-6b 線に触れると印が見える', Number(shown.opacity) > 0.5, shown);
 
-      await mouse('mousePressed', cross.x, cross.y);
-      await mouse('mouseReleased', cross.x, cross.y);
+      /*
+        押す直前に測り直す。cross はホバーする前に測った座標で、**線の中点は
+        ノードの寸法が後から届くと動く** —— 古い座標を押すと pane に当たり、
+        何も起きないまま「矢印が1本になる」で待ち続けることがあった(実測)。
+        locatePoint は当たる相手も確かめるので、外れていればその場で分かる。
+      */
+      const crossNow = await evaluate(`
+        const el = document.querySelector('.edge-remove');
+        if (!el) throw new Error('外す印が見つからない');
+        const r = el.getBoundingClientRect();
+        const p = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+        const hit = document.elementFromPoint(p.x, p.y);
+        if (hit !== el && !el.contains(hit)) {
+          throw new Error('外す印が覆われている: ' + (hit?.className?.toString?.() ?? '?'));
+        }
+        return p;
+      `);
+      await mouse('mousePressed', crossNow.x, crossNow.y, { buttons: 1 });
+      await mouse('mouseReleased', crossNow.x, crossNow.y);
       await waitFor(
         '矢印が1本になる',
         `return document.querySelectorAll('.react-flow__edge').length === 1`,

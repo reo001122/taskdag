@@ -91,7 +91,33 @@ export default {
      */
     const carry = async (from, to, settleCondition) => {
       await mouse('mousePressed', from.x, from.y, { buttons: 1 });
-      for (let i = 1; i <= 8; i += 1) {
+      /*
+        動かし始めたら、**運びが始まったことを先に確かめる。**
+
+        終わりだけを待つ形(「運んでいる印が消える」)だと、一度も始まらなかった
+        場合にその待ちが即座に通り、後段の「運んだ結果が反映される」で落ちる ——
+        原因が「運べなかった」なのか「反映が遅い」なのか読めなかった。
+        全体を並列で走らせると数回に1回これが出た(実測)。
+
+        childTask の行は影と線、Task は React Flow が付ける .dragging で分かる。
+      */
+      const started = `
+        return !!document.querySelector('.drag-ghost')
+          || !!document.querySelector('.drop-line')
+          || document.querySelectorAll('.is-drop-target').length > 0
+          || !!document.querySelector('.react-flow__node.dragging');
+      `;
+      for (let i = 1; i <= 2; i += 1) {
+        await mouse(
+          'mouseMoved',
+          from.x + ((to.x - from.x) * i) / 8,
+          from.y + ((to.y - from.y) * i) / 8,
+          { buttons: 1 },
+        );
+        await wait(20);
+      }
+      await waitFor('運んでいる印が出る', started);
+      for (let i = 3; i <= 8; i += 1) {
         await mouse(
           'mouseMoved',
           from.x + ((to.x - from.x) * i) / 8,
@@ -229,6 +255,20 @@ export default {
       JSON.stringify(promoted['手順3']) === '[]',
       promoted,
     );
+
+    /*
+      独立させた Task を画面に収める。
+
+      落とす場所は「一番下のカードの 90px 下、ただし窓の下端から 40px まで」で
+      決めている。窓が足りないとそこへ置かれ、**カードは下端からはみ出す**。
+      そのまま次の手順で取っ手を掴もうとすると、取っ手の中心が窓の外になり、
+      elementFromPoint が pane を返して「覆われている」として投げられた
+      (実際に数回に1回落ちた。失敗時の画面に、下端で切れたカードが残っていた)。
+
+      ここから先は構造(どれがどれの childTask か)しか見ないので、全体を表示して
+      位置を作り直してよい。
+    */
+    await fitView();
 
     // 5. Task を、別の Task の見出しへ運んで入れ子にする
     /** Task を掴む点。掴めるのは見出しの取っ手だけ(FR-6)。 */
