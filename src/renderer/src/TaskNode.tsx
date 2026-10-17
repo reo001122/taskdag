@@ -82,6 +82,22 @@ function StateToggle({
       type="button"
       className={`state-toggle nodrag ${PROGRESS_CLASS[progress]}`}
       title={`${PROGRESS_LABEL[progress]}(クリックで変更)`}
+      /*
+        押しても、この button にはフォーカスを渡さない(FR-1)。
+
+        行は onPointerDownCapture で自分へフォーカスを移している。その直後に
+        ブラウザの既定(pointerdown)が押された button へフォーカスを移すため、
+        四角を押したときだけ「印はその行、フォーカスはボタン」とずれていた。
+        見た目には出ないが、そこから先のキー操作の起点になる値である。
+
+        既定を止めるだけにして onClick は残す —— 見出しの ✎ / ＋ / × と同じ
+        onPress に寄せると、キーボードで focus して Space / Enter で起動する
+        経路が無くなる。
+      */
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+      }}
       onClick={onToggle}
     >
       <span className="state-box" />
@@ -667,8 +683,8 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
                     key={child.id}
                     data-child-id={child.id}
                     className={`child${child.progress === 'done' ? ' is-done' : ''}${
-                      selected && cursorRow === child.id ? ' is-cursor' : ''
-                    }`}
+                      child.progress === 'in_progress' ? ' is-active' : ''
+                    }${selected && cursorRow === child.id ? ' is-cursor' : ''}`}
                     tabIndex={-1}
                     /*
                       捕捉の段階で受ける。取っ手は運搬を始めるために pointerdown を

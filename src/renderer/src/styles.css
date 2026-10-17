@@ -21,12 +21,15 @@
   --active: #b45309;
   --active-soft: #fdf3e3;
   /*
-    選ばれていることを示す線。--active より淡い。
+    選ばれていることを示す線。青系にして、着手中(オレンジの背景)と分ける。
 
-    --active をそのまま引くと、着手中のヘッダより印のほうが濃くなり、
-    目が先にそちらへ行く。印は「ここが対象」を伝えれば足りる。
+    かつては淡いオレンジだった。着手中の行の背景と色が近く、印が2つあるように
+    見えたうえ、着手中の行に印が付くと見分けられなかった。青はこの画面で状態の
+    意味(緑 = 着手できる、オレンジ = 着手中、赤 = 削除)を持っていない。
   */
-  --select: #f59e0b;
+  --select: #3b82f6;
+  /* ポインタが乗っている行に重ねる影。色味を変えずに沈めるため黒を薄く重ねる。 */
+  --hover-shade: rgb(0 0 0 / 4%);
   --blocked-border: #c9c9c2;
   --project: #8b8b84;
 
@@ -48,7 +51,8 @@
     --ready-soft: #14301f;
     --active: #fbbf24;
     --active-soft: #33260a;
-    --select: #e0a23f;
+    --select: #60a5fa;
+    --hover-shade: rgb(0 0 0 / 22%);
     --blocked-border: #3d3d45;
     --project: #6f6f78;
 
@@ -283,7 +287,8 @@ body {
   着手中。枠線には触れない —— 枠線を奪うと、着手した Task の依存が
   外れているかどうかが画面から読めなくなる。ヘッダの色で示す。
 */
-.task.is-active .task-head {
+.task.is-active .task-own,
+.child.is-active {
   background: var(--active-soft);
 }
 
@@ -622,8 +627,16 @@ body.is-dragging-child .child-grip {
   border-radius: 50%;
   background: var(--active);
 }
+/*
+  ポインタが乗っている行を少し沈める。Task の本体と childTask の行で揃える。
+
+  背景色を置き換えず、上に重ねる。かつては childTask だけ background を
+  置き換えており、着手中(淡いオレンジ)の行ではポインタを乗せた間だけ着手中の
+  色が消えていた。親の本体には指定がなく、乗せても変化しなかった。
+*/
+.task-own:hover,
 .child:hover {
-  background: var(--bg);
+  background-image: linear-gradient(var(--hover-shade), var(--hover-shade));
 }
 .child-title {
   flex: 1;
