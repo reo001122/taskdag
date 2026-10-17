@@ -284,7 +284,7 @@ body {
   着手中。枠線には触れない —— 枠線を奪うと、着手した Task の依存が
   外れているかどうかが画面から読めなくなる。ヘッダの色で示す。
 */
-.task.is-active .task-head,
+.task.is-active .task-own,
 .child.is-active {
   background: var(--active-soft);
 }
