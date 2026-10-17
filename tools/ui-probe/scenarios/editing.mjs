@@ -1178,12 +1178,14 @@ export default {
       取っ手で確かめている。ここは同じ行にあるボタンの上で確かめる ——
       ボタンの上だけ例外的に印が動かない、という抜けを塞ぐ。
 
-      フォーカスは別に見る。state-toggle は button であり、クリックすると
-      ブラウザの既定でボタン自身にフォーカスが着く(preventDefault していない)。
-      pressRow が先にフォーカスを行へ移していても、その既定に後から上書き
-      される ——「押した行にフォーカスも移る」(requirements.md FR-1)が
-      state-toggle の上だけ効いていない。これは実際に確かめて分かったこと
-      であり、直さずに報告する(印そのものは正しく動く。上の check で見ている)。
+      フォーカスも同じ行が受けること(FR-1)を併せて見る。かつてはここだけ
+      効いていなかった —— state-toggle は button なので、押すとブラウザの
+      既定でボタン自身にフォーカスが着き、pressRow が先に行へ移していても
+      後から上書きされていた(#11)。見た目には出ないが、そこから先のキー操作の
+      起点になる値である。
+
+      既定を止めただけで onClick は残してあるので、**キーボードから起動できる
+      ことも見る** —— onPress に寄せるとその経路が消える。
     */
     await key({ key: 'Escape', code: 27 });
     await wait(200);
@@ -1200,6 +1202,25 @@ export default {
       (await markOn()).行 === '状態い',
       await markOn(),
     );
+    /*
+      **行そのものがフォーカスを持っていることを見る。** 内側にあるかどうかでは
+      足りない —— 四角は行の子なので、ボタンにフォーカスが着いていても
+      closest('.child') は行を返す。それで通してしまい、壊しても落ちない検査に
+      なっていた(実際に踏んだ)。
+    */
+    const focusAfterToggle = await evaluate(`
+      const a = document.activeElement;
+      return {
+        行そのもの: a?.classList?.contains('child') ?? false,
+        行の名前: a?.closest('.child')?.querySelector('.child-title')?.textContent ?? null,
+        要素: a?.className ?? null,
+      };
+    `);
+    check(
+      'R-1c 状態の四角を押すと、フォーカスもその行へ移る',
+      focusAfterToggle.行そのもの && focusAfterToggle.行の名前 === '状態い',
+      focusAfterToggle,
+    );
 
     await clickElement(
       `${taskNodeExpr('状態四角確認')}?.querySelector('.task-head .state-toggle')`,
@@ -1208,6 +1229,25 @@ export default {
       'R-1d 親の状態の四角を押すと、印は親へ戻る',
       (await markOn()).親 === true,
       await markOn(),
+    );
+
+    /*
+      キーボードから起動できること。押してもフォーカスを渡さない作りにしたので、
+      focus して Space で進む経路が残っているかを別に確かめる。
+    */
+    const beforeKeyToggle = await evaluate(
+      `return ${childRowExpr('状態あ')}?.querySelector('.state-toggle')?.className ?? null;`,
+    );
+    await evaluate(`${childRowExpr('状態あ')}?.querySelector('.state-toggle').focus(); return 1;`);
+    await key({ key: ' ', code: 32, text: ' ' });
+    await wait(400);
+    const afterKeyToggle = await evaluate(
+      `return ${childRowExpr('状態あ')}?.querySelector('.state-toggle')?.className ?? null;`,
+    );
+    check(
+      'R-1e キーボードで四角に移って Space を押すと状態が進む',
+      beforeKeyToggle !== null && afterKeyToggle !== null && beforeKeyToggle !== afterKeyToggle,
+      { beforeKeyToggle, afterKeyToggle },
     );
 
     /*
