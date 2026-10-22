@@ -132,6 +132,7 @@ export function parseCommand(raw: unknown): Result<Command, string> {
       return ok({ type, id: id.value, keepReconnections: keep });
     }
 
+    case 'archiveTask':
     case 'deleteChildTask':
     case 'disconnect':
     case 'deleteProject': {
@@ -272,6 +273,7 @@ export function parseCommand(raw: unknown): Result<Command, string> {
 
     case 'undo':
     case 'redo':
+    case 'archiveCompletedTasks':
       return ok({ type });
 
     default:

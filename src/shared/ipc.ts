@@ -37,6 +37,19 @@ export type TaskSnapshot = {
   childTaskIds: string[];
 };
 
+/** アーカイブした Task の記録(FR-11)。読むだけで、操作の対象にはならない。 */
+export type ArchivedTaskSnapshot = {
+  /** アーカイブ前の Task の id。一覧の key にだけ使う。 */
+  id: string;
+  title: string;
+  memo: string;
+  childTasks: { title: string; progress: Progress; memo: string }[];
+  /** アーカイブした時刻(エポックミリ秒)。 */
+  archivedAt: number;
+  /** アーカイブの時点で属していた Project の名前。属していなければ null。 */
+  projectName: string | null;
+};
+
 export type GraphSnapshot = {
   tasks: TaskSnapshot[];
   childTasks: ChildTaskSnapshot[];
@@ -51,6 +64,8 @@ export type GraphSnapshot = {
     /** 表示側の配色表の何番目か。 */
     colorIndex: number;
   }[];
+  /** アーカイブの記録(FR-11)。並びは保証しない。新しい順にするのは表示側。 */
+  archived: ArchivedTaskSnapshot[];
   canUndo: boolean;
   canRedo: boolean;
   /** 表示設定。グラフのデータではないため Undo 対象外(FR-6)。 */
@@ -64,6 +79,15 @@ export type DeletePlan = {
   removedEdges: { from: string; to: string }[];
   addedEdges: { from: string; to: string }[];
   removedChildTaskIds: string[];
+};
+
+/** アーカイブ前にユーザーへ提示する変更内容(FR-11)。 */
+export type ArchivePlan = {
+  taskIds: string[];
+  removedEdges: { from: string; to: string }[];
+  addedEdges: { from: string; to: string }[];
+  /** 一緒に移る childTask の数。 */
+  childTaskCount: number;
 };
 
 // --- 書き込み ---------------------------------------------------------------
@@ -84,6 +108,10 @@ export type Command =
        */
       keepReconnections?: { from: string; to: string }[];
     }
+  /** 完了している Task を childTask ごとアーカイブへ移す(FR-11)。時刻は main が付ける。 */
+  | { type: 'archiveTask'; id: string }
+  /** 完了しているトップレベルの Task をまとめてアーカイブへ移す(FR-11)。 */
+  | { type: 'archiveCompletedTasks' }
   | { type: 'createChildTask'; parentId: string; title: string }
   | { type: 'updateChildTaskTitle'; id: string; title: string }
   | { type: 'setChildTaskProgress'; id: string; progress: Progress }
@@ -167,4 +195,5 @@ export const IPC = {
    */
   validTargets: 'graph:validTargets',
   planDelete: 'graph:planDelete',
+  planArchive: 'graph:planArchive',
 } as const;

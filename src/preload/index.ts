@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { Command, CommandResult, DeletePlan, GraphSnapshot } from '../shared/ipc';
+import type { ArchivePlan, Command, CommandResult, DeletePlan, GraphSnapshot } from '../shared/ipc';
 import { IPC } from '../shared/ipc';
 import { type LogLevel, parseLogLevel } from '../shared/log';
 
@@ -17,6 +17,8 @@ const api = {
   send: (command: Command): Promise<CommandResult> => ipcRenderer.invoke(IPC.command, command),
   validTargets: (from: string): Promise<string[]> => ipcRenderer.invoke(IPC.validTargets, from),
   planDelete: (id: string): Promise<DeletePlan | null> => ipcRenderer.invoke(IPC.planDelete, id),
+  planArchive: (ids: string[]): Promise<ArchivePlan | null> =>
+    ipcRenderer.invoke(IPC.planArchive, ids),
 };
 
 contextBridge.exposeInMainWorld('api', api);

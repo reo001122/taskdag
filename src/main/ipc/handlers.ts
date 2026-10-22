@@ -1,6 +1,12 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { IpcMain } from 'electron';
-import type { Command, CommandResult, DeletePlan, GraphSnapshot } from '../../shared/ipc';
+import type {
+  ArchivePlan,
+  Command,
+  CommandResult,
+  DeletePlan,
+  GraphSnapshot,
+} from '../../shared/ipc';
 import { IPC } from '../../shared/ipc';
 import type { Logger } from '../../shared/log';
 import type { AppService } from '../app-service';
@@ -55,6 +61,18 @@ export function buildSnapshot(
       height: p.height,
       colorIndex: p.colorIndex,
     })),
+    archived: graph.archived.map((a) => ({
+      id: a.id,
+      title: a.title,
+      memo: a.memo,
+      childTasks: a.childTasks.map((c) => ({
+        title: c.title,
+        progress: c.progress,
+        memo: c.memo,
+      })),
+      archivedAt: a.archivedAt,
+      projectName: a.projectName,
+    })),
     canUndo: service.query((store) => store.canUndo),
     canRedo: service.query((store) => store.canRedo),
     hideCompleted: getHideCompleted(db),
@@ -71,6 +89,9 @@ export function executeCommand(
   service: AppService,
   db: DatabaseSync,
   command: Command,
+  // アーカイブの時刻。ドメインは時計を持たないので、ここで決めて渡す(FR-11)。
+  // テストで固定できるよう引数にしてある。
+  now: () => number = Date.now,
 ): Result<void, string> {
   switch (command.type) {
     case 'createTask':
@@ -97,6 +118,15 @@ export function executeCommand(
           ),
         ),
       );
+
+    case 'archiveTask': {
+      const archivedAt = now();
+      return run(service.mutate((s) => s.archiveTask(taskId(command.id), archivedAt)));
+    }
+    case 'archiveCompletedTasks': {
+      const archivedAt = now();
+      return run(service.mutate((s) => s.archiveCompletedTasks(archivedAt)));
+    }
 
     case 'createChildTask':
       return run(service.mutate((s) => s.createChildTask(taskId(command.parentId), command.title)));
@@ -276,6 +306,21 @@ export function registerIpc(
       removedEdges: plan.value.removedEdges.map((e) => ({ from: e.from, to: e.to })),
       addedEdges: plan.value.addedEdges.map((e) => ({ from: e.from, to: e.to })),
       removedChildTaskIds: [...plan.value.removedChildTaskIds],
+    };
+  });
+
+  // アーカイブ前に変更内容を提示するための計画(FR-11)
+  ipcMain.handle(IPC.planArchive, (_event, ids: unknown): ArchivePlan | null => {
+    if (!Array.isArray(ids) || !ids.every((id) => typeof id === 'string' && id.length > 0)) {
+      return null;
+    }
+    const plan = service.query((s) => s.planArchive(ids.map(taskId)));
+    if (!plan.ok) return null;
+    return {
+      taskIds: [...plan.value.taskIds],
+      removedEdges: plan.value.removedEdges.map((e) => ({ from: e.from, to: e.to })),
+      addedEdges: plan.value.addedEdges.map((e) => ({ from: e.from, to: e.to })),
+      childTaskCount: plan.value.childTaskCount,
     };
   });
 }
