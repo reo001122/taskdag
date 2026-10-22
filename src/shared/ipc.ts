@@ -108,10 +108,17 @@ export type Command =
        */
       keepReconnections?: { from: string; to: string }[];
     }
-  /** 完了している Task を childTask ごとアーカイブへ移す(FR-11)。時刻は main が付ける。 */
-  | { type: 'archiveTask'; id: string }
-  /** 完了しているトップレベルの Task をまとめてアーカイブへ移す(FR-11)。 */
-  | { type: 'archiveCompletedTasks' }
+  /**
+   * 完了している Task を childTask ごとアーカイブへ移す(FR-11)。時刻は main が付ける。
+   * keepReconnections は deleteTask と同じ(確認で外せる。省略すると全て繋ぎ直す)。
+   */
+  | { type: 'archiveTask'; id: string; keepReconnections?: { from: string; to: string }[] }
+  /**
+   * 完了しているトップレベルの Task をまとめてアーカイブへ移す(FR-11)。
+   * keepReconnections は「最終的に残す繋ぎ直し」の集合で、確認に出した ArchivePlan の
+   * addedEdges から外したものを引いた残り。省略すると全て繋ぎ直す。
+   */
+  | { type: 'archiveCompletedTasks'; keepReconnections?: { from: string; to: string }[] }
   | { type: 'createChildTask'; parentId: string; title: string }
   | { type: 'updateChildTaskTitle'; id: string; title: string }
   | { type: 'setChildTaskProgress'; id: string; progress: Progress }

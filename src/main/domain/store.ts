@@ -261,13 +261,20 @@ export class TaskGraphStore {
    * 完了している Task を、childTask ごとアーカイブへ移す(FR-11)。
    * archivedAt はドメインが時計を持たないので呼び出し側が渡す。
    */
-  archiveTask(id: TaskId, archivedAt: number): Result<void, DomainError> {
-    return this.#run((g) => archiveTasks(g, [id], this.#newId, archivedAt));
+  archiveTask(
+    id: TaskId,
+    archivedAt: number,
+    keep?: readonly { readonly from: TaskId; readonly to: TaskId }[],
+  ): Result<void, DomainError> {
+    return this.#run((g) => archiveTasks(g, [id], this.#newId, archivedAt, keep));
   }
 
   /** 完了しているトップレベルの Task をまとめて移す。1回の Undo で戻る(FR-11)。 */
-  archiveCompletedTasks(archivedAt: number): Result<void, DomainError> {
-    return this.#run((g) => archiveCompletedTasks(g, this.#newId, archivedAt));
+  archiveCompletedTasks(
+    archivedAt: number,
+    keep?: readonly { readonly from: TaskId; readonly to: TaskId }[],
+  ): Result<void, DomainError> {
+    return this.#run((g) => archiveCompletedTasks(g, this.#newId, archivedAt, keep));
   }
 
   // --- コマンド: childTask --------------------------------------------------

@@ -33,12 +33,18 @@ export function completedTaskIds(graph: TaskGraph): TaskId[] {
   return [...graph.tasks.values()].filter((t) => t.progress === 'done').map((t) => t.id);
 }
 
-/** 1件を移す。完了していなければ task_not_done。 */
+/** 繋ぎ直しの指定。deleteTask の keep と同じ形(FR-1)。 */
+export type KeepReconnections = readonly { readonly from: TaskId; readonly to: TaskId }[];
+
+const pairKey = (e: { from: TaskId; to: TaskId }): string => `${e.from}\u0000${e.to}`;
+
+/** 1件を移す。完了していなければ task_not_done。keep は deleteTask へそのまま渡す。 */
 function archiveOne(
   graph: TaskGraph,
   id: TaskId,
   newId: IdGenerator,
   archivedAt: number,
+  keep?: KeepReconnections,
 ): Result<TaskGraph, DomainError> {
   const task = graph.tasks.get(id);
   if (!task) return err(taskNotFound(id));
@@ -64,7 +70,7 @@ function archiveOne(
   };
 
   // FR-3: 依存の扱いは削除と同じ
-  const removed = deleteTask(graph, id, newId);
+  const removed = deleteTask(graph, id, newId, keep);
   if (!removed.ok) return removed;
   return ok({ ...removed.value, archived: [...removed.value.archived, record] });
 }
@@ -74,20 +80,39 @@ function archiveOne(
  *
  * 1件でも完了していなければ全体を失敗にする(部分的に移さない)。まとめて移した結果は
  * 「1件ずつ同じ規則を順に適用した結果」と一致する(FR-11)—— 実際にそうして作っている。
+ *
+ * keep は「最終的に残す繋ぎ直し」の集合(FR-1 の確認で外せる)。省略すると全て繋ぐ。
+ * 1件のときは deleteTask の keep にそのまま渡す。複数のときは、順に適用し終えたあとで、
+ * 新しくできた依存のうち keep に無いものを除く。途中で繋ぎ直されてあとで消える依存は
+ * 確認に出ない(planArchive は前後の差を見る)ので、途中の段では絞れない —— 絞ると、
+ * 確認に出た最終形と、途中を絞った結果がずれうる。絞り込みにしかならない点は
+ * deleteTask と同じで、keep に新しくできた依存以外を書いても無視する(循環しないことの
+ * 保証を崩さない、design/domain-design.md §3.2)。
  */
 export function archiveTasks(
   graph: TaskGraph,
   ids: readonly TaskId[],
   newId: IdGenerator,
   archivedAt: number,
+  keep?: KeepReconnections,
 ): Result<TaskGraph, DomainError> {
   let current = graph;
   for (const id of ids) {
-    const next = archiveOne(current, id, newId, archivedAt);
+    const next = archiveOne(current, id, newId, archivedAt, ids.length === 1 ? keep : undefined);
     if (!next.ok) return next;
     current = next.value;
   }
-  return ok(current);
+  if (keep === undefined || ids.length <= 1) return ok(current);
+
+  const before = new Set([...graph.edges.values()].map(pairKey));
+  const kept = new Set(keep.map(pairKey));
+  const edges = new Map(current.edges);
+  for (const [edgeKey, e] of current.edges) {
+    // 元からあった依存と、keep に挙がった依存は残す
+    if (before.has(pairKey(e)) || kept.has(pairKey(e))) continue;
+    edges.delete(edgeKey);
+  }
+  return ok({ ...current, edges });
 }
 
 /** 完了しているトップレベルの Task をすべて移す。無ければ何も変えない。 */
@@ -95,8 +120,9 @@ export function archiveCompletedTasks(
   graph: TaskGraph,
   newId: IdGenerator,
   archivedAt: number,
+  keep?: KeepReconnections,
 ): Result<TaskGraph, DomainError> {
-  return archiveTasks(graph, completedTaskIds(graph), newId, archivedAt);
+  return archiveTasks(graph, completedTaskIds(graph), newId, archivedAt, keep);
 }
 
 /**
@@ -119,7 +145,7 @@ export function planArchive(
   const after = archiveTasks(graph, ids, trialIds, 0);
   if (!after.ok) return after;
 
-  const pair = (e: { from: TaskId; to: TaskId }) => `${e.from}\u0000${e.to}`;
+  const pair = pairKey;
   const before = new Set([...graph.edges.values()].map(pair));
   const kept = new Set([...after.value.edges.values()].map(pair));
 

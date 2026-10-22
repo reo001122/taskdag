@@ -28,6 +28,60 @@ describe('アーカイブのコマンド(FR-11)', () => {
     expect(parseCommand({ type: 'archiveCompletedTasks' }).ok).toBe(true);
   });
 
+  it('FR-1, FR-11: keepReconnections は3つのコマンドで同じ検証を通る(省略と空配列は別)', () => {
+    const keep = [{ from: 'a', to: 'b' }];
+    for (const base of [
+      { type: 'archiveTask', id: 'x' },
+      { type: 'archiveCompletedTasks' },
+      { type: 'deleteTask', id: 'x' },
+    ]) {
+      expect(parseCommand({ ...base, keepReconnections: keep })).toEqual({
+        ok: true,
+        value: { ...base, keepReconnections: keep },
+      });
+      expect(parseCommand({ ...base, keepReconnections: [] })).toEqual({
+        ok: true,
+        value: { ...base, keepReconnections: [] },
+      });
+      expect(parseCommand(base)).toEqual({ ok: true, value: base });
+      expect(parseCommand({ ...base, keepReconnections: 'a' }).ok).toBe(false);
+      expect(parseCommand({ ...base, keepReconnections: [null] }).ok).toBe(false);
+      expect(parseCommand({ ...base, keepReconnections: [{ from: 'a' }] }).ok).toBe(false);
+      expect(parseCommand({ ...base, keepReconnections: [{ from: '', to: 'b' }] }).ok).toBe(false);
+    }
+  });
+
+  it('FR-1, FR-11: 繋ぎ直しを外してアーカイブすると、その依存は作られない', () => {
+    const chain = (): string[] => {
+      const ids: string[] = [];
+      for (const title of ['A', 'B', 'C']) {
+        send({ type: 'createTask', title, position: { x: 0, y: 0 } });
+        ids.push([...service.graph.tasks.keys()].at(-1) as string);
+      }
+      send({ type: 'connect', from: ids[0], to: ids[1] });
+      send({ type: 'connect', from: ids[1], to: ids[2] });
+      send({ type: 'setTaskProgress', id: ids[1], progress: 'done' });
+      return ids;
+    };
+    const edges = () => buildSnapshot(service, db, 'x').edges.map((e) => `${e.from}->${e.to}`);
+
+    const ids = chain();
+    expect(send({ type: 'archiveTask', id: ids[1] as string, keepReconnections: [] }).ok).toBe(
+      true,
+    );
+    expect(edges()).toEqual([]);
+
+    send({ type: 'undo' });
+    expect(edges()).toHaveLength(2);
+    expect(send({ type: 'archiveTask', id: ids[1] as string }).ok).toBe(true);
+    expect(edges()).toEqual([`${ids[0]}->${ids[2]}`]);
+
+    // まとめて
+    send({ type: 'undo' });
+    expect(send({ type: 'archiveCompletedTasks', keepReconnections: [] }).ok).toBe(true);
+    expect(edges()).toEqual([]);
+  });
+
   it('FR-11: 完了した Task を移すと、スナップショットに記録が出て、時刻は main が付ける', () => {
     send({ type: 'createTask', title: 'T', position: { x: 0, y: 0 } });
     const id = [...service.graph.tasks.keys()][0] as string;

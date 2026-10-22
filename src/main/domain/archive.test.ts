@@ -220,6 +220,204 @@ describe('archiveCompletedTasks — まとめて(FR-11)', () => {
   });
 });
 
+describe('archiveTasks — 繋ぎ直しを外す(FR-1, FR-11)', () => {
+  const pairOf = (e: { from: string; to: string }) => `${e.from}->${e.to}`;
+  const keepOf = (...pairs: [string, string][]) =>
+    pairs.map(([from, to]) => ({ from: T(from), to: T(to) }));
+
+  it('FR-1, FR-11: 1件では、keep に挙げなかった繋ぎ直しを作らない(deleteTask と同じ結果)', () => {
+    const graph = buildGraph({
+      tasks: { A: 'not_done', B: 'done', C: 'not_done' },
+      edges: [
+        ['A', 'B'],
+        ['B', 'C'],
+      ],
+    });
+    const result = archiveTasks(graph, [T('B')], sequentialIds(), AT, []);
+    if (!result.ok) throw new Error('expected success');
+    expect(edgePairs(result.value)).toEqual([]);
+    // 記録は外しても残る
+    expect(result.value.archived.map((a) => a.id)).toEqual([T('B')]);
+
+    const deleted = deleteTask(graph, T('B'), sequentialIds(), []);
+    if (!deleted.ok) throw new Error('expected success');
+    expect(edgePairs(result.value)).toEqual(edgePairs(deleted.value));
+  });
+
+  it('FR-1, FR-11: 1件で keep に挙げたものは繋ぎ直す。省略すると全て繋ぐ', () => {
+    const graph = buildGraph({
+      tasks: { A: 'not_done', B: 'done', C: 'not_done', D: 'not_done' },
+      edges: [
+        ['A', 'B'],
+        ['B', 'C'],
+        ['B', 'D'],
+      ],
+    });
+    expect(edgePairs(archived(graph, ['B']))).toEqual(['A->C', 'A->D']);
+    const one = archiveTasks(graph, [T('B')], sequentialIds(), AT, keepOf(['A', 'C']));
+    if (!one.ok) throw new Error('expected success');
+    expect(edgePairs(one.value)).toEqual(['A->C']);
+  });
+
+  it('FR-1, FR-11: 計画に無い組を keep に書いても、依存は作られない', () => {
+    const graph = buildGraph({
+      tasks: { A: 'not_done', B: 'done', C: 'not_done' },
+      edges: [
+        ['A', 'B'],
+        ['B', 'C'],
+      ],
+    });
+    const single = archiveTasks(graph, [T('B')], sequentialIds(), AT, keepOf(['C', 'A']));
+    if (!single.ok) throw new Error('expected success');
+    expect(edgePairs(single.value)).toEqual([]);
+  });
+
+  describe('まとめて', () => {
+    // 2本の鎖。まとめて移すと A→C と D→F の2本が繋ぎ直される
+    const twoChains = () =>
+      buildGraph({
+        tasks: { A: {}, B: 'done', C: {}, D: {}, E: 'done', F: {} },
+        edges: [
+          ['A', 'B'],
+          ['B', 'C'],
+          ['D', 'E'],
+          ['E', 'F'],
+        ],
+      });
+    // 鎖の途中まで移すと、途中で繋ぎ直された依存があとで消える: A→B→C→D の B と C
+    const relay = () =>
+      buildGraph({
+        tasks: { A: {}, B: 'done', C: 'done', D: {} },
+        edges: [
+          ['A', 'B'],
+          ['B', 'C'],
+          ['C', 'D'],
+        ],
+      });
+
+    it('FR-1, FR-11: 確認に出た繋ぎ直しのうち、外したものだけが作られない', () => {
+      const ids = [T('B'), T('E')];
+      const plan = planArchive(twoChains(), ids);
+      if (!plan.ok) throw new Error('expected success');
+      expect(plan.value.addedEdges.map(pairOf).sort()).toEqual(['A->C', 'D->F']);
+
+      const all = archiveTasks(twoChains(), ids, sequentialIds(), AT, plan.value.addedEdges);
+      if (!all.ok) throw new Error('expected success');
+      expect(edgePairs(all.value)).toEqual(['A->C', 'D->F']);
+
+      const half = archiveTasks(twoChains(), ids, sequentialIds(), AT, keepOf(['A', 'C']));
+      if (!half.ok) throw new Error('expected success');
+      expect(edgePairs(half.value)).toEqual(['A->C']);
+
+      const none = archiveTasks(twoChains(), ids, sequentialIds(), AT, []);
+      if (!none.ok) throw new Error('expected success');
+      expect(edgePairs(none.value)).toEqual([]);
+      // 依存を外しても、移す Task と記録は変わらない
+      expect(none.value.archived.map((a) => a.id)).toEqual([T('B'), T('E')]);
+      expect([...none.value.tasks.keys()].sort()).toEqual([T('A'), T('C'), T('D'), T('F')]);
+    });
+
+    it('FR-1, FR-11: keep を全部挙げた結果は、省略した結果(1件ずつ順に適用)と一致する', () => {
+      const ids = [T('B'), T('C')];
+      const plan = planArchive(relay(), ids);
+      if (!plan.ok) throw new Error('expected success');
+
+      const withAll = archiveTasks(relay(), ids, sequentialIds(), AT, plan.value.addedEdges);
+      const omitted = archiveTasks(relay(), ids, sequentialIds(), AT);
+      if (!withAll.ok || !omitted.ok) throw new Error('expected success');
+      expect(edgePairs(withAll.value)).toEqual(edgePairs(omitted.value));
+      expect(withAll.value.archived).toEqual(omitted.value.archived);
+    });
+
+    it('FR-1, FR-11: 確認に出たもの = 実際にできるもの(外した分を除いて一致する)', () => {
+      // 途中で繋ぎ直されて後で消える A→C は、確認に出ない。最終形の A→D だけが出る
+      const ids = [T('B'), T('C')];
+      const plan = planArchive(relay(), ids);
+      if (!plan.ok) throw new Error('expected success');
+      expect(plan.value.addedEdges.map(pairOf)).toEqual(['A->D']);
+
+      const kept = archiveTasks(relay(), ids, sequentialIds(), AT, plan.value.addedEdges);
+      if (!kept.ok) throw new Error('expected success');
+      expect(edgePairs(kept.value)).toEqual(plan.value.addedEdges.map(pairOf));
+
+      const dropped = archiveTasks(relay(), ids, sequentialIds(), AT, []);
+      if (!dropped.ok) throw new Error('expected success');
+      expect(edgePairs(dropped.value)).toEqual([]);
+    });
+
+    it('FR-1, FR-11: 途中でできて消える依存を keep に書いても、作られない', () => {
+      const result = archiveTasks(
+        relay(),
+        [T('B'), T('C')],
+        sequentialIds(),
+        AT,
+        keepOf(['A', 'C']),
+      );
+      if (!result.ok) throw new Error('expected success');
+      expect(edgePairs(result.value)).toEqual([]);
+    });
+
+    it('FR-1, FR-11: 元からあった依存は、keep に無くても消えない', () => {
+      const graph = buildGraph({
+        tasks: { A: {}, B: 'done', C: {}, D: {} },
+        edges: [
+          ['A', 'B'],
+          ['B', 'C'],
+          ['A', 'D'],
+        ],
+      });
+      const result = archiveTasks(graph, [T('B')], sequentialIds(), AT, []);
+      if (!result.ok) throw new Error('expected success');
+      expect(edgePairs(result.value)).toEqual(['A->D']);
+    });
+
+    it('FR-1, FR-11: 完了をまとめて移すときも同じ。1件ずつ外した結果と最終形が一致する', () => {
+      const graph = buildGraph({
+        tasks: { A: {}, B: 'done', C: 'done', D: {}, E: {}, F: 'done', G: {} },
+        edges: [
+          ['A', 'B'],
+          ['B', 'C'],
+          ['C', 'D'],
+          ['E', 'F'],
+          ['F', 'G'],
+        ],
+      });
+      const plan = planArchive(graph, [T('B'), T('C'), T('F')]);
+      if (!plan.ok) throw new Error('expected success');
+      expect(plan.value.addedEdges.map(pairOf).sort()).toEqual(['A->D', 'E->G']);
+
+      const result = archiveCompletedTasks(graph, sequentialIds(), AT, keepOf(['E', 'G']));
+      if (!result.ok) throw new Error('expected success');
+      expect(edgePairs(result.value)).toEqual(['E->G']);
+    });
+  });
+
+  it('FR-1, FR-11: Store の archiveTask / archiveCompletedTasks も keep を受ける', () => {
+    const make = () =>
+      new TaskGraphStore(
+        buildGraph({
+          tasks: { A: {}, B: 'done', C: {} },
+          edges: [
+            ['A', 'B'],
+            ['B', 'C'],
+          ],
+        }),
+        sequentialIds(),
+      );
+    const one = make();
+    expect(one.archiveTask(T('B'), AT, []).ok).toBe(true);
+    expect(edgePairs(one.graph)).toEqual([]);
+
+    const bulk = make();
+    expect(bulk.archiveCompletedTasks(AT, []).ok).toBe(true);
+    expect(edgePairs(bulk.graph)).toEqual([]);
+
+    const full = make();
+    expect(full.archiveTask(T('B'), AT).ok).toBe(true);
+    expect(edgePairs(full.graph)).toEqual(['A->C']);
+  });
+});
+
 describe('planArchive — 実行前の提示(FR-11)', () => {
   it('FR-11: 消える依存・繋ぎ直される依存・移る childTask の数を返す', () => {
     const graph = buildGraph({

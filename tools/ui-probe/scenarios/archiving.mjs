@@ -342,6 +342,47 @@ export default {
     await press('キャンバスに戻る');
     await waitFor('キャンバスへ戻る', `return !document.querySelector('.archive-view')`);
 
+    // --- 繋ぎ直しは1本ずつ外せる。外したものは作られない(FR-1, FR-11) -------
+    await addTask('P');
+    await addTask('Q');
+    await addTask('R');
+    await fitView();
+    await connect('P', 'Q');
+    await connect('Q', 'R');
+    await waitFor(
+      '矢印が2本',
+      `return document.querySelectorAll('.react-flow__edge').length === 2`,
+    );
+    await finish('Q');
+    await pressArchiveOf('Q');
+    await waitFor('確認が開く', `return !!document.querySelector('dialog[open]')`);
+    const boxes = () =>
+      evaluate(
+        `return [...document.querySelectorAll('dialog[open] .edge-list.is-added .edge-check')].map((c) => c.checked)`,
+      );
+    check(
+      'G-6c 繋ぎ直しはチェックボックスで、はじめは全て入っている',
+      (await boxes()).join() === 'true',
+    );
+    const box = await evaluate(`
+      const r = document.querySelector('dialog[open] .edge-list.is-added .edge-box').getBoundingClientRect();
+      return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+    `);
+    await mouse('mousePressed', box.x, box.y, { buttons: 1 });
+    await mouse('mouseReleased', box.x, box.y, { buttons: 0 });
+    await waitFor(
+      'チェックが外れる',
+      `return !document.querySelector('dialog[open] .edge-check')?.checked`,
+    );
+    await confirmDialog();
+    await waitFor('Q が消える', `return !${find('Q')}`);
+    await wait(300);
+    check(
+      'G-6d チェックを外した繋ぎ直し(P → R)は作られない',
+      (await evaluate(`return document.querySelectorAll('.react-flow__edge').length`)) === 0,
+      await evaluate(`return document.querySelectorAll('.react-flow__edge').length`),
+    );
+
     // --- A → B(完了) → C。B を移しても C は Blocked のまま(FR-3) --------
     await addTask('A');
     await addTask('B');
@@ -379,6 +420,6 @@ export default {
     const restored = await next.evaluate(
       `return [...document.querySelectorAll('.archive-title')].map((e) => e.textContent)`,
     );
-    check('G-8 再起動しても記録が残る', restored.join() === 'B,Y,X', restored);
+    check('G-8 再起動しても記録が残る', restored.join() === 'B,Q,Y,X', restored);
   },
 };

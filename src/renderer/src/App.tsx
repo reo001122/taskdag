@@ -1330,11 +1330,15 @@ export function App(): React.JSX.Element {
           snapshot={snapshot}
           bulk={archivePlan.bulk}
           onCancel={() => setArchivePlan(null)}
-          onConfirm={() => {
+          onConfirm={(keepReconnections) => {
             send(
               archivePlan.bulk
-                ? { type: 'archiveCompletedTasks' }
-                : { type: 'archiveTask', id: archivePlan.plan.taskIds[0] as string },
+                ? { type: 'archiveCompletedTasks', keepReconnections }
+                : {
+                    type: 'archiveTask',
+                    id: archivePlan.plan.taskIds[0] as string,
+                    keepReconnections,
+                  },
             );
             setArchivePlan(null);
           }}

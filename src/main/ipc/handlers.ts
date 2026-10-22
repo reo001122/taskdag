@@ -12,7 +12,7 @@ import type { Logger } from '../../shared/log';
 import type { AppService } from '../app-service';
 import { getHideCompleted, setHideCompleted } from '../db/settings';
 import { type DomainError, describeDomainError } from '../domain/errors';
-import { childTaskId, edgeId, projectId, taskId } from '../domain/model';
+import { childTaskId, edgeId, projectId, type TaskId, taskId } from '../domain/model';
 import { err, ok, type Result } from '../domain/result';
 import { parseCommand } from './validate';
 
@@ -81,6 +81,13 @@ export function buildSnapshot(
 }
 
 /** ドメインの Result を、UI と AI の双方が読める文字列エラーへ変換する。 */
+/** keepReconnections を ID の型に直す。省略(全て繋ぎ直す)と空配列(1本も繋がない)は区別する。 */
+function keepOf(
+  keep: { from: string; to: string }[] | undefined,
+): { from: TaskId; to: TaskId }[] | undefined {
+  return keep?.map((edge) => ({ from: taskId(edge.from), to: taskId(edge.to) }));
+}
+
 function run(result: Result<void, DomainError>): Result<void, string> {
   return result.ok ? ok(undefined) : err(describeDomainError(result.error));
 }
@@ -108,24 +115,24 @@ export function executeCommand(
       return run(service.mutate((s) => s.setTaskCollapsed(taskId(command.id), command.collapsed)));
     case 'deleteTask':
       return run(
-        service.mutate((s) =>
-          s.deleteTask(
-            taskId(command.id),
-            command.keepReconnections?.map((edge) => ({
-              from: taskId(edge.from),
-              to: taskId(edge.to),
-            })),
-          ),
-        ),
+        service.mutate((s) => s.deleteTask(taskId(command.id), keepOf(command.keepReconnections))),
       );
 
     case 'archiveTask': {
       const archivedAt = now();
-      return run(service.mutate((s) => s.archiveTask(taskId(command.id), archivedAt)));
+      return run(
+        service.mutate((s) =>
+          s.archiveTask(taskId(command.id), archivedAt, keepOf(command.keepReconnections)),
+        ),
+      );
     }
     case 'archiveCompletedTasks': {
       const archivedAt = now();
-      return run(service.mutate((s) => s.archiveCompletedTasks(archivedAt)));
+      return run(
+        service.mutate((s) =>
+          s.archiveCompletedTasks(archivedAt, keepOf(command.keepReconnections)),
+        ),
+      );
     }
 
     case 'createChildTask':

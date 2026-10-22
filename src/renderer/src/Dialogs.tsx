@@ -197,8 +197,8 @@ export function DeleteDialog({
  * 削除の確認(DeleteDialog)と見せ方を揃えている。依存の扱いが削除と同じ(FR-3)で、
  * 何がなくなり何が繋ぎ直されるかを同じ形で読めるようにするため。
  *
- * 繋ぎ直しを外す操作は持たない。アーカイブは完了した Task を片付けるもので、
- * 削除のように依存の行き先を選び直す場面を想定していない。
+ * 繋ぎ直しは、削除と同じく1本ずつ外せる(FR-11)。まとめて移すときに出る繋ぎ直しは、
+ * 全体を順に適用した最終形(planArchive)なので、外した分を除いた「残す集合」を返す。
  */
 export function ArchiveDialog({
   plan,
@@ -212,7 +212,7 @@ export function ArchiveDialog({
   /** ツールバーからまとめて移すとき。1件ずつなら対象の名前を見出しに出す。 */
   bulk: boolean;
   onCancel: () => void;
-  onConfirm: () => void;
+  onConfirm: (keepReconnections: { from: string; to: string }[]) => void;
 }): React.JSX.Element {
   const titleOf = (id: string): string => snapshot.tasks.find((t) => t.id === id)?.title ?? id;
   const moving = new Set(plan.taskIds);
@@ -223,6 +223,14 @@ export function ArchiveDialog({
   }, []);
 
   const edgeKey = (edge: { from: string; to: string }): string => `${edge.from}->${edge.to}`;
+  const [dropped, setDropped] = useState<ReadonlySet<string>>(new Set());
+  const toggle = (edge: { from: string; to: string }): void =>
+    setDropped((current) => {
+      const next = new Set(current);
+      if (next.has(edgeKey(edge))) next.delete(edgeKey(edge));
+      else next.add(edgeKey(edge));
+      return next;
+    });
 
   return (
     <dialog className="dialog" ref={ref} onCancel={onCancel} onClose={onCancel}>
@@ -279,13 +287,23 @@ export function ArchiveDialog({
             <h3 className="dialog-label">つなぎ直される依存関係</h3>
             <ul className="edge-list is-added">
               {plan.addedEdges.map((e) => (
-                <li key={edgeKey(e)}>
-                  <span>{titleOf(e.from)}</span>
-                  <span className="arrow">→</span>
-                  <span>{titleOf(e.to)}</span>
+                <li key={edgeKey(e)} className={dropped.has(edgeKey(e)) ? 'is-dropped' : undefined}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      className="edge-check"
+                      checked={!dropped.has(edgeKey(e))}
+                      onChange={() => toggle(e)}
+                    />
+                    <span className="edge-box" aria-hidden="true" />
+                    <span>{titleOf(e.from)}</span>
+                    <span className="arrow">→</span>
+                    <span>{titleOf(e.to)}</span>
+                  </label>
                 </li>
               ))}
             </ul>
+            <p className="dialog-hint">外したものは繋ぎ直されません。</p>
           </section>
         ) : (
           plan.removedEdges.length > 0 && (
@@ -297,7 +315,11 @@ export function ArchiveDialog({
           <button type="button" onClick={onCancel}>
             キャンセル
           </button>
-          <button type="button" className="primary" onClick={onConfirm}>
+          <button
+            type="button"
+            className="primary"
+            onClick={() => onConfirm(plan.addedEdges.filter((e) => !dropped.has(edgeKey(e))))}
+          >
             アーカイブ
           </button>
         </div>

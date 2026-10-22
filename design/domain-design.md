@@ -332,6 +332,14 @@ archiveTasks(graph, ids, newId, archivedAt):
 - アーカイブした Task はグラフにいないので、Ready/Blocked の導出にも、先行としても現れない。
   先行がアーカイブされたあとの後続の状態は、3.2で繋ぎ直された先行で決まる。
 
+- **繋ぎ直しを外す(`keep`)。** 1件なら `deleteTask` の `keep` にそのまま渡す。複数のときは、
+  全てを順に適用し終えたあとで、**新しくできた依存のうち `keep` に無いものを除く**(元から
+  あった依存は触らない)。確認に出る繋ぎ直しは `planArchive` が全体を順に適用した最終形で、
+  途中で繋ぎ直されて後で消えた依存は出ない。段ごとに `keep` で絞ると、確認に出ていない
+  途中の依存を指定できてしまい、最終形が確認とずれうる。最後に絞れば、確認に出たものから
+  外した分を引いたものが、実際にできるものと一致する。絞り込みにしかならない点は
+  `deleteTask` と同じで、新しくできた依存以外を `keep` に書いても無視する。
+
 `planArchive(ids)` は `archiveTasks` を試しに走らせ、前後のエッジを(id でなく from/to の
 組で)比べる。見せた内容と実際に起きることが、同じコードから出るので食い違わない。
 途中で繋ぎ直されて後で消えた依存は、前後の差に現れない。
@@ -410,8 +418,8 @@ type DomainError =
 | `setTaskCollapsed(id, collapsed)` | Task不在 |
 | `moveTask(id, position)` | Task不在 |
 | `deleteTask(id, keep?)` | Task不在。`keep` は繋ぎ直すエッジの指定(FR-1) |
-| `archiveTask(id, archivedAt)` | Task不在 / 完了していない(`task_not_done`)。FR-11 |
-| `archiveCompletedTasks(archivedAt)` | しない。完了した Task が無ければ何もせず、履歴にも積まない。FR-11 |
+| `archiveTask(id, archivedAt, keep?)` | Task不在 / 完了していない(`task_not_done`)。FR-11。`keep` は繋ぎ直すエッジの指定で、`deleteTask` にそのまま渡す(FR-1) |
+| `archiveCompletedTasks(archivedAt, keep?)` | しない。完了した Task が無ければ何もせず、履歴にも積まない。FR-11。`keep` は「最終的に残す繋ぎ直し」の集合(下の 3.6) |
 
 **所属を渡す引数も、所属を付け替える操作も無い。** Project は領域であり、所属は位置から
 導出される(§3.5, D-1)。動かせば変わる。
