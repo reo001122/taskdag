@@ -52,9 +52,17 @@ const HEADINGS: Record<Mode, string> = {
   memo: 'メモの入力中',
 };
 
-/** フォーカスのある要素から、一覧の中身を決める。(.wide はダイアログの入力欄なので対象外) */
+/**
+ * フォーカスのある要素から、一覧の中身を決める。
+ *
+ * 「名前」は Task と childTask の名前だけ。Project 名(枠の中の入力欄)とダイアログの
+ * 入力欄(.wide)は対象外 —— Shift+Enter で childTask を足す、などが効かないので、
+ * Task 名の一覧を出すと嘘になる。
+ */
 function modeOf(el: Element | null): Mode {
-  if (el?.matches('.text-input:not(.wide)')) return 'name';
+  if (el?.matches('.text-input:not(.wide)') && !el.closest('.react-flow__node-projectFrame')) {
+    return 'name';
+  }
   if (el?.matches('.memo-input')) return 'memo';
   return 'canvas';
 }

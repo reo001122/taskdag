@@ -200,7 +200,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { command: 'newTask', keys: [['Mod', 'N']], description: 'Task を足す' },
   { command: 'undo', keys: [['Mod', 'Z']], description: '元に戻す' },
   { command: 'redo', keys: [['Mod', 'Shift', 'Z']], description: 'やり直す' },
-  { command: 'toggleHelp', keys: [['?']], description: 'この一覧をたたむ' },
+  { command: 'toggleHelp', keys: [['?']], description: 'この一覧をたたむ・広げる' },
 ];
 
 export type InputShortcut = {
