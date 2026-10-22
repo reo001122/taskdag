@@ -47,8 +47,6 @@ function keyContextOf(e: KeyboardEvent): KeyContext {
     // 属性セレクタではなく isContentEditable: 継承された編集可能領域も拾う。
     fromEditable:
       from !== null && (from.closest('input, textarea') !== null || from.isContentEditable),
-    fromKeyOwningUi:
-      from?.closest('button, select, [role=combobox], [role=menu], [role=listbox]') != null,
     fromDialog: from?.closest('dialog') != null,
     dialogOpen: document.querySelector('dialog[open]') !== null,
     inputOpen: document.querySelector('.text-input, .memo-input') !== null,

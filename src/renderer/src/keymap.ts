@@ -89,8 +89,6 @@ const NO_REPEAT: ReadonlySet<CommandType> = new Set<CommandType>([
 export type KeyContext = {
   /** input / textarea / contenteditable の中から来たキー */
   fromEditable: boolean;
-  /** button / select / combobox / menu / listbox の中から来たキー(自分でキーを使う部品) */
-  fromKeyOwningUi: boolean;
   fromDialog: boolean;
   dialogOpen: boolean;
   /** Task 名・メモの入力欄が画面のどこかに開いている */
@@ -106,17 +104,13 @@ export type KeyContext = {
  */
 const REFUSED_WHEN: Record<CommandType, (c: KeyContext) => boolean> = {
   // ダイアログが開いていれば全操作を拒否する(矢印の capture 側も同じ)。
-  // 入力欄・ボタンなど、自分でキーを使う場所のキーはその部品のもの。
+  // 入力欄の中のキーは入力欄のもの。ボタンの上の Enter は、ボタンではなく印の付いた行に効く
+  // (かつて「ボタンのもの」としたが、使い手の確認で不要とされた。D-14)。
   // 入力欄が画面に開いている間は、その打鍵は入力欄のものとして扱う(D-13, D-14)。
-  editName: (c) =>
-    c.dialogOpen || c.fromDialog || c.fromEditable || c.fromKeyOwningUi || c.inputOpen,
-  addChild: (c) =>
-    c.dialogOpen || c.fromDialog || c.fromEditable || c.fromKeyOwningUi || c.inputOpen,
-  openMemo: (c) =>
-    c.dialogOpen || c.fromDialog || c.fromEditable || c.fromKeyOwningUi || c.inputOpen,
-  deleteRow: (c) =>
-    c.dialogOpen || c.fromDialog || c.fromEditable || c.fromKeyOwningUi || c.inputOpen,
-  // ボタン上でも Undo は効く(キーを使うのは Enter 系だけ)。
+  editName: (c) => c.dialogOpen || c.fromDialog || c.fromEditable || c.inputOpen,
+  addChild: (c) => c.dialogOpen || c.fromDialog || c.fromEditable || c.inputOpen,
+  openMemo: (c) => c.dialogOpen || c.fromDialog || c.fromEditable || c.inputOpen,
+  deleteRow: (c) => c.dialogOpen || c.fromDialog || c.fromEditable || c.inputOpen,
   undo: (c) => c.dialogOpen || c.fromDialog || c.fromEditable || c.inputOpen,
   redo: (c) => c.dialogOpen || c.fromDialog || c.fromEditable || c.inputOpen,
   // 入力欄が開いていても作れる(確定してから作る。FR-1)。ただし入力欄の中から届いた

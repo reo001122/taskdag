@@ -24,7 +24,6 @@ const ALL: CommandType[] = [
 /** 何も起きていない画面(キャンバスにフォーカスがあり、入力欄もダイアログも無い)。 */
 const quiet: KeyContext = {
   fromEditable: false,
-  fromKeyOwningUi: false,
   fromDialog: false,
   dialogOpen: false,
   inputOpen: false,
@@ -195,16 +194,6 @@ describe('allowed: 実行してよいか', () => {
     const open = { ...quiet, inputOpen: true };
     expect(allowed(of('newTask'), open)).toBe(true);
     expect(allowed(of('moveMark'), open)).toBe(true);
-  });
-
-  it('ボタンの上の Enter 系はボタンのもの。Undo や新規 Task は通す', () => {
-    const onButton = { ...quiet, fromKeyOwningUi: true };
-    for (const type of ['editName', 'addChild', 'openMemo', 'deleteRow'] as const) {
-      expect(allowed(of(type), onButton), type).toBe(false);
-    }
-    for (const type of ['undo', 'redo', 'newTask', 'moveMark'] as const) {
-      expect(allowed(of(type), onButton), type).toBe(true);
-    }
   });
 
   it('矢印は入力欄の中では止めない(文字の移動に使う)', () => {
