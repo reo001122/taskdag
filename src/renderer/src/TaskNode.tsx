@@ -2,7 +2,7 @@ import { Handle, Position as HandlePosition, type NodeProps } from '@xyflow/reac
 import { useContext, useEffect, useRef, useState } from 'react';
 import type { ChildTaskSnapshot, Command, Progress, TaskSnapshot } from '../../shared/ipc';
 import { type DropPoint, startChildDrag } from './child-drag';
-import { handOff } from './keymap';
+import { commandFor, handOff, isImeComposing } from './keymap';
 import { logger } from './log';
 import { type Caret, focusInput, NodeMeasured, useCloseOnOutsidePointerDown } from './node-editing';
 
@@ -282,6 +282,13 @@ function EditableText({
         if (!closingRef.current && document.hasFocus()) inputRef.current?.focus();
       }}
       onKeyDown={(e) => {
+        // 日本語入力の変換中のキーは、何であっても操作として扱わない。Cmd+N の判定より
+        // 前に置く(keymap.ts の isImeComposing)。
+        if (isImeComposing(e.nativeEvent)) {
+          e.stopPropagation();
+          return;
+        }
+
         /*
           Cmd+N だけは通す(FR-1)。
 
@@ -293,7 +300,7 @@ function EditableText({
           かつては「打っている間は効かない」にしていたが、ボタンでは作れて
           キーでは作れない、という食い違いが残っていた。
         */
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
+        if (commandFor(e.nativeEvent)?.type === 'newTask') {
           finishRef.current(false);
           handOff(e.nativeEvent);
           return;
@@ -309,10 +316,8 @@ function EditableText({
         */
         e.stopPropagation();
 
-        // 日本語入力の変換確定の Enter を、確定操作と取り違えない。
-        // IME 変換中の Enter は「変換を決める」ためのものであって、
-        // 入力を終える意思表示ではない。
-        if (e.nativeEvent.isComposing) return;
+        // (IME 変換中の Enter は「変換を決める」ためのもので、入力を終える意思表示では
+        // ない。上で除いてある。)
 
         /*
           Enter の3つ。確定だけ / 確定して childTask へ / 確定してメモへ。
@@ -431,8 +436,14 @@ function Memo({
       onMouseDown={(e) => e.stopPropagation()}
       onBlur={finish}
       onKeyDown={(e) => {
+        // IME 変換中のキーは操作として扱わない。Cmd+N の判定より前に置く(名前の欄と同じ)。
+        if (isImeComposing(e.nativeEvent)) {
+          e.stopPropagation();
+          return;
+        }
+
         // Cmd+N は通す。ここで確定させ、作成はキャンバス側に任せる(名前の欄と同じ)。
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
+        if (commandFor(e.nativeEvent)?.type === 'newTask') {
           finish();
           handOff(e.nativeEvent);
           return;
@@ -441,9 +452,6 @@ function Memo({
         // キャンバスのショートカットへ渡さない。capture 側で止めると
         // このハンドラ自体が呼ばれなくなる(上と同じ理由)。
         e.stopPropagation();
-
-        // IME 変換中の Enter は「変換を決める」ためのもの。書き終える合図ではない。
-        if (e.nativeEvent.isComposing) return;
 
         /*
           Enter は確定、Shift+Enter は改行。

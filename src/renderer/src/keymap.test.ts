@@ -81,6 +81,87 @@ describe('commandFor: キーの解釈', () => {
   });
 });
 
+describe('commandFor: 余分な修飾キーを別の操作と取り違えない', () => {
+  it('Alt や余分な Shift の付いた Enter は、名前の編集・追加・メモのどれでもない', () => {
+    expect(commandFor(key('Enter', { altKey: true }))).toBeNull();
+    expect(commandFor(key('Enter', { shiftKey: true, altKey: true }))).toBeNull();
+    expect(commandFor(key('Enter', { shiftKey: true, ctrlKey: true }))).toBeNull();
+    expect(commandFor(key('Enter', { ctrlKey: true, altKey: true }))).toBeNull();
+  });
+
+  it('Delete は修飾キーが付いていれば削除にならない', () => {
+    for (const mods of [
+      { shiftKey: true },
+      { metaKey: true },
+      { ctrlKey: true },
+      { altKey: true },
+    ]) {
+      expect(commandFor(key('Backspace', mods)), JSON.stringify(mods)).toBeNull();
+    }
+  });
+
+  it('Undo / Redo / 新規 Task は Alt が付いていれば別のキー', () => {
+    expect(commandFor(key('z', { metaKey: true, altKey: true }))).toBeNull();
+    expect(commandFor(key('z', { metaKey: true, shiftKey: true, altKey: true }))).toBeNull();
+    expect(commandFor(key('n', { metaKey: true, altKey: true }))).toBeNull();
+  });
+
+  it('Cmd+Shift+N は新規 Task ではない', () => {
+    expect(commandFor(key('n', { metaKey: true, shiftKey: true }))).toBeNull();
+  });
+
+  it('印の移動は Shift だけ。Cmd / Ctrl / Alt が付けば移動にならない', () => {
+    for (const mods of [{ metaKey: true }, { ctrlKey: true }, { altKey: true }]) {
+      const c = commandFor(key('ArrowDown', { shiftKey: true, ...mods }));
+      expect(c?.type, JSON.stringify(mods)).not.toBe('moveMark');
+    }
+  });
+});
+
+describe('commandFor: IME とキーリピート', () => {
+  it('IME の変換中(isComposing、または keyCode 229)は、どのキーも null', () => {
+    const keys: KeyInput[] = [
+      key('Enter'),
+      key('Enter', { shiftKey: true }),
+      key('Enter', { metaKey: true }),
+      key('Backspace'),
+      key('z', { metaKey: true }),
+      key('n', { metaKey: true }),
+      key('ArrowDown', { shiftKey: true }),
+      key('ArrowLeft'),
+    ];
+    for (const k of keys) {
+      expect(commandFor({ ...k, isComposing: true }), `${k.key} isComposing`).toBeNull();
+      expect(commandFor({ ...k, keyCode: 229 }), `${k.key} 229`).toBeNull();
+    }
+  });
+
+  it('リピートでは、Task を増やす・行を消す・編集を開く操作は null', () => {
+    for (const k of [
+      key('n', { metaKey: true }),
+      key('Delete'),
+      key('Backspace'),
+      key('Enter'),
+      key('Enter', { shiftKey: true }),
+      key('Enter', { ctrlKey: true }),
+    ]) {
+      expect(commandFor({ ...k, repeat: true }), k.key).toBeNull();
+      expect(commandFor({ ...k, repeat: false }), `${k.key} (単発)`).not.toBeNull();
+    }
+  });
+
+  it('リピートでも、印の移動・Undo・Redo・矢印の抑止は通る', () => {
+    expect(commandFor({ ...key('ArrowDown', { shiftKey: true }), repeat: true })?.type).toBe(
+      'moveMark',
+    );
+    expect(commandFor({ ...key('z', { metaKey: true }), repeat: true })?.type).toBe('undo');
+    expect(commandFor({ ...key('z', { metaKey: true, shiftKey: true }), repeat: true })?.type).toBe(
+      'redo',
+    );
+    expect(commandFor({ ...key('ArrowLeft'), repeat: true })?.type).toBe('blockArrow');
+  });
+});
+
 describe('allowed: 実行してよいか', () => {
   it('ダイアログが開いていれば、すべての操作を拒否する(矢印の capture 側も)', () => {
     const open = { ...quiet, dialogOpen: true };

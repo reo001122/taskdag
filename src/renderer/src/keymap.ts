@@ -35,39 +35,55 @@ export type KeyCommand =
 
 export type CommandType = KeyCommand['type'];
 
+/**
+ * IME の変換中か。変換確定の Enter や、変換中に打たれたキーを操作と取り違えない。
+ *
+ * isComposing だけでは足りない。Chromium は変換を確定した keydown で isComposing を
+ * すでに false にして、keyCode だけを 229 のまま届けることがある。
+ * 入力欄の keydown も同じ関数で判定する(Cmd+N の判定より前に置く)。
+ */
+export function isImeComposing(e: { isComposing?: boolean; keyCode?: number }): boolean {
+  return e.isComposing === true || e.keyCode === 229;
+}
+
 /** 解釈する。対応する操作が無ければ null。 */
 export function commandFor(e: KeyInput): KeyCommand | null {
+  if (isImeComposing(e)) return null;
+
+  // 修飾キーは完全一致。余分な Shift や Alt が付いたものを、別の操作と取り違えない。
   const mod = e.metaKey || e.ctrlKey;
-
-  if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
-    return { type: 'editName' };
-  }
-  if (e.key === 'Enter' && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
-    return { type: 'addChild' };
-  }
-  if (
-    (e.key === 'Delete' || e.key === 'Backspace') &&
-    !e.metaKey &&
-    !e.ctrlKey &&
-    !e.altKey &&
-    !e.shiftKey
-  ) {
-    return { type: 'deleteRow' };
-  }
-  if (e.key === 'Enter' && mod && !e.shiftKey && !e.altKey) {
-    return { type: 'openMemo' };
-  }
-  if (e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
-    return { type: 'moveMark', delta: e.key === 'ArrowDown' ? 1 : -1 };
-  }
-  if (e.key.startsWith('Arrow')) return { type: 'blockArrow' };
-
-  if (!mod) return null;
+  const bare = !mod && !e.shiftKey && !e.altKey;
   const key = e.key.toLowerCase();
-  if (key === 'z') return { type: e.shiftKey ? 'redo' : 'undo' };
-  if (key === 'n') return { type: 'newTask' };
-  return null;
+
+  // キーリピートで繰り返してはいけないもの: 押しっぱなしで Task や行が量産・消費される。
+  // 印の移動と Undo / Redo は、押し続けて連続して動かせてよい。
+  const command = ((): KeyCommand | null => {
+    if (e.key === 'Enter' && bare) return { type: 'editName' };
+    if (e.key === 'Enter' && e.shiftKey && !mod && !e.altKey) return { type: 'addChild' };
+    if (e.key === 'Enter' && mod && !e.shiftKey && !e.altKey) return { type: 'openMemo' };
+    if ((e.key === 'Delete' || e.key === 'Backspace') && bare) return { type: 'deleteRow' };
+
+    if (e.shiftKey && !mod && !e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      return { type: 'moveMark', delta: e.key === 'ArrowDown' ? 1 : -1 };
+    }
+    if (e.key.startsWith('Arrow')) return { type: 'blockArrow' };
+
+    if (mod && !e.altKey && key === 'z') return { type: e.shiftKey ? 'redo' : 'undo' };
+    if (mod && !e.altKey && !e.shiftKey && key === 'n') return { type: 'newTask' };
+    return null;
+  })();
+
+  if (command !== null && e.repeat === true && NO_REPEAT.has(command.type)) return null;
+  return command;
 }
+
+const NO_REPEAT: ReadonlySet<CommandType> = new Set<CommandType>([
+  'newTask',
+  'addChild',
+  'deleteRow',
+  'editName',
+  'openMemo',
+]);
 
 /** 押された場所と画面の状態。呼び出し側が DOM から作る。 */
 export type KeyContext = {
