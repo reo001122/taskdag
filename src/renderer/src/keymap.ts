@@ -181,26 +181,26 @@ export type Shortcut = {
 
 /** キャンバスの操作。CommandType のうち利用者が使うものを1件ずつ載せる(keymap.test.ts が確かめる)。 */
 export const SHORTCUTS: readonly Shortcut[] = [
-  { command: 'editName', keys: [['Enter']], description: '印の付いた行の名前を編集する' },
+  { command: 'editName', keys: [['Enter']], description: '名前を編集' },
   {
     command: 'addChild',
     keys: [['Shift', 'Enter']],
-    description: '印の付いた Task に childTask を足す',
+    description: 'childTask を足す',
   },
-  { command: 'openMemo', keys: [['Mod', 'Enter']], description: '印の付いた行のメモを開く' },
-  { command: 'deleteRow', keys: [['Delete'], ['Backspace']], description: '印の付いた行を消す' },
+  { command: 'openMemo', keys: [['Mod', 'Enter']], description: 'メモを開く' },
+  { command: 'deleteRow', keys: [['Delete'], ['Backspace']], description: '行を消す' },
   {
     command: 'moveMark',
     keys: [
       ['Shift', '↑'],
       ['Shift', '↓'],
     ],
-    description: '印を親 Task と childTask の間で動かす',
+    description: '印を動かす',
   },
   { command: 'newTask', keys: [['Mod', 'N']], description: 'Task を足す' },
   { command: 'undo', keys: [['Mod', 'Z']], description: '元に戻す' },
   { command: 'redo', keys: [['Mod', 'Shift', 'Z']], description: 'やり直す' },
-  { command: 'toggleHelp', keys: [['?']], description: 'このキー操作の一覧を開閉する' },
+  { command: 'toggleHelp', keys: [['?']], description: 'この一覧をたたむ' },
 ];
 
 export type InputShortcut = {

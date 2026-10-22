@@ -66,7 +66,8 @@ export function App(): React.JSX.Element {
   const [deletePlan, setDeletePlan] = useState<DeletePlan | null>(null);
   const [askProjectName, setAskProjectName] = useState(false);
   // キー操作の一覧。起動時は閉じていて、開閉の状態は保存しない。
-  const [helpOpen, setHelpOpen] = useState(false);
+  // 常時表示。たたんだ状態は保存しない(起動時は常に広がっている)。
+  const [helpOpen, setHelpOpen] = useState(true);
 
   /**
    * 直後に編集へ入れる相手。Task と childTask のどちらの id も入る。
@@ -564,16 +565,6 @@ export function App(): React.JSX.Element {
       // 先に誰かが扱ったキーは、こちらでは何もしない。実行する操作だけ preventDefault する。
       if (e.defaultPrevented) return;
 
-      // Esc で一覧を閉じる。開いているときだけ。ダイアログと入力欄の Esc は、それぞれのもの。
-      if (e.key === 'Escape' && helpOpen) {
-        const ctx = keyContextOf(e);
-        if (!ctx.dialogOpen && !ctx.fromEditable && !ctx.inputOpen) {
-          e.preventDefault();
-          setHelpOpen(false);
-        }
-        return;
-      }
-
       const command = commandFor(e);
       if (
         command === null ||
@@ -746,7 +737,7 @@ export function App(): React.JSX.Element {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keydown', onArrow, true);
     };
-  }, [send, addTaskHere, addChild, resolveTarget, moveRowCursor, requestDelete, helpOpen]);
+  }, [send, addTaskHere, addChild, resolveTarget, moveRowCursor, requestDelete]);
 
   /*
     作った直後の Task を選んでおく(FR-1)。
@@ -1016,14 +1007,13 @@ export function App(): React.JSX.Element {
           type="button"
           aria-pressed={helpOpen}
           onClick={() => setHelpOpen((open) => !open)}
-          title="キー操作の一覧(? でも開閉)"
+          title="キー操作の一覧をたたむ・広げる(? でも切り替え)"
         >
           キー操作
         </button>
       </div>
 
       <div style={{ flex: 1, position: 'relative' }}>
-        {helpOpen && <HelpPanel onClose={() => setHelpOpen(false)} />}
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -1211,6 +1201,7 @@ export function App(): React.JSX.Element {
           <Background gap={20} color="var(--grid)" />
           <Controls showInteractive={false} />
           <MiniMap pannable zoomable />
+          <HelpPanel open={helpOpen} onToggle={() => setHelpOpen((open) => !open)} />
         </ReactFlow>
       </div>
 

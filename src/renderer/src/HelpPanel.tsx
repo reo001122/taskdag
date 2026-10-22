@@ -1,3 +1,5 @@
+import { Panel } from '@xyflow/react';
+import { useEffect, useState } from 'react';
 import { INPUT_SHORTCUTS, SHORTCUTS } from './keymap';
 
 /**
@@ -42,41 +44,106 @@ function Keys({
   );
 }
 
-export function HelpPanel({ onClose }: { onClose: () => void }): React.JSX.Element {
-  const mac = isMac();
+type Mode = 'canvas' | 'name' | 'memo';
+
+const HEADINGS: Record<Mode, string> = {
+  canvas: 'キャンバス',
+  name: '名前の入力中',
+  memo: 'メモの入力中',
+};
+
+/** フォーカスのある要素から、一覧の中身を決める。(.wide はダイアログの入力欄なので対象外) */
+function modeOf(el: Element | null): Mode {
+  if (el?.matches('.text-input:not(.wide)')) return 'name';
+  if (el?.matches('.memo-input')) return 'memo';
+  return 'canvas';
+}
+
+function Row({
+  keys,
+  description,
+  mac,
+}: {
+  keys: readonly (readonly string[])[];
+  description: string;
+  mac: boolean;
+}): React.JSX.Element {
   return (
-    <aside className="help-panel" aria-label="キー操作">
-      <div className="help-head">
-        <strong>キー操作</strong>
-        <button type="button" className="help-close" onClick={onClose} aria-label="閉じる">
-          ×
+    <li>
+      <Keys keys={keys} mac={mac} />
+      <span className="help-desc">{description}</span>
+    </li>
+  );
+}
+
+/**
+ * 右上に常時出す。ミニマップと同じく React Flow の Panel なので、パン・ズームでは動かない。
+ * 中身はフォーカスのある場所で切り替える(キャンバス / 名前 / メモ)。
+ */
+export function HelpPanel({
+  open,
+  onToggle,
+}: {
+  open: boolean;
+  onToggle: () => void;
+}): React.JSX.Element {
+  const mac = isMac();
+  const [mode, setMode] = useState<Mode>('canvas');
+
+  useEffect(() => {
+    const onIn = (): void => setMode(modeOf(document.activeElement));
+    // focusout の時点の activeElement は body。移り先は relatedTarget にある。
+    const onOut = (e: FocusEvent): void => setMode(modeOf(e.relatedTarget as Element | null));
+    document.addEventListener('focusin', onIn);
+    document.addEventListener('focusout', onOut);
+    return () => {
+      document.removeEventListener('focusin', onIn);
+      document.removeEventListener('focusout', onOut);
+    };
+  }, []);
+
+  if (!open) {
+    return (
+      <Panel position="top-right" className="nopan nodrag nowheel">
+        <button type="button" className="help-collapsed" onClick={onToggle} aria-expanded={false}>
+          ? キー操作
         </button>
-      </div>
+      </Panel>
+    );
+  }
 
-      <h3>キャンバス</h3>
-      <ul>
-        {SHORTCUTS.map((s) => (
-          <li key={s.command}>
-            <Keys keys={s.keys} mac={mac} />
-            <span className="help-desc">{s.description}</span>
-          </li>
-        ))}
-      </ul>
+  const items =
+    mode === 'canvas'
+      ? SHORTCUTS.map((s) => ({ id: s.command, keys: s.keys, description: s.description }))
+      : (
+          INPUT_SHORTCUTS.find((g) => g.title === (mode === 'name' ? '名前' : 'メモ'))?.items ?? []
+        ).map((item) => ({
+          id: item.keys.map((k) => k.join('+')).join('|'),
+          keys: item.keys,
+          description: item.description,
+        }));
 
-      <h3>名前・メモの入力中</h3>
-      {INPUT_SHORTCUTS.map((g) => (
-        <section key={g.title}>
-          <h4>{g.title}</h4>
-          <ul>
-            {g.items.map((item) => (
-              <li key={item.keys.map((k) => k.join('+')).join('|')}>
-                <Keys keys={item.keys} mac={mac} />
-                <span className="help-desc">{item.description}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
-    </aside>
+  return (
+    <Panel position="top-right" className="nopan nodrag nowheel">
+      <aside className="help-panel" aria-label="キー操作">
+        <div className="help-head">
+          <strong>{HEADINGS[mode]}</strong>
+          <button
+            type="button"
+            className="help-close"
+            onClick={onToggle}
+            aria-label="たたむ"
+            aria-expanded
+          >
+            ×
+          </button>
+        </div>
+        <ul>
+          {items.map((it) => (
+            <Row key={it.id} keys={it.keys} description={it.description} mac={mac} />
+          ))}
+        </ul>
+      </aside>
+    </Panel>
   );
 }

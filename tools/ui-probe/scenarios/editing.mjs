@@ -1472,54 +1472,114 @@ export default {
     );
 
     /*
-      キー操作の一覧(カンペ)。ボタンと ? で開閉でき、中身が出ていること。
-      名前の入力中の ? は、一覧を開かず文字として入る。
+      キー操作の一覧(カンペ)。右上に常時出ていて、ボタンと ? でたたむ・広げる。
+      中身は入力欄のフォーカスで切り替わる。名前の入力中の ? は、文字として入る。
     */
-    const helpOpen = () => evaluate(`return document.querySelector('.help-panel') !== null`);
+    const helpState = () =>
+      evaluate(`
+        const p = document.querySelector('.help-panel');
+        return {
+          open: p !== null,
+          collapsed: document.querySelector('.help-collapsed') !== null,
+          heading: p?.querySelector('.help-head strong')?.textContent ?? null,
+          rows: p ? [...p.querySelectorAll('li')].map((li) => li.textContent) : [],
+        };
+      `);
     await evaluate(`document.activeElement?.blur(); return 1;`);
-    check('HP-1a 起動直後は一覧が閉じている', (await helpOpen()) === false);
-
-    await clickToolbar('キー操作');
-    await waitFor('一覧が開く', `return document.querySelector('.help-panel') !== null`);
-    const content = await evaluate(`
-      const p = document.querySelector('.help-panel');
-      return {
-        headings: [...p.querySelectorAll('h3')].map((h) => h.textContent),
-        rows: [...p.querySelectorAll('li')].map((li) => li.textContent),
-      };
+    const first = await helpState();
+    check(
+      'HP-1a 起動直後は右上の一覧が広がっている',
+      first.open && first.heading === 'キャンバス',
+      first,
+    );
+    check(
+      'HP-1b キャンバスの一覧に childTask の行がある',
+      first.rows.some((r) => /^(Shift|⇧)\+Enter/.test(r) && r.includes('childTask')),
+      first.rows,
+    );
+    const geo = await evaluate(`
+      const p = document.querySelector('.react-flow__panel .help-panel');
+      const f = document.querySelector('.react-flow');
+      if (!p) return null;
+      const r = p.getBoundingClientRect();
+      const a = f.getBoundingClientRect();
+      return { 右: Math.round(a.right - r.right), 上: Math.round(a.top - r.top) * -1, 幅: Math.round(r.width) };
     `);
     check(
-      'HP-1b 一覧に2つの見出しが出る',
-      content.headings.join('|') === 'キャンバス|名前・メモの入力中',
-      content.headings,
+      'HP-1c 一覧は .react-flow の中の右上にある',
+      geo !== null && geo.右 >= 0 && geo.右 <= 40 && geo.上 >= 0 && geo.上 <= 40,
+      geo,
     );
+
+    await clickToolbar('キー操作');
+    await waitFor('一覧がたたまれる', `return document.querySelector('.help-panel') === null`);
+    const folded = await helpState();
     check(
-      'HP-1c Shift+Enter の行に childTask の説明がある',
-      content.rows.some((r) => /^(Shift|⇧)\+Enter/.test(r) && r.includes('childTask')),
-      content.rows,
+      'HP-1d ボタンでたたむと「? キー操作」だけが残る',
+      folded.collapsed && !folded.open,
+      folded,
     );
     await clickToolbar('キー操作');
-    await waitFor('一覧が閉じる', `return document.querySelector('.help-panel') === null`);
-    check('HP-1d もう一度押すと閉じる', (await helpOpen()) === false);
+    await waitFor('一覧が広がる', `return document.querySelector('.help-panel') !== null`);
+    check('HP-1e もう一度押すと広がる', (await helpState()).open);
 
+    await evaluate(`document.activeElement?.blur(); return 1;`);
     await key({ key: '?', code: 191, shift: true, text: '?' });
-    await waitFor('? で一覧が開く', `return document.querySelector('.help-panel') !== null`);
-    check('HP-2a ? で開く', await helpOpen());
+    await waitFor('? でたたまれる', `return document.querySelector('.help-panel') === null`);
+    check('HP-2a ? でたたむ', (await helpState()).collapsed);
+    await key({ key: '?', code: 191, shift: true, text: '?' });
+    await waitFor('? で広がる', `return document.querySelector('.help-panel') !== null`);
+    check('HP-2b もう一度 ? で広がる', (await helpState()).open);
     await key({ key: 'Escape', code: 27 });
-    await waitFor('Esc で一覧が閉じる', `return document.querySelector('.help-panel') === null`);
-    check('HP-2b Esc で閉じる', (await helpOpen()) === false);
+    await wait(150);
+    check('HP-2c Esc では一覧をたたまない', (await helpState()).open);
 
     // 新しい Task は名前の入力に入った状態で作られる(FR-1)。
     await clickToolbar('Task');
     await waitForFocus();
+    await waitFor(
+      '名前の一覧に変わる',
+      `return document.querySelector('.help-head strong')?.textContent === '名前の入力中'`,
+    );
     await type('a?b');
     const typed = await evaluate(`return document.activeElement?.value ?? null`);
+    const during = await helpState();
     check(
-      'HP-3 名前の入力中の ? は一覧を開かず、文字として入る',
-      typed === 'a?b' && !(await helpOpen()),
-      { typed },
+      'HP-3a 名前の入力中は「名前の入力中」の一覧になり、? は文字として入って一覧はたたまれない',
+      typed === 'a?b' &&
+        during.open &&
+        during.heading === '名前の入力中' &&
+        during.rows.some((r) => r.includes('確定する')),
+      { typed, during },
     );
     await key({ key: 'Enter', code: 13 });
     await waitFor('入力欄が閉じる', `return !document.querySelector('.text-input')`);
+    await waitFor(
+      'キャンバスの一覧に戻る',
+      `return document.querySelector('.help-head strong')?.textContent === 'キャンバス'`,
+    );
+    check(
+      'HP-3b 確定して抜けると「キャンバス」に戻る',
+      (await helpState()).heading === 'キャンバス',
+    );
+
+    // メモの入力中(名前の入力から Ctrl+Enter で移る)。
+    await evaluate(`document.querySelector('.task-title').click(); return 1;`);
+    await waitFor(
+      'Task 名が入力欄になる',
+      `return !!document.querySelector('.task-head .text-input')`,
+    );
+    await waitForFocus();
+    await key({ key: 'Enter', code: 13, ctrl: true });
+    await waitFor('メモの入力欄が開く', `return !!document.querySelector('.memo-input')`);
+    await wait(200);
+    const memoState = await helpState();
+    check(
+      'HP-4 メモの入力中は「メモの入力中」の一覧になる',
+      memoState.heading === 'メモの入力中',
+      memoState,
+    );
+    await key({ key: 'Escape', code: 27 });
+    await waitFor('メモが閉じる', `return !document.querySelector('.memo-input')`);
   },
 };
