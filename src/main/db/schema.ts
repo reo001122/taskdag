@@ -6,7 +6,7 @@ import type { DatabaseSync } from 'node:sqlite';
  * バージョン管理は PRAGMA user_version で行い、追加のライブラリを導入しない。
  */
 
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 /**
  * v1 の初期スキーマ。
@@ -182,12 +182,35 @@ FROM child_tasks c
 JOIN task_project tp ON tp.task_id = c.parent_id;
 `;
 
+/**
+ * v6: 完了した Task のアーカイブの記録(FR-11)。
+ *
+ * グラフから外れた Task の写しで、読むためだけにある。tasks とは外部キーで繋がない
+ * (元の Task はもう無い)。childTask は 1 件ずつ行にせず JSON 配列の 1 列に持つ ——
+ * 親ごとにまとめて読むだけで、個別に検索も更新もしない読み取り専用の写しであり、
+ * 行にすると順序列・差分・外部キーが要る割に得るものが無いため。
+ * 順序は配列の並びがそのまま表示順。形は {title, progress, memo} の配列。
+ */
+const MIGRATION_6 = `
+CREATE TABLE archived_tasks (
+  id           TEXT PRIMARY KEY,
+  title        TEXT NOT NULL,
+  memo         TEXT NOT NULL,
+  child_tasks  TEXT NOT NULL,
+  archived_at  INTEGER NOT NULL,
+  project_name TEXT
+);
+
+CREATE INDEX idx_archived_at ON archived_tasks(archived_at);
+`;
+
 const MIGRATIONS: readonly string[] = [
   MIGRATION_1,
   MIGRATION_2,
   MIGRATION_3,
   MIGRATION_4,
   MIGRATION_5,
+  MIGRATION_6,
 ];
 
 function currentVersion(db: DatabaseSync): number {
@@ -198,8 +221,10 @@ function currentVersion(db: DatabaseSync): number {
 /**
  * 未適用のマイグレーションを順に適用する。
  * 各マイグレーションはトランザクション内で実行し、途中で失敗したら巻き戻す。
+ *
+ * target は途中の版で止めるためのもの(旧版の DB を作ってアップグレードを試すテスト用)。
  */
-export function migrate(db: DatabaseSync): void {
+export function migrate(db: DatabaseSync, target: number = MIGRATIONS.length): void {
   const from = currentVersion(db);
 
   // 将来のバージョンで書かれた DB を、古いスキーマ想定で読んではならない。
@@ -210,7 +235,7 @@ export function migrate(db: DatabaseSync): void {
     );
   }
 
-  for (let version = from; version < MIGRATIONS.length; version += 1) {
+  for (let version = from; version < target; version += 1) {
     const sql = MIGRATIONS[version];
     if (sql === undefined) continue;
 

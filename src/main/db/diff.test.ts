@@ -87,3 +87,27 @@ describe('computeDiff', () => {
     expect([...diff.edges.deleted].sort()).toEqual(['A->B', 'B->C']);
   });
 });
+
+describe('computeDiff — アーカイブの記録(FR-11)', () => {
+  const record = {
+    id: T('x'),
+    title: 'x',
+    memo: '',
+    childTasks: [],
+    archivedAt: 1,
+    projectName: null,
+  };
+
+  it('FR-11: 追加された記録を inserted、取り消された記録を deleted として拾う', () => {
+    const before = buildGraph({});
+    const after = { ...before, archived: [record] };
+    expect(computeDiff(before, after).archived.inserted.map((r) => r.id)).toEqual(['x']);
+    expect(computeDiff(after, before).archived.deleted).toEqual(['x']);
+    expect(isEmptyDiff(computeDiff(after, after))).toBe(true);
+  });
+
+  it('FR-11: 記録だけの変化も「差分あり」になる(書き込みが省略されない)', () => {
+    const before = buildGraph({});
+    expect(isEmptyDiff(computeDiff(before, { ...before, archived: [record] }))).toBe(false);
+  });
+});

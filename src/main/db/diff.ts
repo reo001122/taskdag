@@ -1,5 +1,6 @@
 import type { TaskGraph } from '../domain/model';
 import {
+  type ArchivedTaskRow,
   type ChildTaskRow,
   type EdgeRow,
   type GraphRows,
@@ -17,7 +18,7 @@ import {
  *
  * この関数は純粋で、SQLite に依存しない。
  *
- * 見ているのは projects / tasks / childTasks / edges の4つだけ。 タスクグラフに
+ * 見ているのは projects / tasks / childTasks / edges / archived の5つだけ。 タスクグラフに
  * 属さないもの(表示設定など)は、この経路を通らず db/settings.ts が直接書く
  * (CLAUDE.md §1 の明示された例外)。両者を混ぜないこと —— 差分に乗らないテーブルを
  * この経路へ載せると、書いたつもりの値が差分に現れず、静かに消える。
@@ -34,6 +35,7 @@ export type GraphDiff = {
   readonly tasks: EntityDiff<TaskRow>;
   readonly childTasks: EntityDiff<ChildTaskRow>;
   readonly edges: EntityDiff<EdgeRow>;
+  readonly archived: EntityDiff<ArchivedTaskRow>;
 };
 
 /** 行の全フィールドが等しいか。行はフラットなオブジェクトなので浅い比較で足りる。 */
@@ -75,12 +77,13 @@ export function diffRows(before: GraphRows, after: GraphRows): GraphDiff {
     tasks: diffMap(before.tasks, after.tasks),
     childTasks: diffMap(before.childTasks, after.childTasks),
     edges: diffMap(before.edges, after.edges),
+    archived: diffMap(before.archived, after.archived),
   };
 }
 
 /** 差分が空か(書き込みを省略できるか)。 */
 export function isEmptyDiff(diff: GraphDiff): boolean {
-  return ([diff.projects, diff.tasks, diff.childTasks, diff.edges] as const).every(
+  return ([diff.projects, diff.tasks, diff.childTasks, diff.edges, diff.archived] as const).every(
     (d) => d.inserted.length === 0 && d.updated.length === 0 && d.deleted.length === 0,
   );
 }
