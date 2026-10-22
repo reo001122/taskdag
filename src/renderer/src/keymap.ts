@@ -168,8 +168,16 @@ export function isHandedOff(event: object): boolean {
   それ以外はそのままの表記。
 */
 
-/** 一覧に載せない操作。利用者が使うものではなく、既定の動きを止めるだけ。 */
-export type HiddenCommandType = 'blockArrow' | 'blockTab';
+/**
+ * 一覧に載せない操作。
+ * blockArrow / blockTab は利用者が使うものではなく、既定の動きを止めるだけ。
+ * toggleHelp は一覧そのものを開閉する操作で、一覧を見ている人には「一覧を開閉」の行は
+ * 要らない(? キー・ツールバーの「キー操作」・× で開閉できることは一覧の外に出ている)。
+ */
+export type HiddenCommandType = 'blockArrow' | 'blockTab' | 'toggleHelp';
+
+/** 一覧の小見出し。selected = Task を選んでいるときだけ効く操作、always = いつでも効く操作。 */
+export type ShortcutGroup = 'selected' | 'always';
 
 export type Shortcut = {
   /** 載せ忘れを単体テストで検出するための紐づけ */
@@ -177,18 +185,25 @@ export type Shortcut = {
   /** 同じ操作をするキーの組。外側は「または」、内側は同時に押すキー。 */
   keys: readonly (readonly string[])[];
   description: string;
+  group: ShortcutGroup;
 };
 
 /** キャンバスの操作。CommandType のうち利用者が使うものを1件ずつ載せる(keymap.test.ts が確かめる)。 */
 export const SHORTCUTS: readonly Shortcut[] = [
-  { command: 'editName', keys: [['Enter']], description: '名前を編集' },
+  { command: 'editName', keys: [['Enter']], description: '名前を編集', group: 'selected' },
   {
     command: 'addChild',
     keys: [['Shift', 'Enter']],
     description: 'childTask を足す',
+    group: 'selected',
   },
-  { command: 'openMemo', keys: [['Mod', 'Enter']], description: 'メモを開く' },
-  { command: 'deleteRow', keys: [['Delete'], ['Backspace']], description: '行を消す' },
+  { command: 'openMemo', keys: [['Mod', 'Enter']], description: 'メモを開く', group: 'selected' },
+  {
+    command: 'deleteRow',
+    keys: [['Delete'], ['Backspace']],
+    description: '行を消す',
+    group: 'selected',
+  },
   {
     command: 'moveMark',
     keys: [
@@ -196,11 +211,11 @@ export const SHORTCUTS: readonly Shortcut[] = [
       ['Shift', '↓'],
     ],
     description: '印を動かす',
+    group: 'selected',
   },
-  { command: 'newTask', keys: [['Mod', 'N']], description: 'Task を足す' },
-  { command: 'undo', keys: [['Mod', 'Z']], description: '元に戻す' },
-  { command: 'redo', keys: [['Mod', 'Shift', 'Z']], description: 'やり直す' },
-  { command: 'toggleHelp', keys: [['?']], description: '一覧を開閉' },
+  { command: 'newTask', keys: [['Mod', 'N']], description: 'Task を足す', group: 'always' },
+  { command: 'undo', keys: [['Mod', 'Z']], description: '元に戻す', group: 'always' },
+  { command: 'redo', keys: [['Mod', 'Shift', 'Z']], description: 'やり直す', group: 'always' },
 ];
 
 export type InputShortcut = {

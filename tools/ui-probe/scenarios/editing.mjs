@@ -1483,6 +1483,12 @@ export default {
           collapsed: document.querySelector('.help-collapsed') !== null,
           heading: p?.querySelector('.help-head strong')?.textContent ?? null,
           rows: p ? [...p.querySelectorAll('li')].map((li) => li.textContent) : [],
+          groups: p
+            ? [...p.querySelectorAll('.help-group')].map((g) => ({
+                title: g.querySelector('.help-subhead')?.textContent ?? null,
+                rows: [...g.querySelectorAll('li')].map((li) => li.textContent),
+              }))
+            : [],
         };
       `);
     await evaluate(`document.activeElement?.blur(); return 1;`);
@@ -1495,6 +1501,22 @@ export default {
     check(
       'HP-1b キャンバスの一覧に childTask の行がある',
       first.rows.some((r) => /^(Shift|⇧)\+Enter/.test(r) && r.includes('childTask')),
+      first.rows,
+    );
+    const under = (t) => first.groups.find((g) => g.title === t)?.rows ?? [];
+    check(
+      'HP-1f 「Task を選んでいるとき」の下に Enter の行がある',
+      under('Task を選んでいるとき').some((r) => /^Enter/.test(r) && r.includes('名前を編集')),
+      first.groups,
+    );
+    check(
+      'HP-1g 「いつでも」の下に ⌘/Ctrl+N の行がある',
+      under('いつでも').some((r) => /^(⌘|Ctrl)\+N/.test(r) && r.includes('Task を足す')),
+      first.groups,
+    );
+    check(
+      'HP-1h 「一覧を開閉」の行が無い',
+      !first.rows.some((r) => r.includes('一覧を開閉')),
       first.rows,
     );
     const geo = await evaluate(`

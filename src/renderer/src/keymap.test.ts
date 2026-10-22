@@ -268,8 +268,11 @@ describe('toggleHelp: ? キー', () => {
 });
 
 describe('SHORTCUTS: キー操作の一覧', () => {
-  it('利用者が使う操作(blockArrow / blockTab 以外)が、1件ずつ載っている', () => {
-    const expected = ALL.filter((t) => t !== 'blockArrow' && t !== 'blockTab').sort();
+  it('利用者が使う操作が、1件ずつ載っている', () => {
+    // blockArrow / blockTab は既定の動きを止めるだけ。toggleHelp は一覧そのものを開閉する
+    // 操作で、一覧に載せても読む人の役に立たない。
+    const hidden: CommandType[] = ['blockArrow', 'blockTab', 'toggleHelp'];
+    const expected = ALL.filter((t) => !hidden.includes(t)).sort();
     expect(SHORTCUTS.map((s) => s.command).sort()).toEqual(expected);
   });
 
@@ -287,6 +290,13 @@ describe('SHORTCUTS: キー操作の一覧', () => {
         expect(commandFor(toInput(keys))?.type, `${s.command}: ${keys.join('+')}`).toBe(s.command);
       }
     }
+  });
+
+  it('すべての項目が group を持ち、Task を選んでいるとき / いつでも に分かれる', () => {
+    for (const s of SHORTCUTS) expect(['selected', 'always'], s.command).toContain(s.group);
+    const group = (c: string) => SHORTCUTS.find((s) => s.command === c)?.group;
+    expect(group('editName')).toBe('selected');
+    expect(group('newTask')).toBe('always');
   });
 
   it('説明が空でなく、入力中の操作も載っている', () => {

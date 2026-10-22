@@ -1,6 +1,6 @@
 import { Panel } from '@xyflow/react';
 import { useEffect, useState } from 'react';
-import { INPUT_SHORTCUTS, SHORTCUTS } from './keymap';
+import { INPUT_SHORTCUTS, SHORTCUTS, type ShortcutGroup } from './keymap';
 
 /**
  * キー操作の一覧(カンペ)。中身は keymap.ts の SHORTCUTS / INPUT_SHORTCUTS から作る。
@@ -51,6 +51,11 @@ const HEADINGS: Record<Mode, string> = {
   name: '名前の入力中',
   memo: 'メモの入力中',
 };
+
+const GROUPS: readonly { group: ShortcutGroup; title: string }[] = [
+  { group: 'selected', title: 'Task を選んでいるとき' },
+  { group: 'always', title: 'いつでも' },
+];
 
 /**
  * フォーカスのある要素から、一覧の中身を決める。
@@ -120,16 +125,13 @@ export function HelpPanel({
     );
   }
 
-  const items =
-    mode === 'canvas'
-      ? SHORTCUTS.map((s) => ({ id: s.command, keys: s.keys, description: s.description }))
-      : (
-          INPUT_SHORTCUTS.find((g) => g.title === (mode === 'name' ? '名前' : 'メモ'))?.items ?? []
-        ).map((item) => ({
-          id: item.keys.map((k) => k.join('+')).join('|'),
-          keys: item.keys,
-          description: item.description,
-        }));
+  const inputItems = (
+    INPUT_SHORTCUTS.find((g) => g.title === (mode === 'name' ? '名前' : 'メモ'))?.items ?? []
+  ).map((item) => ({
+    id: item.keys.map((k) => k.join('+')).join('|'),
+    keys: item.keys,
+    description: item.description,
+  }));
 
   return (
     <Panel position="top-right" className="nopan nodrag nowheel">
@@ -146,11 +148,24 @@ export function HelpPanel({
             ×
           </button>
         </div>
-        <ul>
-          {items.map((it) => (
-            <Row key={it.id} keys={it.keys} description={it.description} mac={mac} />
-          ))}
-        </ul>
+        {mode === 'canvas' ? (
+          GROUPS.map((g) => (
+            <section className="help-group" key={g.group}>
+              <h3 className={`help-subhead ${g.group}`}>{g.title}</h3>
+              <ul>
+                {SHORTCUTS.filter((s) => s.group === g.group).map((s) => (
+                  <Row key={s.command} keys={s.keys} description={s.description} mac={mac} />
+                ))}
+              </ul>
+            </section>
+          ))
+        ) : (
+          <ul>
+            {inputItems.map((it) => (
+              <Row key={it.id} keys={it.keys} description={it.description} mac={mac} />
+            ))}
+          </ul>
+        )}
       </aside>
     </Panel>
   );
