@@ -39,6 +39,10 @@ export default {
       );
     const toolbarButton = (text) => `[...document.querySelectorAll('.toolbar button')]
       .find((b) => b.textContent.trim() === ${JSON.stringify(text)})`;
+    const toolbarLabels = () =>
+      evaluate(
+        `return [...document.querySelectorAll('.toolbar button')].map((b) => b.textContent.trim())`,
+      );
     const press = (text) => evaluate(`${toolbarButton(text)}.click(); return 1;`);
     const disabled = (text) => evaluate(`return ${toolbarButton(text)}.disabled`);
 
@@ -212,6 +216,12 @@ export default {
     // --- 一覧(画面の切り替え) -------------------------------------------
     await press('アーカイブ');
     await waitFor('一覧が出る', `return !!document.querySelector('.archive-view')`);
+    check(
+      'G-4j 一覧を出している間、ツールバーのボタンは「キャンバスに戻る」になる',
+      (await toolbarLabels()).includes('キャンバスに戻る') &&
+        !(await toolbarLabels()).includes('アーカイブ'),
+      await toolbarLabels(),
+    );
     let items = await archiveItems();
     check('G-4a 一覧に3件出る', items.length === 3, items);
     check(
@@ -280,9 +290,15 @@ export default {
     }
     await emulateColorScheme(null);
 
-    await press('アーカイブ');
+    await press('キャンバスに戻る');
     await waitFor('キャンバスへ戻る', `return !document.querySelector('.archive-view')`);
     check('G-4i もう一度押すとキャンバスへ戻る', await canvasVisible());
+    check(
+      'G-4k キャンバスを出している間は「アーカイブ」に戻っている',
+      (await toolbarLabels()).includes('アーカイブ') &&
+        !(await toolbarLabels()).includes('キャンバスに戻る'),
+      await toolbarLabels(),
+    );
 
     // --- Cmd+Z 1回で、キャンバスへの復帰と記録の取り消しが揃う(FR-8) -----
     await undo();
@@ -302,7 +318,7 @@ export default {
         ),
       await archiveItems(),
     );
-    await press('アーカイブ');
+    await press('キャンバスに戻る');
     await waitFor('キャンバスへ戻る', `return !document.querySelector('.archive-view')`);
 
     // --- Task ごと。依存が変わらなければ確認なしで移る。新しい順に並ぶ -----
@@ -323,7 +339,7 @@ export default {
       items.map((i) => i.title).join() === 'Y,X',
       items.map((i) => i.title),
     );
-    await press('アーカイブ');
+    await press('キャンバスに戻る');
     await waitFor('キャンバスへ戻る', `return !document.querySelector('.archive-view')`);
 
     // --- A → B(完了) → C。B を移しても C は Blocked のまま(FR-3) --------
