@@ -17,11 +17,17 @@ import '@xyflow/react/dist/style.css';
 import './styles.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { type Rect, rectIntersection, rectsOverlap } from '../../shared/geometry';
-import type { Command, CommandResult, DeletePlan, GraphSnapshot } from '../../shared/ipc';
+import type {
+  ArchivePlan,
+  Command,
+  CommandResult,
+  DeletePlan,
+  GraphSnapshot,
+} from '../../shared/ipc';
 import { clearDropFeedback, type DropPoint, findDropPoint, showDropFeedback } from './child-drag';
 import { PROJECT_COLOR_COUNT, projectColorAt } from './colors';
 import { DependencyEdge, type DependencyEdgeData } from './DependencyEdge';
-import { DeleteDialog, TextPromptDialog } from './Dialogs';
+import { ArchiveDialog, DeleteDialog, TextPromptDialog } from './Dialogs';
 import { HelpPanel } from './HelpPanel';
 import { allowed, commandFor, isHandedOff, type KeyContext } from './keymap';
 import {
@@ -64,6 +70,8 @@ export function App(): React.JSX.Element {
   const { screenToFlowPosition, flowToScreenPosition, getNodes } = useReactFlow();
   const [error, setError] = useState<string | null>(null);
   const [deletePlan, setDeletePlan] = useState<DeletePlan | null>(null);
+  // アーカイブの確認(FR-11)。bulk はツールバーからまとめて移すとき。
+  const [archivePlan, setArchivePlan] = useState<{ plan: ArchivePlan; bulk: boolean } | null>(null);
   const [askProjectName, setAskProjectName] = useState(false);
   // キー操作の一覧。起動時は閉じていて、開閉の状態は保存しない。
   // 常時表示。たたんだ状態は保存しない(起動時は常に広がっている)。
@@ -553,6 +561,34 @@ export function App(): React.JSX.Element {
     [send],
   );
 
+  /**
+   * 完了した Task をアーカイブへ移す(FR-11)。
+   *
+   * 1件ずつ(Task の ⤓)は、依存が繋ぎ直される・外れるときだけ確認を出し、無ければ
+   * そのまま移す(削除と同じ)。まとめて(ツールバー)は、何件移すかを見せるために
+   * いつも確認を出す。どちらも直後の Cmd+Z で戻る(FR-8)。
+   */
+  const requestArchive = useCallback(
+    (ids: string[], bulk: boolean) => {
+      void (async () => {
+        if (ids.length === 0) return;
+        const plan = await window.api.planArchive(ids);
+        if (!plan) return;
+        const changesDependencies = plan.removedEdges.length > 0 || plan.addedEdges.length > 0;
+        if (!bulk && !changesDependencies) {
+          send({ type: 'archiveTask', id: ids[0] as string });
+          return;
+        }
+        setArchivePlan({ plan, bulk });
+      })();
+    },
+    [send],
+  );
+  const requestArchiveOne = useCallback(
+    (id: string) => requestArchive([id], false),
+    [requestArchive],
+  );
+
   /*
     キーボードの入口。解釈と可否は keymap.ts にあり、ここは「対象の決定」と「実行」だけ。
 
@@ -866,6 +902,7 @@ export function App(): React.JSX.Element {
           cursorChildId: cursorIn(task.id),
           send,
           requestDelete,
+          requestArchive: requestArchiveOne,
           onAutoEditConsumed,
           onChildChainAdd: addChild,
           onChildRemoveWhileEditing: removeChildWhileEditing,
@@ -903,6 +940,7 @@ export function App(): React.JSX.Element {
     snapshot,
     send,
     requestDelete,
+    requestArchiveOne,
     addChild,
     removeChildWhileEditing,
     removeEdge,
@@ -951,6 +989,12 @@ export function App(): React.JSX.Element {
     setEdges(built.edges);
   }, [built, setNodes, setEdges]);
 
+  // アーカイブできる Task(FR-11)。非表示にしている完了 Task も数える。
+  const completedIds = useMemo(
+    () => snapshot?.tasks.filter((t) => t.progress === 'done').map((t) => t.id) ?? [],
+    [snapshot],
+  );
+
   const readyCount =
     snapshot?.tasks.filter((t) => t.readiness === 'ready' && t.progress !== 'done').length ?? 0;
 
@@ -983,6 +1027,15 @@ export function App(): React.JSX.Element {
           title="依存関係にそって並べ直す。手動で置いた位置は上書きされる"
         >
           整列
+        </button>
+
+        <button
+          type="button"
+          disabled={completedIds.length === 0}
+          onClick={() => requestArchive(completedIds, true)}
+          title="完了している Task をまとめてアーカイブへ移す(非表示のものも含む)"
+        >
+          完了をアーカイブ
         </button>
 
         <label>
@@ -1238,6 +1291,23 @@ export function App(): React.JSX.Element {
               ...NEW_PROJECT_SIZE,
               colorIndex,
             });
+          }}
+        />
+      )}
+
+      {archivePlan && snapshot && (
+        <ArchiveDialog
+          plan={archivePlan.plan}
+          snapshot={snapshot}
+          bulk={archivePlan.bulk}
+          onCancel={() => setArchivePlan(null)}
+          onConfirm={() => {
+            send(
+              archivePlan.bulk
+                ? { type: 'archiveCompletedTasks' }
+                : { type: 'archiveTask', id: archivePlan.plan.taskIds[0] as string },
+            );
+            setArchivePlan(null);
           }}
         />
       )}

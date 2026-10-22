@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { DeletePlan, GraphSnapshot } from '../../shared/ipc';
+import type { ArchivePlan, DeletePlan, GraphSnapshot } from '../../shared/ipc';
 
 /**
  * 文字列を1つ受け取るダイアログ。
@@ -184,6 +184,121 @@ export function DeleteDialog({
             onClick={() => onConfirm(plan.addedEdges.filter((e) => !dropped.has(key(e))))}
           >
             削除
+          </button>
+        </div>
+      </div>
+    </dialog>
+  );
+}
+
+/**
+ * アーカイブの確認(FR-11)
+ *
+ * 削除の確認(DeleteDialog)と見せ方を揃えている。依存の扱いが削除と同じ(FR-3)で、
+ * 何がなくなり何が繋ぎ直されるかを同じ形で読めるようにするため。
+ *
+ * 繋ぎ直しを外す操作は持たない。アーカイブは完了した Task を片付けるもので、
+ * 削除のように依存の行き先を選び直す場面を想定していない。
+ */
+export function ArchiveDialog({
+  plan,
+  snapshot,
+  bulk,
+  onCancel,
+  onConfirm,
+}: {
+  plan: ArchivePlan;
+  snapshot: GraphSnapshot;
+  /** ツールバーからまとめて移すとき。1件ずつなら対象の名前を見出しに出す。 */
+  bulk: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}): React.JSX.Element {
+  const titleOf = (id: string): string => snapshot.tasks.find((t) => t.id === id)?.title ?? id;
+  const moving = new Set(plan.taskIds);
+  const ref = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    ref.current?.showModal();
+  }, []);
+
+  const edgeKey = (edge: { from: string; to: string }): string => `${edge.from}->${edge.to}`;
+
+  return (
+    <dialog className="dialog" ref={ref} onCancel={onCancel} onClose={onCancel}>
+      <div>
+        <h2>
+          {bulk ? (
+            <>完了した {plan.taskIds.length} 件をアーカイブしますか？</>
+          ) : (
+            <>
+              「<span className="doomed">{plan.taskIds[0] ? titleOf(plan.taskIds[0]) : ''}</span>
+              」をアーカイブしますか？
+            </>
+          )}
+        </h2>
+
+        <p className="dialog-lead">
+          キャンバスから外れ、アーカイブの一覧に残ります。一覧から戻す操作はありません(直後なら
+          Cmd+Z で戻せます)。
+        </p>
+        {plan.childTaskCount > 0 && (
+          <p className="dialog-lead">子タスク {plan.childTaskCount} 件も一緒に移ります。</p>
+        )}
+
+        {bulk && (
+          <section className="dialog-section">
+            <h3 className="dialog-label">アーカイブする Task</h3>
+            <ul className="edge-list">
+              {plan.taskIds.map((id) => (
+                <li key={id}>{titleOf(id)}</li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {plan.removedEdges.length > 0 && (
+          <section className="dialog-section">
+            <h3 className="dialog-label">なくなる依存関係</h3>
+            <ul className="edge-list is-removed">
+              {plan.removedEdges.map((e) => (
+                <li key={edgeKey(e)}>
+                  <span className={moving.has(e.from) ? 'doomed' : undefined}>
+                    {titleOf(e.from)}
+                  </span>
+                  <span className="arrow">→</span>
+                  <span className={moving.has(e.to) ? 'doomed' : undefined}>{titleOf(e.to)}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {plan.addedEdges.length > 0 ? (
+          <section className="dialog-section">
+            <h3 className="dialog-label">つなぎ直される依存関係</h3>
+            <ul className="edge-list is-added">
+              {plan.addedEdges.map((e) => (
+                <li key={edgeKey(e)}>
+                  <span>{titleOf(e.from)}</span>
+                  <span className="arrow">→</span>
+                  <span>{titleOf(e.to)}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : (
+          plan.removedEdges.length > 0 && (
+            <p className="dialog-warning">つなぎ直しは行われません。上の依存関係は失われます。</p>
+          )
+        )}
+
+        <div className="actions">
+          <button type="button" onClick={onCancel}>
+            キャンセル
+          </button>
+          <button type="button" className="primary" onClick={onConfirm}>
+            アーカイブ
           </button>
         </div>
       </div>

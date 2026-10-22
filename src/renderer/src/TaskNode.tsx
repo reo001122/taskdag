@@ -33,6 +33,8 @@ export type TaskNodeData = {
   cursorChildId: string | null;
   send: (command: Command) => void;
   requestDelete: (id: string) => void;
+  /** 完了した Task をアーカイブへ移す(FR-11)。 */
+  requestArchive: (id: string) => void;
   onAutoEditConsumed: () => void;
   /** 入力中に Shift+Enter が押された。確定して、続けてもう1件足す。 */
   onChildChainAdd: (parentId: string) => void;
@@ -491,6 +493,7 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
     onAutoMemoConsumed,
     send,
     requestDelete,
+    requestArchive,
     onAutoEditConsumed,
     onChildChainAdd,
     onChildRemoveWhileEditing,
@@ -662,6 +665,18 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
                 >
                   ＋
                 </button>
+                {/* 完了した Task にだけ出す(FR-11)。未完了はアーカイブできない。 */}
+                {isDone && (
+                  <button
+                    tabIndex={-1}
+                    type="button"
+                    className="state-button"
+                    title="アーカイブへ移す"
+                    onPointerDown={onPress(() => requestArchive(task.id))}
+                  >
+                    ⤓
+                  </button>
+                )}
                 <button
                   tabIndex={-1}
                   type="button"

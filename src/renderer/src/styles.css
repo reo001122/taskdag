@@ -1106,6 +1106,18 @@ body.is-dragging-child .child-grip {
   border-color: color-mix(in srgb, var(--danger) 85%, var(--text));
 }
 
+.dialog .primary {
+  background: var(--ready);
+  border-color: var(--ready);
+  /* 地の色に合わせて反転する。明るい配色では白、暗い配色では濃い地に載る */
+  color: var(--bg);
+  font-weight: 500;
+}
+.dialog .primary:hover {
+  background: color-mix(in srgb, var(--ready) 85%, var(--text));
+  border-color: color-mix(in srgb, var(--ready) 85%, var(--text));
+}
+
 .dialog .text-input.wide {
   width: 100%;
   margin-top: 4px;
