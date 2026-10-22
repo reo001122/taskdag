@@ -150,7 +150,6 @@ body {
   border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   border-radius: 8px;
   background: color-mix(in srgb, var(--surface) 70%, transparent);
-  backdrop-filter: blur(8px);
   color: var(--text);
   font-size: 11px;
   line-height: 1.5;
@@ -182,7 +181,6 @@ body {
   border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   border-radius: 8px;
   background: color-mix(in srgb, var(--surface) 70%, transparent);
-  backdrop-filter: blur(8px);
   color: var(--text-dim);
   cursor: pointer;
   box-shadow: var(--panel-shadow);
