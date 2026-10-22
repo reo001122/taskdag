@@ -7,6 +7,12 @@ export default defineConfig({
     environment: 'node',
     // renderer は対象外(design/development-process.md)。shared は main と
     // renderer の双方が読むため、ここで担保する。
-    include: ['src/main/**/*.test.ts', 'src/shared/**/*.test.ts'],
+    // 例外は keymap.test.ts だけ。画面に触れない純粋関数で、過去に漏れが出た場所
+    // のため(design/decisions.md D-14)。
+    include: [
+      'src/main/**/*.test.ts',
+      'src/shared/**/*.test.ts',
+      'src/renderer/src/keymap.test.ts',
+    ],
   },
 });
