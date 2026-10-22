@@ -107,11 +107,46 @@ export type Project = {
   readonly colorIndex: number;
 };
 
+/**
+ * アーカイブした childTask の記録(FR-11)。読むためだけの写しで、id も親子の参照も持たない。
+ */
+export type ArchivedChildTask = {
+  readonly title: string;
+  readonly progress: Progress;
+  readonly memo: string;
+};
+
+/**
+ * アーカイブした Task の記録(FR-11)。
+ *
+ * グラフからは外れており、依存にも Ready/Blocked にも関わらない。戻す操作は持たない
+ * (直後の Undo だけが戻せる)ので、読むために要るものを写して残す。
+ *
+ * projectName は名前の写し。所属は位置から導くもの(FR-4)で、Task が消えれば
+ * 導けなくなり、Project の名前も後から変わりうるため、アーカイブの時点の名前を残す。
+ */
+export type ArchivedTask = {
+  /** アーカイブ前の Task の id。グラフには存在しないので、記録の識別にだけ使う。 */
+  readonly id: TaskId;
+  readonly title: string;
+  readonly memo: string;
+  readonly childTasks: readonly ArchivedChildTask[];
+  /** アーカイブした時刻(エポックミリ秒)。ドメインは時計を持たないので外から渡される。 */
+  readonly archivedAt: number;
+  readonly projectName: string | null;
+};
+
 export type TaskGraph = {
   readonly tasks: ReadonlyMap<TaskId, Task>;
   readonly childTasks: ReadonlyMap<ChildTaskId, ChildTask>;
   readonly edges: ReadonlyMap<EdgeId, DependencyEdge>;
   readonly projects: ReadonlyMap<ProjectId, Project>;
+  /**
+   * アーカイブの記録(FR-11)。TaskGraph の一部に置くのは、Undo がグラフの
+   * スナップショットを積む方式(D-3)であり、これによりグラフへの復帰と記録の
+   * 取り消しが1回で揃うため(D-15)。
+   */
+  readonly archived: readonly ArchivedTask[];
 };
 
 export const emptyGraph: TaskGraph = {
@@ -119,4 +154,5 @@ export const emptyGraph: TaskGraph = {
   childTasks: new Map(),
   edges: new Map(),
   projects: new Map(),
+  archived: [],
 };

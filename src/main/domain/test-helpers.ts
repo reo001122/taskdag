@@ -100,7 +100,7 @@ export function buildGraph(spec: GraphSpec): TaskGraph {
     edges.set(id, { id, from: taskId(from), to: taskId(to) });
   }
 
-  return { tasks, childTasks, edges, projects };
+  return { tasks, childTasks, edges, projects, archived: [] };
 }
 
 /** グラフ内の依存エッジを `from->to` の配列として取り出す(順不同比較用にソート済み)。 */

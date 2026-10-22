@@ -128,5 +128,5 @@ export function applyDeleteTask(
     edges.set(id, { id, from, to });
   }
 
-  return { tasks, childTasks, edges, projects: graph.projects };
+  return { ...graph, tasks, childTasks, edges };
 }

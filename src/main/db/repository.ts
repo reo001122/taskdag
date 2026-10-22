@@ -92,7 +92,7 @@ export function load(db: DatabaseSync): TaskGraph {
     edges.set(id, { id, from: taskId(r.from_task_id), to: taskId(r.to_task_id) });
   }
 
-  return { tasks, childTasks, edges, projects };
+  return { tasks, childTasks, edges, projects, archived: [] };
 }
 
 /**
