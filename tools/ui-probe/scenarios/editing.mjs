@@ -1470,5 +1470,56 @@ export default {
         grown.矩形.bottom <= grown.表示範囲.bottom,
       grown,
     );
+
+    /*
+      キー操作の一覧(カンペ)。ボタンと ? で開閉でき、中身が出ていること。
+      名前の入力中の ? は、一覧を開かず文字として入る。
+    */
+    const helpOpen = () => evaluate(`return document.querySelector('.help-panel') !== null`);
+    await evaluate(`document.activeElement?.blur(); return 1;`);
+    check('HP-1a 起動直後は一覧が閉じている', (await helpOpen()) === false);
+
+    await clickToolbar('キー操作');
+    await waitFor('一覧が開く', `return document.querySelector('.help-panel') !== null`);
+    const content = await evaluate(`
+      const p = document.querySelector('.help-panel');
+      return {
+        headings: [...p.querySelectorAll('h3')].map((h) => h.textContent),
+        rows: [...p.querySelectorAll('li')].map((li) => li.textContent),
+      };
+    `);
+    check(
+      'HP-1b 一覧に2つの見出しが出る',
+      content.headings.join('|') === 'キャンバス|名前・メモの入力中',
+      content.headings,
+    );
+    check(
+      'HP-1c Shift+Enter の行に childTask の説明がある',
+      content.rows.some((r) => /^(Shift|⇧)\+Enter/.test(r) && r.includes('childTask')),
+      content.rows,
+    );
+    await clickToolbar('キー操作');
+    await waitFor('一覧が閉じる', `return document.querySelector('.help-panel') === null`);
+    check('HP-1d もう一度押すと閉じる', (await helpOpen()) === false);
+
+    await key({ key: '?', code: 191, shift: true, text: '?' });
+    await waitFor('? で一覧が開く', `return document.querySelector('.help-panel') !== null`);
+    check('HP-2a ? で開く', await helpOpen());
+    await key({ key: 'Escape', code: 27 });
+    await waitFor('Esc で一覧が閉じる', `return document.querySelector('.help-panel') === null`);
+    check('HP-2b Esc で閉じる', (await helpOpen()) === false);
+
+    // 新しい Task は名前の入力に入った状態で作られる(FR-1)。
+    await clickToolbar('Task');
+    await waitForFocus();
+    await type('a?b');
+    const typed = await evaluate(`return document.activeElement?.value ?? null`);
+    check(
+      'HP-3 名前の入力中の ? は一覧を開かず、文字として入る',
+      typed === 'a?b' && !(await helpOpen()),
+      { typed },
+    );
+    await key({ key: 'Enter', code: 13 });
+    await waitFor('入力欄が閉じる', `return !document.querySelector('.text-input')`);
   },
 };

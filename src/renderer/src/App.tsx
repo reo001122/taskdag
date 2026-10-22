@@ -22,6 +22,7 @@ import { clearDropFeedback, type DropPoint, findDropPoint, showDropFeedback } fr
 import { PROJECT_COLOR_COUNT, projectColorAt } from './colors';
 import { DependencyEdge, type DependencyEdgeData } from './DependencyEdge';
 import { DeleteDialog, TextPromptDialog } from './Dialogs';
+import { HelpPanel } from './HelpPanel';
 import { allowed, commandFor, isHandedOff, type KeyContext } from './keymap';
 import {
   computeLayout,
@@ -64,6 +65,8 @@ export function App(): React.JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [deletePlan, setDeletePlan] = useState<DeletePlan | null>(null);
   const [askProjectName, setAskProjectName] = useState(false);
+  // キー操作の一覧。起動時は閉じていて、開閉の状態は保存しない。
+  const [helpOpen, setHelpOpen] = useState(false);
 
   /**
    * 直後に編集へ入れる相手。Task と childTask のどちらの id も入る。
@@ -560,6 +563,17 @@ export function App(): React.JSX.Element {
     const onKeyDown = (e: KeyboardEvent): void => {
       // 先に誰かが扱ったキーは、こちらでは何もしない。実行する操作だけ preventDefault する。
       if (e.defaultPrevented) return;
+
+      // Esc で一覧を閉じる。開いているときだけ。ダイアログと入力欄の Esc は、それぞれのもの。
+      if (e.key === 'Escape' && helpOpen) {
+        const ctx = keyContextOf(e);
+        if (!ctx.dialogOpen && !ctx.fromEditable && !ctx.inputOpen) {
+          e.preventDefault();
+          setHelpOpen(false);
+        }
+        return;
+      }
+
       const command = commandFor(e);
       if (
         command === null ||
@@ -577,6 +591,12 @@ export function App(): React.JSX.Element {
         ダイアログの外を押したあとはフォーカスがどこにあるか定まらない。
       */
       if (!allowed(command, keyContextOf(e))) return;
+
+      if (command.type === 'toggleHelp') {
+        e.preventDefault();
+        setHelpOpen((open) => !open);
+        return;
+      }
 
       // Cmd+Z / Cmd+Shift+Z(FR-8)。AI が行った操作もこれで戻せる。
       if (command.type === 'undo' || command.type === 'redo') {
@@ -726,7 +746,7 @@ export function App(): React.JSX.Element {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keydown', onArrow, true);
     };
-  }, [send, addTaskHere, addChild, resolveTarget, moveRowCursor, requestDelete]);
+  }, [send, addTaskHere, addChild, resolveTarget, moveRowCursor, requestDelete, helpOpen]);
 
   /*
     作った直後の Task を選んでおく(FR-1)。
@@ -992,9 +1012,18 @@ export function App(): React.JSX.Element {
             {error}
           </span>
         )}
+        <button
+          type="button"
+          aria-pressed={helpOpen}
+          onClick={() => setHelpOpen((open) => !open)}
+          title="キー操作の一覧(? でも開閉)"
+        >
+          キー操作
+        </button>
       </div>
 
-      <div style={{ flex: 1 }}>
+      <div style={{ flex: 1, position: 'relative' }}>
+        {helpOpen && <HelpPanel onClose={() => setHelpOpen(false)} />}
         <ReactFlow
           nodes={nodes}
           edges={edges}
