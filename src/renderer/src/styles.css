@@ -231,7 +231,6 @@ body {
   border-radius: 4px;
   background: color-mix(in srgb, var(--text) 7%, var(--surface));
   color: var(--text);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 10.5px;
   text-align: center;
 }
