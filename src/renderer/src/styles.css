@@ -32,6 +32,8 @@
   --hover-shade: rgb(0 0 0 / 4%);
   --blocked-border: #c9c9c2;
   --project: #8b8b84;
+  /* キャンバスに浮いた部品(キー操作の一覧)の影。Task のカードと見分ける。 */
+  --panel-shadow: 0 4px 16px rgb(0 0 0 / 10%);
 
   --danger: #b42318;
   /* 危険なボタンの上に載せる文字色。地の色に合わせて反転させる。 */
@@ -55,6 +57,7 @@
     --hover-shade: rgb(0 0 0 / 22%);
     --blocked-border: #3d3d45;
     --project: #6f6f78;
+    --panel-shadow: 0 4px 16px rgb(0 0 0 / 40%);
 
     --danger: #f87171;
     --danger-ink: #2b0f0f;
@@ -144,13 +147,14 @@ body {
   max-height: calc(100vh - 120px);
   overflow-y: auto;
   padding: 6px 8px 8px;
-  border: 1px solid var(--border);
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   border-radius: 8px;
-  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  backdrop-filter: blur(8px);
   color: var(--text);
   font-size: 11px;
   line-height: 1.5;
-  box-shadow: 0 2px 10px rgb(0 0 0 / 14%);
+  box-shadow: var(--panel-shadow);
 }
 .help-head {
   display: flex;
@@ -175,12 +179,13 @@ body {
   font: inherit;
   font-size: 11px;
   padding: 3px 9px;
-  border: 1px solid var(--border);
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   border-radius: 8px;
-  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  backdrop-filter: blur(8px);
   color: var(--text-dim);
   cursor: pointer;
-  box-shadow: 0 2px 10px rgb(0 0 0 / 14%);
+  box-shadow: var(--panel-shadow);
 }
 .help-collapsed:hover {
   border-color: var(--text-dim);
@@ -206,20 +211,32 @@ body {
 .help-combo {
   white-space: nowrap;
 }
+.help-subhead {
+  margin: 6px 0 0;
+  font-size: 10px;
+  font-weight: normal;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+/* 印の付いた行が操作の相手であることを、行の印と同じ青で結びつける。 */
+.help-subhead.selected {
+  padding-left: 5px;
+  border-left: 3px solid var(--select);
+}
 .help-panel kbd {
   display: inline-block;
-  min-width: 1.4em;
-  padding: 0 4px;
-  border: 1px solid var(--border);
-  border-bottom-width: 2px;
+  min-width: 18px;
+  padding: 1px 5px;
+  border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
   border-radius: 4px;
-  background: var(--bg);
+  background: color-mix(in srgb, var(--text) 7%, var(--surface));
   color: var(--text);
-  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px;
   text-align: center;
 }
 .help-desc {
-  color: var(--text-dim);
+  color: color-mix(in srgb, var(--text) 80%, transparent);
 }
 
 /* ---- Task ノード ---- */
