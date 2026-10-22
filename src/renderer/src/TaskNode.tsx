@@ -2,6 +2,7 @@ import { Handle, Position as HandlePosition, type NodeProps } from '@xyflow/reac
 import { useContext, useEffect, useRef, useState } from 'react';
 import type { ChildTaskSnapshot, Command, Progress, TaskSnapshot } from '../../shared/ipc';
 import { type DropPoint, startChildDrag } from './child-drag';
+import { handOff } from './keymap';
 import { logger } from './log';
 import { type Caret, focusInput, NodeMeasured, useCloseOnOutsidePointerDown } from './node-editing';
 
@@ -287,11 +288,14 @@ function EditableText({
           打っている途中で新しい Task に移るのは、書きかけを置き去りにする
           操作なので、まずここで確定させる。そのうえで作成はキャンバス側に
           任せる —— ＋ Task のボタンを押したときと同じ結果になる。
+          確定したら handOff で印を付けて通す(keymap.ts)。キャンバス側は、この
+          印の無い Cmd+N を入力欄の中から来たものとして拒否する。
           かつては「打っている間は効かない」にしていたが、ボタンでは作れて
           キーでは作れない、という食い違いが残っていた。
         */
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
           finishRef.current(false);
+          handOff(e.nativeEvent);
           return;
         }
 
@@ -430,6 +434,7 @@ function Memo({
         // Cmd+N は通す。ここで確定させ、作成はキャンバス側に任せる(名前の欄と同じ)。
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
           finish();
+          handOff(e.nativeEvent);
           return;
         }
 

@@ -1,6 +1,7 @@
 import { type NodeProps, NodeResizer } from '@xyflow/react';
 import { useContext, useEffect, useRef, useState } from 'react';
 import { PROJECT_COLORS } from './colors';
+import { handOff } from './keymap';
 import { focusInput, NodeMeasured, useCloseOnOutsidePointerDown } from './node-editing';
 
 /**
@@ -77,6 +78,13 @@ function ProjectName({
         if (!closingRef.current && document.hasFocus()) inputRef.current?.focus();
       }}
       onKeyDown={(e) => {
+        // Cmd+N は Task 名と同じく、確定してから通す(FR-1。理由は EditableText)。
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
+          commitRef.current();
+          handOff(e.nativeEvent);
+          return;
+        }
+
         // キャンバスのショートカットへ渡さない(bubble 側で止める。理由は EditableText)
         e.stopPropagation();
 

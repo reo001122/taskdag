@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { allowed, type CommandType, commandFor, type KeyContext, type KeyInput } from './keymap';
+import {
+  allowed,
+  type CommandType,
+  commandFor,
+  handOff,
+  isHandedOff,
+  type KeyContext,
+  type KeyInput,
+} from './keymap';
 
 const ALL: CommandType[] = [
   'editName',
@@ -127,5 +135,28 @@ describe('allowed: 実行してよいか', () => {
     expect(allowed(of('moveMark'), { ...quiet, fromEditable: true })).toBe(false);
     expect(allowed(of('moveMark'), { ...quiet, fromDialog: true })).toBe(false);
     expect(allowed(of('moveMark'), quiet)).toBe(true);
+  });
+});
+
+describe('handOff: 入力欄からの Cmd+N', () => {
+  it('入力欄の中から来た Cmd+N は、確定して渡されたときだけ通る', () => {
+    const typing = { ...quiet, fromEditable: true, inputOpen: true };
+    expect(allowed(of('newTask'), typing)).toBe(false);
+    expect(allowed(of('newTask'), { ...typing, handedOff: true })).toBe(true);
+  });
+
+  it('handOff の印は、渡したイベントにだけ付く', () => {
+    const first = key('n', { metaKey: true });
+    const second = key('n', { metaKey: true });
+    expect(isHandedOff(first)).toBe(false);
+    handOff(first);
+    expect(isHandedOff(first)).toBe(true);
+    expect(isHandedOff(second)).toBe(false);
+  });
+
+  it('渡されても、ダイアログが開いていれば通らない', () => {
+    expect(
+      allowed(of('newTask'), { ...quiet, fromEditable: true, handedOff: true, dialogOpen: true }),
+    ).toBe(false);
   });
 });

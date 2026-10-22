@@ -103,8 +103,10 @@ const REFUSED_WHEN: Record<CommandType, (c: KeyContext) => boolean> = {
   // ボタン上でも Undo は効く(キーを使うのは Enter 系だけ)。
   undo: (c) => c.dialogOpen || c.fromDialog || c.fromEditable || c.inputOpen,
   redo: (c) => c.dialogOpen || c.fromDialog || c.fromEditable || c.inputOpen,
-  // 入力欄が開いていても作れる(確定してから作る。FR-1)。
-  newTask: (c) => c.dialogOpen || c.fromDialog,
+  // 入力欄が開いていても作れる(確定してから作る。FR-1)。ただし入力欄の中から届いた
+  // Cmd+N は、入力欄が確定を済ませて handOff したものだけを通す。確定を書き忘れた
+  // 新しい入力欄からは、書きかけのまま Task が作られない。
+  newTask: (c) => c.dialogOpen || c.fromDialog || (c.fromEditable && !c.handedOff),
   moveMark: (c) => c.dialogOpen || c.fromDialog || c.fromEditable,
   // 入力欄の中では止めない(文字の移動に使うため)。
   blockArrow: (c) => c.dialogOpen || c.fromEditable,
@@ -112,4 +114,22 @@ const REFUSED_WHEN: Record<CommandType, (c: KeyContext) => boolean> = {
 
 export function allowed(command: KeyCommand, context: KeyContext): boolean {
   return !REFUSED_WHEN[command.type](context);
+}
+
+/*
+  入力欄からキャンバスへ渡したキー(Cmd+N)の印。
+
+  入力欄は Cmd+N を受けたら**確定処理をしてから** handOff し、stopPropagation せずに
+  通す。キャンバス側はこの印の付いたものだけを、入力欄の中から来たキーとして通す。
+  印はイベントそのものに付ける(WeakSet)ので、別のイベントには移らない。
+*/
+const handedOff = new WeakSet<object>();
+
+/** 確定を済ませた入力欄が、このキーをキャンバスへ渡すと宣言する。 */
+export function handOff(event: object): void {
+  handedOff.add(event);
+}
+
+export function isHandedOff(event: object): boolean {
+  return handedOff.has(event);
 }

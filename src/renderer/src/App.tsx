@@ -22,7 +22,7 @@ import { clearDropFeedback, type DropPoint, findDropPoint, showDropFeedback } fr
 import { PROJECT_COLOR_COUNT, projectColorAt } from './colors';
 import { DependencyEdge, type DependencyEdgeData } from './DependencyEdge';
 import { DeleteDialog, TextPromptDialog } from './Dialogs';
-import { allowed, commandFor, type KeyContext } from './keymap';
+import { allowed, commandFor, isHandedOff, type KeyContext } from './keymap';
 import {
   computeLayout,
   findFreeProjectSlot,
@@ -52,7 +52,7 @@ function keyContextOf(e: KeyboardEvent): KeyContext {
     fromDialog: from?.closest('dialog') != null,
     dialogOpen: document.querySelector('dialog[open]') !== null,
     inputOpen: document.querySelector('.text-input, .memo-input') !== null,
-    handedOff: false,
+    handedOff: isHandedOff(e),
   };
 }
 
