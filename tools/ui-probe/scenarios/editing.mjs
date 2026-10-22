@@ -1232,31 +1232,25 @@ export default {
     );
 
     /*
-      Tab を押しても、キャンバスの中のボタン(状態の四角・▾・✎・＋・× など)には
-      フォーカスが止まらない(FR-1)。キーボードから押すことは想定しておらず、
-      止まるとオレンジの枠だけが出て、何が選ばれているのか分からなくなる。
-      左下の拡大・縮小は Task の部品ではないので対象にしない。
+      Tab は使わない(FR-1)。ダイアログの外では、押してもフォーカスは動かない。
+
+      巡回させると、ツールバーのボタンにフォーカスがあるのに Enter が選んでいる
+      Task の名前を開く、という食い違いが出た。印の付いた行から何度押しても、
+      フォーカスはその行に留まること。
     */
-    const tabStops = [];
-    for (let i = 0; i < 12; i += 1) {
+    headIdx = await taskHeadIndexOf('状態四角確認');
+    await pressRow('.task-head', headIdx);
+    const focusBeforeTab = await evaluate(`return document.activeElement?.className ?? null`);
+    for (let i = 0; i < 5; i += 1) {
       await key({ key: 'Tab', code: 9 });
-      await wait(40);
-      tabStops.push(
-        await evaluate(`
-          const a = document.activeElement;
-return a && a.closest('.react-flow__node, .react-flow__edge, .react-flow__edgelabel-renderer')
-            ? a.tagName.toLowerCase() + '.' + String(a.className?.baseVal ?? a.className).split(' ')[0]
-            : null;
-        `),
-      );
+      await key({ key: 'Tab', code: 9, shift: true });
     }
-    const buttonStops = tabStops.filter((x) => x !== null);
+    await wait(100);
+    const focusAfterTab = await evaluate(`return document.activeElement?.className ?? null`);
     check(
-      'R-1e Tab を押しても、Task・依存の矢印とその中のボタンには止まらない',
-      buttonStops.length === 0,
-      {
-        buttonStops,
-      },
+      'R-1e Tab / Shift+Tab を押しても、フォーカスは動かない',
+      focusBeforeTab !== null && focusAfterTab === focusBeforeTab,
+      { focusBeforeTab, focusAfterTab },
     );
     await key({ key: 'Escape', code: 27 });
     await wait(200);

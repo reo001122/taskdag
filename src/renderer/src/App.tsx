@@ -561,7 +561,13 @@ export function App(): React.JSX.Element {
       // 先に誰かが扱ったキーは、こちらでは何もしない。実行する操作だけ preventDefault する。
       if (e.defaultPrevented) return;
       const command = commandFor(e);
-      if (command === null || command.type === 'moveMark' || command.type === 'blockArrow') return;
+      if (
+        command === null ||
+        command.type === 'moveMark' ||
+        command.type === 'blockArrow' ||
+        command.type === 'blockTab'
+      )
+        return;
       /*
         ダイアログが開いている間は、背景のグラフに触れない(可否は keymap.ts)。
 
@@ -673,8 +679,26 @@ export function App(): React.JSX.Element {
     */
     const onArrow = (e: KeyboardEvent): void => {
       const command = commandFor(e);
-      if (command?.type !== 'moveMark' && command?.type !== 'blockArrow') return;
+      if (
+        command?.type !== 'moveMark' &&
+        command?.type !== 'blockArrow' &&
+        command?.type !== 'blockTab'
+      )
+        return;
       if (!allowed(command, keyContextOf(e))) return;
+
+      /*
+        Tab は使わない(FR-1)。ダイアログの中を除き、押してもフォーカスは動かない。
+
+        巡回させると、ツールバーのボタンにフォーカスがあるのに Enter が選んでいる
+        Task の名前を開く、という食い違いが出る。キャンバスの操作はクリックと
+        Shift+↑↓・Enter で行う。捕捉の段階で止めるのは、入力欄(メモ)の中の
+        Tab も既定の移動をさせないため。
+      */
+      if (command.type === 'blockTab') {
+        e.preventDefault();
+        return;
+      }
 
       /*
         Shift+↑↓ で、印を親 Task と childTask の間で動かす(FR-1)。

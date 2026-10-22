@@ -19,6 +19,7 @@ const ALL: CommandType[] = [
   'newTask',
   'moveMark',
   'blockArrow',
+  'blockTab',
 ];
 
 /** 何も起きていない画面(キャンバスにフォーカスがあり、入力欄もダイアログも無い)。 */
@@ -194,6 +195,15 @@ describe('allowed: 実行してよいか', () => {
     const open = { ...quiet, inputOpen: true };
     expect(allowed(of('newTask'), open)).toBe(true);
     expect(allowed(of('moveMark'), open)).toBe(true);
+  });
+
+  it('Tab はダイアログの中だけで使え、それ以外(入力欄の中も)では止める', () => {
+    expect(commandFor(key('Tab'))?.type).toBe('blockTab');
+    expect(commandFor({ ...key('Tab'), shiftKey: true })?.type).toBe('blockTab');
+    expect(commandFor({ ...key('Tab'), metaKey: true })).toBeNull();
+    expect(allowed(of('blockTab'), quiet)).toBe(true);
+    expect(allowed(of('blockTab'), { ...quiet, fromEditable: true })).toBe(true);
+    expect(allowed(of('blockTab'), { ...quiet, dialogOpen: true })).toBe(false);
   });
 
   it('矢印は入力欄の中では止めない(文字の移動に使う)', () => {

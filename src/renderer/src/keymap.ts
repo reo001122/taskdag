@@ -31,7 +31,9 @@ export type KeyCommand =
   | { type: 'newTask' }
   | { type: 'moveMark'; delta: 1 | -1 }
   /** React Flow の矢印移動を止めるだけ(FR-6)。印は動かさない。 */
-  | { type: 'blockArrow' };
+  | { type: 'blockArrow' }
+  /** Tab を何にも使わせない(FR-1)。フォーカスを動かさない。 */
+  | { type: 'blockTab' };
 
 export type CommandType = KeyCommand['type'];
 
@@ -67,6 +69,8 @@ export function commandFor(e: KeyInput): KeyCommand | null {
       return { type: 'moveMark', delta: e.key === 'ArrowDown' ? 1 : -1 };
     }
     if (e.key.startsWith('Arrow')) return { type: 'blockArrow' };
+    // Shift+Tab も同じ。修飾キー付き(Cmd+Tab など)は OS のものなので触らない。
+    if (e.key === 'Tab' && !mod && !e.altKey) return { type: 'blockTab' };
 
     if (mod && !e.altKey && key === 'z') return { type: e.shiftKey ? 'redo' : 'undo' };
     if (mod && !e.altKey && !e.shiftKey && key === 'n') return { type: 'newTask' };
@@ -120,6 +124,8 @@ const REFUSED_WHEN: Record<CommandType, (c: KeyContext) => boolean> = {
   moveMark: (c) => c.dialogOpen || c.fromDialog || c.fromEditable,
   // 入力欄の中では止めない(文字の移動に使うため)。
   blockArrow: (c) => c.dialogOpen || c.fromEditable,
+  // ダイアログの中だけは Tab を残す(入力欄とボタンの間を移るため)。入力欄の中でも止める。
+  blockTab: (c) => c.dialogOpen,
 };
 
 export function allowed(command: KeyCommand, context: KeyContext): boolean {
