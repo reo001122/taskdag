@@ -30,6 +30,8 @@ export type KeyCommand =
   | { type: 'redo' }
   | { type: 'newTask' }
   | { type: 'moveMark'; delta: 1 | -1 }
+  /** キー操作の一覧(カンペ)を開閉する。 */
+  | { type: 'toggleHelp' }
   /** React Flow の矢印移動を止めるだけ(FR-6)。印は動かさない。 */
   | { type: 'blockArrow' }
   /** Tab を何にも使わせない(FR-1)。フォーカスを動かさない。 */
@@ -72,6 +74,9 @@ export function commandFor(e: KeyInput): KeyCommand | null {
     // Shift+Tab も同じ。修飾キー付き(Cmd+Tab など)は OS のものなので触らない。
     if (e.key === 'Tab' && !mod && !e.altKey) return { type: 'blockTab' };
 
+    // ? は Shift の有無を問わない(配列によって Shift を要るものと要らないものがある)。
+    if (e.key === '?' && !mod && !e.altKey) return { type: 'toggleHelp' };
+
     if (mod && !e.altKey && key === 'z') return { type: e.shiftKey ? 'redo' : 'undo' };
     if (mod && !e.altKey && !e.shiftKey && key === 'n') return { type: 'newTask' };
     return null;
@@ -87,6 +92,7 @@ const NO_REPEAT: ReadonlySet<CommandType> = new Set<CommandType>([
   'deleteRow',
   'editName',
   'openMemo',
+  'toggleHelp',
 ]);
 
 /** 押された場所と画面の状態。呼び出し側が DOM から作る。 */
@@ -122,6 +128,8 @@ const REFUSED_WHEN: Record<CommandType, (c: KeyContext) => boolean> = {
   // 新しい入力欄からは、書きかけのまま Task が作られない。
   newTask: (c) => c.dialogOpen || c.fromDialog || (c.fromEditable && !c.handedOff),
   moveMark: (c) => c.dialogOpen || c.fromDialog || c.fromEditable,
+  // ? は文字として打てる。入力欄の中・入力欄が開いている間は文字のもの。
+  toggleHelp: (c) => c.dialogOpen || c.fromDialog || c.fromEditable || c.inputOpen,
   // 入力欄の中では止めない(文字の移動に使うため)。
   blockArrow: (c) => c.dialogOpen || c.fromEditable,
   // ダイアログの中だけは Tab を残す(入力欄とボタンの間を移るため)。入力欄の中でも止める。
@@ -149,3 +157,79 @@ export function handOff(event: object): void {
 export function isHandedOff(event: object): boolean {
   return handedOff.has(event);
 }
+
+/*
+  キー操作の一覧(カンペ)の元データ。
+
+  表示側(App.tsx)はこれを読んで一覧を作る。キーの名前は表記ではなく印(トークン)で
+  持ち、Mac では ⌘ / ⇧、それ以外では Ctrl / Shift に直すのは表示側の仕事。
+    'Mod'   — Cmd または Ctrl(どちらでも効く)
+    'Shift' — Shift
+  それ以外はそのままの表記。
+*/
+
+/** 一覧に載せない操作。利用者が使うものではなく、既定の動きを止めるだけ。 */
+export type HiddenCommandType = 'blockArrow' | 'blockTab';
+
+export type Shortcut = {
+  /** 載せ忘れを単体テストで検出するための紐づけ */
+  command: Exclude<CommandType, HiddenCommandType>;
+  /** 同じ操作をするキーの組。外側は「または」、内側は同時に押すキー。 */
+  keys: readonly (readonly string[])[];
+  description: string;
+};
+
+/** キャンバスの操作。CommandType のうち利用者が使うものを1件ずつ載せる(keymap.test.ts が確かめる)。 */
+export const SHORTCUTS: readonly Shortcut[] = [
+  { command: 'editName', keys: [['Enter']], description: '印の付いた行の名前を編集する' },
+  {
+    command: 'addChild',
+    keys: [['Shift', 'Enter']],
+    description: '印の付いた Task に childTask を足す',
+  },
+  { command: 'openMemo', keys: [['Mod', 'Enter']], description: '印の付いた行のメモを開く' },
+  { command: 'deleteRow', keys: [['Delete'], ['Backspace']], description: '印の付いた行を消す' },
+  {
+    command: 'moveMark',
+    keys: [
+      ['Shift', '↑'],
+      ['Shift', '↓'],
+    ],
+    description: '印を親 Task と childTask の間で動かす',
+  },
+  { command: 'newTask', keys: [['Mod', 'N']], description: 'Task を足す' },
+  { command: 'undo', keys: [['Mod', 'Z']], description: '元に戻す' },
+  { command: 'redo', keys: [['Mod', 'Shift', 'Z']], description: 'やり直す' },
+  { command: 'toggleHelp', keys: [['?']], description: 'このキー操作の一覧を開閉する' },
+];
+
+export type InputShortcut = {
+  keys: readonly (readonly string[])[];
+  description: string;
+};
+
+/** 名前・メモの入力中の操作。見出しごとの組。 */
+export const INPUT_SHORTCUTS: readonly { title: string; items: readonly InputShortcut[] }[] = [
+  /*
+    手で書いている。TaskNode.tsx の onKeyDown を変えたらここも直す。
+    (キャンバス側と違い、commandFor を通らないので、載せ忘れを機械では検出できない。)
+  */
+  {
+    title: '名前',
+    items: [
+      { keys: [['Enter']], description: '確定する' },
+      { keys: [['Shift', 'Enter']], description: '確定して childTask を足す' },
+      { keys: [['Mod', 'Enter']], description: '確定してメモへ移る' },
+      { keys: [['Backspace']], description: '空の名前なら、その childTask を取り消す' },
+      { keys: [['Esc']], description: '取り消す' },
+    ],
+  },
+  {
+    title: 'メモ',
+    items: [
+      { keys: [['Enter']], description: '確定する' },
+      { keys: [['Shift', 'Enter']], description: '改行する' },
+      { keys: [['Esc']], description: '取り消す' },
+    ],
+  },
+];

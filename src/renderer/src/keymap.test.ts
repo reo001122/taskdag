@@ -4,9 +4,11 @@ import {
   type CommandType,
   commandFor,
   handOff,
+  INPUT_SHORTCUTS,
   isHandedOff,
   type KeyContext,
   type KeyInput,
+  SHORTCUTS,
 } from './keymap';
 
 const ALL: CommandType[] = [
@@ -18,6 +20,7 @@ const ALL: CommandType[] = [
   'redo',
   'newTask',
   'moveMark',
+  'toggleHelp',
   'blockArrow',
   'blockTab',
 ];
@@ -238,5 +241,57 @@ describe('handOff: 入力欄からの Cmd+N', () => {
     expect(
       allowed(of('newTask'), { ...quiet, fromEditable: true, handedOff: true, dialogOpen: true }),
     ).toBe(false);
+  });
+});
+
+describe('toggleHelp: ? キー', () => {
+  it('? は Shift の有無を問わず一覧の開閉。Cmd / Ctrl / Alt 付きは別のキー', () => {
+    expect(commandFor(key('?'))?.type).toBe('toggleHelp');
+    expect(commandFor(key('?', { shiftKey: true }))?.type).toBe('toggleHelp');
+    for (const mods of [{ metaKey: true }, { ctrlKey: true }, { altKey: true }]) {
+      expect(commandFor(key('?', mods)), JSON.stringify(mods)).toBeNull();
+    }
+  });
+
+  it('キーリピートでは開閉を繰り返さない', () => {
+    expect(commandFor({ ...key('?'), repeat: true })).toBeNull();
+  });
+
+  it('ダイアログ・入力欄の中・入力欄が開いている間は拒否、何も無ければ許可', () => {
+    const c = { type: 'toggleHelp' } as const;
+    expect(allowed(c, quiet)).toBe(true);
+    expect(allowed(c, { ...quiet, dialogOpen: true })).toBe(false);
+    expect(allowed(c, { ...quiet, fromDialog: true })).toBe(false);
+    expect(allowed(c, { ...quiet, fromEditable: true })).toBe(false);
+    expect(allowed(c, { ...quiet, inputOpen: true })).toBe(false);
+  });
+});
+
+describe('SHORTCUTS: キー操作の一覧', () => {
+  it('利用者が使う操作(blockArrow / blockTab 以外)が、1件ずつ載っている', () => {
+    const expected = ALL.filter((t) => t !== 'blockArrow' && t !== 'blockTab').sort();
+    expect(SHORTCUTS.map((s) => s.command).sort()).toEqual(expected);
+  });
+
+  it('載せたキーは、実際にその操作として解釈される', () => {
+    const toInput = (tokens: readonly string[]): KeyInput => {
+      const k = tokens[tokens.length - 1] ?? '';
+      const name = { '↑': 'ArrowUp', '↓': 'ArrowDown' }[k] ?? k;
+      return key(name.length === 1 ? name.toLowerCase() : name, {
+        shiftKey: tokens.includes('Shift'),
+        ctrlKey: tokens.includes('Mod'),
+      });
+    };
+    for (const s of SHORTCUTS) {
+      for (const keys of s.keys) {
+        expect(commandFor(toInput(keys))?.type, `${s.command}: ${keys.join('+')}`).toBe(s.command);
+      }
+    }
+  });
+
+  it('説明が空でなく、入力中の操作も載っている', () => {
+    for (const s of SHORTCUTS) expect(s.description).not.toBe('');
+    expect(INPUT_SHORTCUTS.map((g) => g.title)).toEqual(['名前', 'メモ']);
+    for (const g of INPUT_SHORTCUTS) expect(g.items.length).toBeGreaterThan(0);
   });
 });
