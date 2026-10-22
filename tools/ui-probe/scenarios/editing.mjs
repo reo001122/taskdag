@@ -1244,15 +1244,20 @@ export default {
       tabStops.push(
         await evaluate(`
           const a = document.activeElement;
-          return a?.tagName === 'BUTTON' && !!a.closest('.react-flow__node, .react-flow__edgelabel-renderer')
-            ? (a.className || 'button') : null;
+return a && a.closest('.react-flow__node, .react-flow__edge, .react-flow__edgelabel-renderer')
+            ? a.tagName.toLowerCase() + '.' + String(a.className?.baseVal ?? a.className).split(' ')[0]
+            : null;
         `),
       );
     }
     const buttonStops = tabStops.filter((x) => x !== null);
-    check('R-1e Tab を押しても、キャンバスの中のボタンには止まらない', buttonStops.length === 0, {
-      buttonStops,
-    });
+    check(
+      'R-1e Tab を押しても、Task・依存の矢印とその中のボタンには止まらない',
+      buttonStops.length === 0,
+      {
+        buttonStops,
+      },
+    );
     await key({ key: 'Escape', code: 27 });
     await wait(200);
 

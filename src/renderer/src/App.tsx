@@ -979,6 +979,16 @@ export function App(): React.JSX.Element {
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           /*
+            カードと依存の矢印を Tab で止まる対象にしない(FR-1)。
+
+            React Flow の既定では、カード1枚・矢印1本ごとに Tab が止まる。カードには
+            枠が出ないので、使い手には「押しても何も起きない Tab」が件数ぶん続き、
+            ツールバーへ戻るまでに十数回押すことになっていた。キャンバスの中は
+            クリックと Shift+↑↓ で選ぶもので、Tab で巡回することは想定しない。
+          */
+          nodesFocusable={false}
+          edgesFocusable={false}
+          /*
             Delete / Backspace による削除を無効にする。
 
             React Flow の既定では、選んだノードやエッジをこのキーで消せる。
