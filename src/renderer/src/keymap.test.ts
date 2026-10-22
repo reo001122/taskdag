@@ -74,9 +74,9 @@ describe('commandFor: キーの解釈', () => {
 });
 
 describe('allowed: 実行してよいか', () => {
-  it('ダイアログが開いていれば、グラフに触れる操作はすべて拒否する', () => {
+  it('ダイアログが開いていれば、すべての操作を拒否する(矢印の capture 側も)', () => {
     const open = { ...quiet, dialogOpen: true };
-    for (const type of ALL.filter((t) => t !== 'moveMark' && t !== 'blockArrow')) {
+    for (const type of ALL) {
       expect(allowed(of(type), open), type).toBe(false);
     }
   });
@@ -88,9 +88,34 @@ describe('allowed: 実行してよいか', () => {
     }
   });
 
-  it('入力欄が画面に開いている間は、フォーカスが外れていても Delete は効かない(D-13)', () => {
-    expect(allowed(of('deleteRow'), { ...quiet, inputOpen: true })).toBe(false);
-    expect(allowed(of('deleteRow'), quiet)).toBe(true);
+  it('入力欄からの Undo / Redo はグラフに届かない', () => {
+    const typing = { ...quiet, fromEditable: true };
+    expect(allowed(of('undo'), typing)).toBe(false);
+    expect(allowed(of('redo'), typing)).toBe(false);
+  });
+
+  it('入力欄が画面に開いている間は、フォーカスが外れていても削除・編集・Undo は効かない(D-13)', () => {
+    const open = { ...quiet, inputOpen: true };
+    for (const type of ['deleteRow', 'editName', 'addChild', 'openMemo', 'undo', 'redo'] as const) {
+      expect(allowed(of(type), open), type).toBe(false);
+      expect(allowed(of(type), quiet), `${type} (入力欄なし)`).toBe(true);
+    }
+  });
+
+  it('入力欄が開いていても、新規 Task と印の移動は止めない', () => {
+    const open = { ...quiet, inputOpen: true };
+    expect(allowed(of('newTask'), open)).toBe(true);
+    expect(allowed(of('moveMark'), open)).toBe(true);
+  });
+
+  it('ボタンの上の Enter 系はボタンのもの。Undo や新規 Task は通す', () => {
+    const onButton = { ...quiet, fromKeyOwningUi: true };
+    for (const type of ['editName', 'addChild', 'openMemo', 'deleteRow'] as const) {
+      expect(allowed(of(type), onButton), type).toBe(false);
+    }
+    for (const type of ['undo', 'redo', 'newTask', 'moveMark'] as const) {
+      expect(allowed(of(type), onButton), type).toBe(true);
+    }
   });
 
   it('矢印は入力欄の中では止めない(文字の移動に使う)', () => {

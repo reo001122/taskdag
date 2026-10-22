@@ -560,6 +560,8 @@ export function App(): React.JSX.Element {
   */
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
+      // 先に誰かが扱ったキーは、こちらでは何もしない。実行する操作だけ preventDefault する。
+      if (e.defaultPrevented) return;
       const command = commandFor(e);
       if (command === null || command.type === 'moveMark' || command.type === 'blockArrow') return;
       /*

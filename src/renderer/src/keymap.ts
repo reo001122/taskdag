@@ -89,17 +89,25 @@ export type KeyContext = {
  * 判断の条件はここにだけ書く。操作ごとの例外は、その操作の行の中に書く。
  */
 const REFUSED_WHEN: Record<CommandType, (c: KeyContext) => boolean> = {
-  editName: (c) => c.dialogOpen || c.fromEditable || c.fromDialog,
-  addChild: (c) => c.dialogOpen || c.fromEditable || c.fromDialog,
-  openMemo: (c) => c.dialogOpen || c.fromEditable || c.fromDialog,
-  // D-13: 入力欄が画面のどこかに開いていれば、その打鍵は入力欄のもの。
-  deleteRow: (c) => c.dialogOpen || c.fromEditable || c.fromDialog || c.inputOpen,
-  undo: (c) => c.dialogOpen,
-  redo: (c) => c.dialogOpen,
-  newTask: (c) => c.dialogOpen,
-  moveMark: (c) => c.fromEditable || c.fromDialog,
+  // ダイアログが開いていれば全操作を拒否する(矢印の capture 側も同じ)。
+  // 入力欄・ボタンなど、自分でキーを使う場所のキーはその部品のもの。
+  // 入力欄が画面に開いている間は、その打鍵は入力欄のものとして扱う(D-13, D-14)。
+  editName: (c) =>
+    c.dialogOpen || c.fromDialog || c.fromEditable || c.fromKeyOwningUi || c.inputOpen,
+  addChild: (c) =>
+    c.dialogOpen || c.fromDialog || c.fromEditable || c.fromKeyOwningUi || c.inputOpen,
+  openMemo: (c) =>
+    c.dialogOpen || c.fromDialog || c.fromEditable || c.fromKeyOwningUi || c.inputOpen,
+  deleteRow: (c) =>
+    c.dialogOpen || c.fromDialog || c.fromEditable || c.fromKeyOwningUi || c.inputOpen,
+  // ボタン上でも Undo は効く(キーを使うのは Enter 系だけ)。
+  undo: (c) => c.dialogOpen || c.fromDialog || c.fromEditable || c.inputOpen,
+  redo: (c) => c.dialogOpen || c.fromDialog || c.fromEditable || c.inputOpen,
+  // 入力欄が開いていても作れる(確定してから作る。FR-1)。
+  newTask: (c) => c.dialogOpen || c.fromDialog,
+  moveMark: (c) => c.dialogOpen || c.fromDialog || c.fromEditable,
   // 入力欄の中では止めない(文字の移動に使うため)。
-  blockArrow: (c) => c.fromEditable,
+  blockArrow: (c) => c.dialogOpen || c.fromEditable,
 };
 
 export function allowed(command: KeyCommand, context: KeyContext): boolean {
