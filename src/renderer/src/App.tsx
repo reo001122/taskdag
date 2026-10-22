@@ -24,6 +24,7 @@ import type {
   DeletePlan,
   GraphSnapshot,
 } from '../../shared/ipc';
+import { ArchiveView } from './ArchiveView';
 import { clearDropFeedback, type DropPoint, findDropPoint, showDropFeedback } from './child-drag';
 import { PROJECT_COLOR_COUNT, projectColorAt } from './colors';
 import { DependencyEdge, type DependencyEdgeData } from './DependencyEdge';
@@ -55,7 +56,9 @@ function keyContextOf(e: KeyboardEvent): KeyContext {
     fromEditable:
       from !== null && (from.closest('input, textarea') !== null || from.isContentEditable),
     fromDialog: from?.closest('dialog') != null,
-    dialogOpen: document.querySelector('dialog[open]') !== null,
+    // アーカイブの一覧を出している間も、背景のキャンバスには触れさせない(FR-11)。
+    // 見えていないグラフを Cmd+Z や Delete が動かすのを防ぐ。
+    dialogOpen: document.querySelector('dialog[open], .archive-view') !== null,
     inputOpen: document.querySelector('.text-input, .memo-input') !== null,
     handedOff: isHandedOff(e),
   };
@@ -71,6 +74,8 @@ export function App(): React.JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [deletePlan, setDeletePlan] = useState<DeletePlan | null>(null);
   // アーカイブの確認(FR-11)。bulk はツールバーからまとめて移すとき。
+  // キャンバスの代わりにアーカイブの一覧を出しているか(FR-11)。
+  const [showArchive, setShowArchive] = useState(false);
   const [archivePlan, setArchivePlan] = useState<{ plan: ArchivePlan; bulk: boolean } | null>(null);
   const [askProjectName, setAskProjectName] = useState(false);
   // キー操作の一覧。起動時は閉じていて、開閉の状態は保存しない。
@@ -1001,23 +1006,31 @@ export function App(): React.JSX.Element {
   return (
     <div className="app">
       <div className="toolbar">
-        <button type="button" onClick={addTaskHere}>
+        <button type="button" disabled={showArchive} onClick={addTaskHere}>
           + Task
         </button>
-        <button type="button" onClick={() => setAskProjectName(true)}>
+        <button type="button" disabled={showArchive} onClick={() => setAskProjectName(true)}>
           + Project
         </button>
 
-        <button type="button" disabled={!snapshot?.canUndo} onClick={() => send({ type: 'undo' })}>
+        <button
+          type="button"
+          disabled={showArchive || !snapshot?.canUndo}
+          onClick={() => send({ type: 'undo' })}
+        >
           Undo
         </button>
-        <button type="button" disabled={!snapshot?.canRedo} onClick={() => send({ type: 'redo' })}>
+        <button
+          type="button"
+          disabled={showArchive || !snapshot?.canRedo}
+          onClick={() => send({ type: 'redo' })}
+        >
           Redo
         </button>
 
         <button
           type="button"
-          disabled={!snapshot || snapshot.tasks.length === 0}
+          disabled={showArchive || !snapshot || snapshot.tasks.length === 0}
           onClick={() => {
             if (!snapshot) return;
             const layout = computeLayout(snapshot, measureTasks());
@@ -1031,7 +1044,7 @@ export function App(): React.JSX.Element {
 
         <button
           type="button"
-          disabled={completedIds.length === 0}
+          disabled={showArchive || completedIds.length === 0}
           onClick={() => requestArchive(completedIds, true)}
           title="完了している Task をまとめてアーカイブへ移す(非表示のものも含む)"
         >
@@ -1046,6 +1059,16 @@ export function App(): React.JSX.Element {
           />
           完了を非表示
         </label>
+
+        <button
+          type="button"
+          className="is-view-toggle"
+          aria-pressed={showArchive}
+          onClick={() => setShowArchive((open) => !open)}
+          title="アーカイブした Task の一覧に切り替える。もう一度押すとキャンバスへ戻る"
+        >
+          アーカイブ
+        </button>
 
         <span className="spacer" />
         <span className="muted">
@@ -1066,7 +1089,13 @@ export function App(): React.JSX.Element {
         </button>
       </div>
 
-      <div style={{ flex: 1, position: 'relative' }}>
+      {showArchive && <ArchiveView archived={snapshot?.archived ?? []} />}
+
+      {/*
+        一覧を出している間もキャンバスは作ったままにして、見えなくするだけにする。
+        外すと戻ったときに表示位置と拡大率が初期化される。
+      */}
+      <div style={{ flex: 1, position: 'relative', display: showArchive ? 'none' : undefined }}>
         <ReactFlow
           nodes={nodes}
           edges={edges}
