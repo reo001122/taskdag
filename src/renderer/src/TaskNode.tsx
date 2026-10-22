@@ -80,6 +80,7 @@ function StateToggle({
 }): React.JSX.Element {
   return (
     <button
+      tabIndex={-1}
       type="button"
       className={`state-toggle nodrag ${PROGRESS_CLASS[progress]}`}
       title={`${PROGRESS_LABEL[progress]}(クリックで変更)`}
@@ -91,9 +92,8 @@ function StateToggle({
         四角を押したときだけ「印はその行、フォーカスはボタン」とずれていた。
         見た目には出ないが、そこから先のキー操作の起点になる値である。
 
-        既定を止めるだけにして onClick は残す —— 見出しの ✎ / ＋ / × と同じ
-        onPress に寄せると、キーボードで focus して Space / Enter で起動する
-        経路が無くなる。
+        既定を止めるだけにして onClick は残す。キャンバスの中のボタンは Tab で
+        止まらない(tabIndex=-1)ので、キーボードから押す経路は今は無い。
       */
       onPointerDown={(e) => {
         if (e.button !== 0) return;
@@ -252,6 +252,7 @@ function EditableText({
     // ノードは動かない —— 移動は名前以外のどこを掴んでもできる。
     return (
       <button
+        tabIndex={-1}
         type="button"
         className={`${className} nodrag`}
         onClick={begin}
@@ -414,6 +415,7 @@ function Memo({
     if (memo.length === 0) return null;
     return (
       <button
+        tabIndex={-1}
         type="button"
         className="memo-text nodrag"
         onMouseDown={(e) => e.stopPropagation()}
@@ -620,6 +622,7 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
                   件数は畳んでいるときだけ出す —— 開いていれば数えられる。
                 */
                   <button
+                    tabIndex={-1}
                     type="button"
                     className={`state-button${task.collapsed ? ' is-collapsed' : ''}`}
                     title={task.collapsed ? `展開 (${children.length} 件)` : '折りたたむ'}
@@ -642,6 +645,7 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
                   3つとも取り返しのつかない操作ではない(× も確認を出すだけ)。
                 */}
                 <button
+                  tabIndex={-1}
                   type="button"
                   className="state-button"
                   title="メモ"
@@ -650,6 +654,7 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
                   ✎
                 </button>
                 <button
+                  tabIndex={-1}
                   type="button"
                   className="state-button"
                   title="子タスクを追加"
@@ -658,6 +663,7 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
                   ＋
                 </button>
                 <button
+                  tabIndex={-1}
                   type="button"
                   className="state-button"
                   title="この Task を削除"
@@ -750,6 +756,7 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
 
                       <span className="child-actions nodrag">
                         <button
+                          tabIndex={-1}
                           type="button"
                           className="state-button"
                           title="上へ"
@@ -766,6 +773,7 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
                           ↑
                         </button>
                         <button
+                          tabIndex={-1}
                           type="button"
                           className="state-button"
                           title="下へ"
@@ -782,6 +790,7 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
                           ↓
                         </button>
                         <button
+                          tabIndex={-1}
                           type="button"
                           className="state-button"
                           title="メモ"
@@ -790,6 +799,7 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
                           ✎
                         </button>
                         <button
+                          tabIndex={-1}
                           type="button"
                           className="state-button"
                           title="削除"

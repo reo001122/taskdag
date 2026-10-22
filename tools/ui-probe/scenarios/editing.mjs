@@ -1232,23 +1232,29 @@ export default {
     );
 
     /*
-      キーボードから起動できること。押してもフォーカスを渡さない作りにしたので、
-      focus して Space で進む経路が残っているかを別に確かめる。
+      Tab を押しても、キャンバスの中のボタン(状態の四角・▾・✎・＋・× など)には
+      フォーカスが止まらない(FR-1)。キーボードから押すことは想定しておらず、
+      止まるとオレンジの枠だけが出て、何が選ばれているのか分からなくなる。
+      左下の拡大・縮小は Task の部品ではないので対象にしない。
     */
-    const beforeKeyToggle = await evaluate(
-      `return ${childRowExpr('状態あ')}?.querySelector('.state-toggle')?.className ?? null;`,
-    );
-    await evaluate(`${childRowExpr('状態あ')}?.querySelector('.state-toggle').focus(); return 1;`);
-    await key({ key: ' ', code: 32, text: ' ' });
-    await wait(400);
-    const afterKeyToggle = await evaluate(
-      `return ${childRowExpr('状態あ')}?.querySelector('.state-toggle')?.className ?? null;`,
-    );
-    check(
-      'R-1e キーボードで四角に移って Space を押すと状態が進む',
-      beforeKeyToggle !== null && afterKeyToggle !== null && beforeKeyToggle !== afterKeyToggle,
-      { beforeKeyToggle, afterKeyToggle },
-    );
+    const tabStops = [];
+    for (let i = 0; i < 12; i += 1) {
+      await key({ key: 'Tab', code: 9 });
+      await wait(40);
+      tabStops.push(
+        await evaluate(`
+          const a = document.activeElement;
+          return a?.tagName === 'BUTTON' && !!a.closest('.react-flow__node, .react-flow__edgelabel-renderer')
+            ? (a.className || 'button') : null;
+        `),
+      );
+    }
+    const buttonStops = tabStops.filter((x) => x !== null);
+    check('R-1e Tab を押しても、キャンバスの中のボタンには止まらない', buttonStops.length === 0, {
+      buttonStops,
+    });
+    await key({ key: 'Escape', code: 27 });
+    await wait(200);
 
     /*
       拡大率を上げた状態で Task を作っても、カードは重ならない(requirements.md

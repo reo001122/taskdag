@@ -55,6 +55,7 @@ function ProjectName({
     */
     return (
       <button
+        tabIndex={-1}
         type="button"
         className="project-name nodrag"
         onClick={() => {
@@ -186,6 +187,7 @@ export function ProjectFrameNode({ data, selected, width }: NodeProps): React.JS
           <ProjectName name={name} onRename={(next) => onRename(id, next)} />
 
           <button
+            tabIndex={-1}
             type="button"
             ref={swatchRef}
             className="color-swatch nodrag"
@@ -196,6 +198,7 @@ export function ProjectFrameNode({ data, selected, width }: NodeProps): React.JS
             <span className="color-picker nodrag" ref={pickerRef}>
               {PROJECT_COLORS.map((swatch, index) => (
                 <button
+                  tabIndex={-1}
                   key={swatch}
                   type="button"
                   className={`color-option${index === colorIndex ? ' is-current' : ''}`}
@@ -211,6 +214,7 @@ export function ProjectFrameNode({ data, selected, width }: NodeProps): React.JS
           )}
 
           <button
+            tabIndex={-1}
             type="button"
             className="state-button nodrag"
             title="この Project を削除(中の Task は残る)"
