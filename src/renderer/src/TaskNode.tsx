@@ -604,18 +604,37 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
                 }
               />
 
-              <EditableText
-                value={task.title}
-                className="task-title"
-                startEditing={autoEdit?.id === task.id}
-                caret={autoEdit?.caret}
-                onEditEnd={onAutoEditConsumed}
-                onCommit={(title) => send({ type: 'updateTaskTitle', id: task.id, title })}
-                // Shift+Enter で、Task 名を打ち終えた勢いのまま分解に入れる
-                onCommitAndAdd={() => onChildChainAdd(task.id)}
-                // Ctrl+Enter で、そのままメモへ
-                onCommitAndMemo={() => setMemoTarget('task')}
-              />
+              <span className="task-title-row">
+                <EditableText
+                  value={task.title}
+                  className="task-title"
+                  startEditing={autoEdit?.id === task.id}
+                  caret={autoEdit?.caret}
+                  onEditEnd={onAutoEditConsumed}
+                  onCommit={(title) => send({ type: 'updateTaskTitle', id: task.id, title })}
+                  // Shift+Enter で、Task 名を打ち終えた勢いのまま分解に入れる
+                  onCommitAndAdd={() => onChildChainAdd(task.id)}
+                  // Ctrl+Enter で、そのままメモへ
+                  onCommitAndMemo={() => setMemoTarget('task')}
+                />
+
+                {/*
+                  完了した Task にだけ、名前のすぐ右に出す(FR-11)。未完了はアーカイブできない。
+                  編集の部品(✎ ＋ ×)と取り違えないよう、文字で書いた札にしてある。
+                  名前が長いときは名前のほうが折り返し、札は縮めない。
+                */}
+                {isDone && (
+                  <button
+                    tabIndex={-1}
+                    type="button"
+                    className="archive-badge nodrag"
+                    title="アーカイブへ移す"
+                    onPointerDown={onPress(() => requestArchive(task.id))}
+                  >
+                    アーカイブ
+                  </button>
+                )}
+              </span>
 
               <span className="task-actions nodrag">
                 {children.length > 0 && (
@@ -665,18 +684,6 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
                 >
                   ＋
                 </button>
-                {/* 完了した Task にだけ出す(FR-11)。未完了はアーカイブできない。 */}
-                {isDone && (
-                  <button
-                    tabIndex={-1}
-                    type="button"
-                    className="state-button"
-                    title="アーカイブへ移す"
-                    onPointerDown={onPress(() => requestArchive(task.id))}
-                  >
-                    ⤓
-                  </button>
-                )}
                 <button
                   tabIndex={-1}
                   type="button"

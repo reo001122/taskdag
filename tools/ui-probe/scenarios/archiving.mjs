@@ -42,14 +42,13 @@ export default {
     const press = (text) => evaluate(`${toolbarButton(text)}.click(); return 1;`);
     const disabled = (text) => evaluate(`return ${toolbarButton(text)}.disabled`);
 
-    /** 見出しの ⤓ の座標。押した時点で効くので、本物のマウスで押す(FR-11)。 */
+    /** 名前の横の「アーカイブ」の札の座標。押した時点で効くので、本物のマウスで押す(FR-11)。 */
     const archiveButtonOf = (title) =>
       locatePoint({
         container: '.task-wrap',
         nameSelector: '.task-title',
         name: title,
-        partAll: '.task-actions .state-button',
-        partText: '⤓',
+        part: '.archive-badge',
       });
     const pressArchiveOf = async (title) => {
       const at = await archiveButtonOf(title);
@@ -60,8 +59,7 @@ export default {
       evaluate(`
         const wrap = [...document.querySelectorAll('.task-wrap')]
           .find((el) => el.querySelector('.task-title')?.textContent === ${JSON.stringify(title)});
-        return [...wrap.querySelectorAll('.task-actions .state-button')]
-          .filter((b) => b.textContent === '⤓').length;
+        return wrap.querySelectorAll('.task-head .archive-badge').length;
       `);
 
     const undo = async () => {
@@ -108,15 +106,12 @@ export default {
       'G-0a 完了した Task が無いとき「完了をアーカイブ」は押せない',
       await disabled('完了をアーカイブ'),
     );
-    check(
-      'G-0b 未完了の Task の見出しにアーカイブのボタンは出ない',
-      (await archiveButtonCount('X')) === 0,
-    );
+    check('G-0b 未完了の Task にアーカイブの札は出ない', (await archiveButtonCount('X')) === 0);
 
     for (const t of ['X', 'Y', 'Z']) await finish(t);
     check('G-0c 完了した Task があれば押せる', !(await disabled('完了をアーカイブ')));
     check(
-      'G-1a アーカイブのボタンは完了した Task にだけ出る',
+      'G-1a アーカイブの札は完了した Task にだけ出る',
       (await archiveButtonCount('X')) === 1 &&
         (await archiveButtonCount('Y')) === 1 &&
         (await archiveButtonCount('Z')) === 1 &&
@@ -125,6 +120,64 @@ export default {
         X: await archiveButtonCount('X'),
         W: await archiveButtonCount('W'),
       },
+    );
+    const badgeLook = await evaluate(`
+      const wrap = [...document.querySelectorAll('.task-wrap')]
+        .find((el) => el.querySelector('.task-title')?.textContent === 'X');
+      const badge = wrap.querySelector('.task-head .archive-badge');
+      const title = wrap.querySelector('.task-head .task-title');
+      const b = badge.getBoundingClientRect();
+      const t = title.getBoundingClientRect();
+      return {
+        text: badge.textContent,
+        tabIndex: badge.tabIndex,
+        nodrag: badge.classList.contains('nodrag'),
+        fontSize: parseFloat(getComputedStyle(badge).fontSize),
+        gap: Math.round(b.left - t.right),
+        sameLine: b.top < t.bottom && b.bottom > t.top,
+        inActions: !!wrap.querySelector('.task-actions .archive-badge'),
+        actionMarks: [...wrap.querySelectorAll('.task-actions button')].map((e) => e.textContent).join(''),
+      };
+    `);
+    check(
+      'G-1b 札は文字で「アーカイブ」と書かれ、名前のすぐ右に並ぶ',
+      badgeLook.text === 'アーカイブ' &&
+        badgeLook.tabIndex === -1 &&
+        badgeLook.nodrag &&
+        badgeLook.fontSize >= 10 &&
+        badgeLook.fontSize <= 11 &&
+        badgeLook.sameLine &&
+        badgeLook.gap >= 0 &&
+        badgeLook.gap <= 12,
+      badgeLook,
+    );
+    check(
+      'G-1c 見出しのボタン列に ⤓ は無い(✎ ＋ × だけ)',
+      !badgeLook.inActions && !badgeLook.actionMarks.includes('⤓'),
+      badgeLook.actionMarks,
+    );
+
+    // 名前が長くても札は押し出されない(名前のほうが折り返す)。DOM の文字だけを一時的に差し替えて測る
+    const longLook = await evaluate(`
+      const wrap = [...document.querySelectorAll('.task-wrap')]
+        .find((el) => el.querySelector('.task-title')?.textContent === 'X');
+      const title = wrap.querySelector('.task-head .task-title');
+      const original = title.textContent;
+      title.textContent = '非常に長い名前の Task '.repeat(8);
+      const node = wrap.querySelector('.task').getBoundingClientRect();
+      const b = wrap.querySelector('.task-head .archive-badge').getBoundingClientRect();
+      const t = title.getBoundingClientRect();
+      const out = { badgeRight: b.right, nodeRight: node.right, badgeWidth: b.width, titleHeight: t.height, badgeLeft: b.left, titleRight: t.right };
+      title.textContent = original;
+      return out;
+    `);
+    check(
+      'G-1d 名前が長くても札はノードの内側に残り、名前が折り返す',
+      longLook.badgeWidth > 30 &&
+        longLook.badgeRight <= longLook.nodeRight &&
+        longLook.badgeLeft >= longLook.titleRight &&
+        longLook.titleHeight > 30,
+      longLook,
     );
 
     // --- まとめて。非表示にしている完了 Task も対象(FR-11) ---------------

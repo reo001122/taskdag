@@ -355,6 +355,38 @@ body {
   padding: 7px 9px;
 }
 
+/* 名前と、その右の札(完了した Task のアーカイブ)をひと続きに置く。 */
+.task-title-row {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+/*
+  アーカイブの札(FR-11)。編集の部品(✎ ＋ ×)は記号だけで、ホバーで現れる。
+  こちらは文字で書いて、常に見せる。完了の淡い表示(opacity)の中でも読めるよう、
+  文字は本文色にして輪郭を付ける。
+*/
+.archive-badge {
+  flex: none;
+  appearance: none;
+  font: inherit;
+  font-size: 10px;
+  line-height: 1.3;
+  padding: 1px 6px;
+  border: 1px solid var(--text-dim);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.archive-badge:hover {
+  border-color: var(--text);
+  background: var(--hover-shade);
+}
+
 .task-title {
   flex: 1;
   /* button だが見た目は文章。ブラウザ既定の装飾を落とす。 */
@@ -369,6 +401,12 @@ body {
   line-height: 1.35;
   word-break: break-word;
   cursor: text;
+}
+
+/* 札があるときは、名前を札の左までに収める(余白を取り合わない)。長ければ名前が折り返す。 */
+.task-title-row:has(.archive-badge) .task-title {
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 /*
