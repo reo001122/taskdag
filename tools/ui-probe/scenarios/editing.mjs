@@ -1232,23 +1232,28 @@ export default {
     );
 
     /*
-      キーボードから起動できること。押してもフォーカスを渡さない作りにしたので、
-      focus して Space で進む経路が残っているかを別に確かめる。
+      Tab は使わない(FR-1)。ダイアログの外では、押してもフォーカスは動かない。
+
+      巡回させると、ツールバーのボタンにフォーカスがあるのに Enter が選んでいる
+      Task の名前を開く、という食い違いが出た。印の付いた行から何度押しても、
+      フォーカスはその行に留まること。
     */
-    const beforeKeyToggle = await evaluate(
-      `return ${childRowExpr('状態あ')}?.querySelector('.state-toggle')?.className ?? null;`,
-    );
-    await evaluate(`${childRowExpr('状態あ')}?.querySelector('.state-toggle').focus(); return 1;`);
-    await key({ key: ' ', code: 32, text: ' ' });
-    await wait(400);
-    const afterKeyToggle = await evaluate(
-      `return ${childRowExpr('状態あ')}?.querySelector('.state-toggle')?.className ?? null;`,
-    );
+    headIdx = await taskHeadIndexOf('状態四角確認');
+    await pressRow('.task-head', headIdx);
+    const focusBeforeTab = await evaluate(`return document.activeElement?.className ?? null`);
+    for (let i = 0; i < 5; i += 1) {
+      await key({ key: 'Tab', code: 9 });
+      await key({ key: 'Tab', code: 9, shift: true });
+    }
+    await wait(100);
+    const focusAfterTab = await evaluate(`return document.activeElement?.className ?? null`);
     check(
-      'R-1e キーボードで四角に移って Space を押すと状態が進む',
-      beforeKeyToggle !== null && afterKeyToggle !== null && beforeKeyToggle !== afterKeyToggle,
-      { beforeKeyToggle, afterKeyToggle },
+      'R-1e Tab / Shift+Tab を押しても、フォーカスは動かない',
+      focusBeforeTab !== null && focusAfterTab === focusBeforeTab,
+      { focusBeforeTab, focusAfterTab },
     );
+    await key({ key: 'Escape', code: 27 });
+    await wait(200);
 
     /*
       拡大率を上げた状態で Task を作っても、カードは重ならない(requirements.md

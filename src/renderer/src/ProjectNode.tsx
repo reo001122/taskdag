@@ -1,6 +1,7 @@
 import { type NodeProps, NodeResizer } from '@xyflow/react';
 import { useContext, useEffect, useRef, useState } from 'react';
 import { PROJECT_COLORS } from './colors';
+import { commandFor, handOff, isImeComposing } from './keymap';
 import { focusInput, NodeMeasured, useCloseOnOutsidePointerDown } from './node-editing';
 
 /**
@@ -54,6 +55,7 @@ function ProjectName({
     */
     return (
       <button
+        tabIndex={-1}
         type="button"
         className="project-name nodrag"
         onClick={() => {
@@ -77,10 +79,22 @@ function ProjectName({
         if (!closingRef.current && document.hasFocus()) inputRef.current?.focus();
       }}
       onKeyDown={(e) => {
+        // IME 変換中のキーは操作として扱わない。Cmd+N の判定より前に置く(理由は EditableText)。
+        if (isImeComposing(e.nativeEvent)) {
+          e.stopPropagation();
+          return;
+        }
+
+        // Cmd+N は Task 名と同じく、確定してから通す(FR-1。理由は EditableText)。
+        if (commandFor(e.nativeEvent)?.type === 'newTask') {
+          commitRef.current();
+          handOff(e.nativeEvent);
+          return;
+        }
+
         // キャンバスのショートカットへ渡さない(bubble 側で止める。理由は EditableText)
         e.stopPropagation();
 
-        if (e.nativeEvent.isComposing) return;
         if (e.key === 'Enter') {
           e.preventDefault();
           commitRef.current();
@@ -173,6 +187,7 @@ export function ProjectFrameNode({ data, selected, width }: NodeProps): React.JS
           <ProjectName name={name} onRename={(next) => onRename(id, next)} />
 
           <button
+            tabIndex={-1}
             type="button"
             ref={swatchRef}
             className="color-swatch nodrag"
@@ -183,6 +198,7 @@ export function ProjectFrameNode({ data, selected, width }: NodeProps): React.JS
             <span className="color-picker nodrag" ref={pickerRef}>
               {PROJECT_COLORS.map((swatch, index) => (
                 <button
+                  tabIndex={-1}
                   key={swatch}
                   type="button"
                   className={`color-option${index === colorIndex ? ' is-current' : ''}`}
@@ -198,6 +214,7 @@ export function ProjectFrameNode({ data, selected, width }: NodeProps): React.JS
           )}
 
           <button
+            tabIndex={-1}
             type="button"
             className="state-button nodrag"
             title="この Project を削除(中の Task は残る)"

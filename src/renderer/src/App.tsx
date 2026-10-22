@@ -22,6 +22,7 @@ import { clearDropFeedback, type DropPoint, findDropPoint, showDropFeedback } fr
 import { PROJECT_COLOR_COUNT, projectColorAt } from './colors';
 import { DependencyEdge, type DependencyEdgeData } from './DependencyEdge';
 import { DeleteDialog, TextPromptDialog } from './Dialogs';
+import { allowed, commandFor, isHandedOff, type KeyContext } from './keymap';
 import {
   computeLayout,
   findFreeProjectSlot,
@@ -36,6 +37,22 @@ import { ProjectFrameNode, type ProjectNodeData } from './ProjectNode';
 import { type AutoEdit, TaskNode, type TaskNodeData } from './TaskNode';
 
 const log = logger('graph');
+
+/**
+ * 押された場所と画面の状態を DOM から読む。可否の判断はしない(keymap.ts の allowed)。
+ */
+function keyContextOf(e: KeyboardEvent): KeyContext {
+  const from = e.target instanceof HTMLElement ? e.target : null;
+  return {
+    // 属性セレクタではなく isContentEditable: 継承された編集可能領域も拾う。
+    fromEditable:
+      from !== null && (from.closest('input, textarea') !== null || from.isContentEditable),
+    fromDialog: from?.closest('dialog') != null,
+    dialogOpen: document.querySelector('dialog[open]') !== null,
+    inputOpen: document.querySelector('.text-input, .memo-input') !== null,
+    handedOff: isHandedOff(e),
+  };
+}
 
 const edgeTypes: EdgeTypes = { dependency: DependencyEdge };
 
@@ -480,16 +497,28 @@ export function App(): React.JSX.Element {
    * 端は端で止める。次の Task へ回り込ませると、選択そのものが動くことになり、
    * 「今どの Task を見ているか」がキーを押すたびに変わる。
    */
+  /**
+   * キー操作の対象を決める。選んでいる Task と、その印の付いている行を一度だけ解く。
+   *
+   * 「選んでいる Task」は React Flow の選択をそのまま使う。選んでいなければ null。
+   * cursor が null なら印は親自身にある。
+   */
+  const resolveTarget = useCallback((): { taskId: string; cursor: string | null } | null => {
+    const selected = getNodes().find((n) => n.selected && n.type === 'task');
+    return selected ? { taskId: selected.id, cursor: cursorIn(selected.id) } : null;
+  }, [getNodes, cursorIn]);
+
   const moveRowCursor = useCallback(
     (delta: 1 | -1) => {
-      const taskId = getNodes().find((n) => n.selected && n.type === 'task')?.id;
-      if (taskId === undefined) return;
+      const target = resolveTarget();
+      if (target === null) return;
+      const { taskId } = target;
       const order: (string | null)[] = [null, ...rowsOf(taskId)];
-      const at = Math.max(0, order.indexOf(cursorIn(taskId)));
+      const at = Math.max(0, order.indexOf(target.cursor));
       const childId = order[Math.min(order.length - 1, Math.max(0, at + delta))];
       setCursor(childId == null ? null : { taskId, childId });
     },
-    [getNodes, rowsOf, cursorIn],
+    [resolveTarget, rowsOf],
   );
 
   const requestDelete = useCallback(
@@ -520,131 +549,39 @@ export function App(): React.JSX.Element {
     [send],
   );
 
-  // Cmd+Z / Cmd+Shift+Z(FR-8)。AI が行った操作もこれで戻せる。
+  /*
+    キーボードの入口。解釈と可否は keymap.ts にあり、ここは「対象の決定」と「実行」だけ。
+
+    bubble 側(onKeyDown)と capture 側(onArrow)は、同じ commandFor / allowed を通る。
+    違うのは受け持つ操作だけ —— 矢印は React Flow より先に取る必要があり、入力欄の
+    キーは bubble 側で止まるため(理由は TaskNode.tsx)。
+  */
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
+      // 先に誰かが扱ったキーは、こちらでは何もしない。実行する操作だけ preventDefault する。
+      if (e.defaultPrevented) return;
+      const command = commandFor(e);
+      if (
+        command === null ||
+        command.type === 'moveMark' ||
+        command.type === 'blockArrow' ||
+        command.type === 'blockTab'
+      )
+        return;
       /*
-        ダイアログが開いている間は、背景のグラフに触れない。
+        ダイアログが開いている間は、背景のグラフに触れない(可否は keymap.ts)。
 
         Enter の経路だけが押された場所を見ていたため、Cmd+Z と Cmd+N が
         素通りしていた —— 削除の確認を開いたまま Cmd+Z を押すと、提示中の
         削除計画と実際のグラフが食い違う。開いているかどうかで判断する:
         ダイアログの外を押したあとはフォーカスがどこにあるか定まらない。
       */
-      if (document.querySelector('dialog[open]')) return;
+      if (!allowed(command, keyContextOf(e))) return;
 
-      /*
-        選んでいる Task の名前を Enter で編集する(FR-1)。
-
-        入力欄の中では届かない —— 入力欄が keydown を止めている。選んでいる
-        ものが無ければ何もしない。「最後に触れたもの」を自前で覚えず、React Flow の
-        選択をそのまま使う。クリックで選ばれ、余白のクリックで外れる。
-      */
-      if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
-        /*
-          どこかの入力欄から来た Enter は、そこで意味を持っている。
-
-          Task 名の入力欄は自分で keydown を止めているが、Project 名を聞く
-          ダイアログは止めていない。そのままだと、名前を確定した Enter が
-          ここまで届いて、選ばれている Task の編集が開く。実際に起きた。
-        */
-        const from = e.target as HTMLElement | null;
-        if (from?.closest('input, textarea, dialog')) return;
-
-        const selected = getNodes().find((n) => n.selected && n.type === 'task');
-        if (!selected) return;
+      // Cmd+Z / Cmd+Shift+Z(FR-8)。AI が行った操作もこれで戻せる。
+      if (command.type === 'undo' || command.type === 'redo') {
         e.preventDefault();
-        /*
-          開くのは印の付いている行。印が childTask にあればその名前へ。
-
-          指していた childTask が消えていれば親を開く。画面の印も同じときに
-          親へ戻る(TaskNode.tsx)ので、見えているものと開くものが揃う。
-        */
-        setAutoEdit({ id: cursorIn(selected.id) ?? selected.id, caret: 'all' });
-        return;
-      }
-
-      /*
-        Shift+Enter で、印の付いている Task に childTask を1件足す(FR-2)。
-
-        名前を打っている最中の Shift+Enter と同じ結果になる。一度確定したあと
-        もう1件足すのに、マウスへ手を戻す必要がなくなる。足す先は末尾 ——
-        入力中の Shift+Enter と揃える。印が childTask にあっても、足すのは
-        その Task の末尾である。
-      */
-      if (e.key === 'Enter' && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        const from = e.target as HTMLElement | null;
-        if (from?.closest('input, textarea, dialog')) return;
-
-        const selected = getNodes().find((n) => n.selected && n.type === 'task');
-        if (!selected) return;
-        e.preventDefault();
-        addChild(selected.id);
-        return;
-      }
-
-      /*
-        Delete / Backspace で、印の付いている行を消す(FR-1)。
-
-        消すのは印の1件だけ。React Flow の既定は「選んでいるものを全部」で、
-        Task は残るのに繋がっていた依存だけが黙って消える、という形になって
-        いた(FR-3)。そちらは切ったままにする(deleteKeyCode={null})。
-
-        入力欄が**画面のどこかに開いていれば何もしない。** フォーカスが入力欄に
-        あれば keydown はそこで止まるが、「入力欄は出ているのにフォーカスが
-        移っていない」状態が実際に起きている(TaskNode.tsx が warn に残す)。
-        その1打が文字ではなく Task に効くのでは、打ち間違いの代償が大きすぎる。
-        開いて見えているなら、その打鍵は入力欄のものとして扱う。
-      */
-      if (
-        (e.key === 'Delete' || e.key === 'Backspace') &&
-        !e.metaKey &&
-        !e.ctrlKey &&
-        !e.altKey &&
-        !e.shiftKey
-      ) {
-        const from = e.target as HTMLElement | null;
-        if (from?.closest('input, textarea, dialog')) return;
-        if (document.querySelector('.text-input, .memo-input')) return;
-
-        const selected = getNodes().find((n) => n.selected && n.type === 'task');
-        if (!selected) return;
-        e.preventDefault();
-
-        /*
-          childTask は即座に消す。× と同じ扱い —— 消えるのはその1行だけで、
-          依存も childTask も巻き添えにならないため、見せるものがない。
-          Task は × と同じ確認を通す(見せるものが無ければそのまま消える)。
-        */
-        const childId = cursorIn(selected.id);
-        if (childId !== null) send({ type: 'deleteChildTask', id: childId });
-        else requestDelete(selected.id);
-        return;
-      }
-
-      /*
-        Ctrl+Enter で、印の付いている行のメモを開く(FR-10)。
-
-        名前を打っている最中の Ctrl+Enter と同じ相手が開く。編集に入ってから
-        でないとメモへ行けないのでは、直すつもりのない名前を一度開くことになる。
-      */
-      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
-        const from = e.target as HTMLElement | null;
-        if (from?.closest('input, textarea, dialog')) return;
-
-        const selected = getNodes().find((n) => n.selected && n.type === 'task');
-        if (!selected) return;
-        e.preventDefault();
-        setAutoMemo(cursorIn(selected.id) ?? selected.id);
-        return;
-      }
-
-      if (!(e.metaKey || e.ctrlKey)) return;
-      const key = e.key.toLowerCase();
-
-      if (key === 'z') {
-        e.preventDefault();
-        send({ type: e.shiftKey ? 'redo' : 'undo' });
+        send({ type: command.type });
         return;
       }
 
@@ -655,9 +592,76 @@ export function App(): React.JSX.Element {
         打っている途中で新しい Task に移るのは、書きかけを置き去りにする操作なので、
         そこは Enter で確定してからにする。
       */
-      if (key === 'n') {
+      if (command.type === 'newTask') {
         e.preventDefault();
         addTaskHere();
+        return;
+      }
+
+      /*
+        ここから先は、選んでいる Task の印の付いている行に効く操作(FR-1)。
+
+        選んでいるものが無ければ何もしない。「最後に触れたもの」を自前で覚えず、
+        React Flow の選択をそのまま使う。クリックで選ばれ、余白のクリックで外れる。
+      */
+      const target = resolveTarget();
+      if (!target) return;
+      e.preventDefault();
+
+      switch (command.type) {
+        case 'editName':
+          /*
+            開くのは印の付いている行。印が childTask にあればその名前へ。
+
+            指していた childTask が消えていれば親を開く。画面の印も同じときに
+            親へ戻る(TaskNode.tsx)ので、見えているものと開くものが揃う。
+          */
+          setAutoEdit({ id: target.cursor ?? target.taskId, caret: 'all' });
+          return;
+
+        case 'addChild':
+          /*
+            Shift+Enter で、印の付いている Task に childTask を1件足す(FR-2)。
+
+            名前を打っている最中の Shift+Enter と同じ結果になる。一度確定したあと
+            もう1件足すのに、マウスへ手を戻す必要がなくなる。足す先は末尾 ——
+            入力中の Shift+Enter と揃える。印が childTask にあっても、足すのは
+            その Task の末尾である。
+          */
+          addChild(target.taskId);
+          return;
+
+        case 'deleteRow':
+          /*
+            Delete / Backspace で、印の付いている行を消す(FR-1)。
+
+            消すのは印の1件だけ。React Flow の既定は「選んでいるものを全部」で、
+            Task は残るのに繋がっていた依存だけが黙って消える、という形になって
+            いた(FR-3)。そちらは切ったままにする(deleteKeyCode={null})。
+
+            入力欄が**画面のどこかに開いていれば何もしない**(keymap.ts の inputOpen)。
+            フォーカスが入力欄にあれば keydown はそこで止まるが、「入力欄は出ているのに
+            フォーカスが移っていない」状態が実際に起きている(TaskNode.tsx が warn に
+            残す)。その1打が文字ではなく Task に効くのでは、打ち間違いの代償が大きすぎる。
+            開いて見えているなら、その打鍵は入力欄のものとして扱う。
+
+            childTask は即座に消す。× と同じ扱い —— 消えるのはその1行だけで、
+            依存も childTask も巻き添えにならないため、見せるものがない。
+            Task は × と同じ確認を通す(見せるものが無ければそのまま消える)。
+          */
+          if (target.cursor !== null) send({ type: 'deleteChildTask', id: target.cursor });
+          else requestDelete(target.taskId);
+          return;
+
+        case 'openMemo':
+          /*
+            Ctrl+Enter で、印の付いている行のメモを開く(FR-10)。
+
+            名前を打っている最中の Ctrl+Enter と同じ相手が開く。編集に入ってから
+            でないとメモへ行けないのでは、直すつもりのない名前を一度開くことになる。
+          */
+          setAutoMemo(target.cursor ?? target.taskId);
+          return;
       }
     };
     /*
@@ -671,12 +675,30 @@ export function App(): React.JSX.Element {
 
       捕捉の段階で止める。React Flow の処理はノードの上にあり、こちらの
       window のリスナより先に走るため、後から preventDefault しても遅い。
-      入力欄の中では止めない —— 文字の移動に使うため。
+      入力欄の中では止めない —— 文字の移動に使うため(keymap.ts の blockArrow)。
     */
     const onArrow = (e: KeyboardEvent): void => {
-      if (!e.key.startsWith('Arrow')) return;
-      const target = e.target as HTMLElement | null;
-      if (target?.closest('input, textarea')) return;
+      const command = commandFor(e);
+      if (
+        command?.type !== 'moveMark' &&
+        command?.type !== 'blockArrow' &&
+        command?.type !== 'blockTab'
+      )
+        return;
+      if (!allowed(command, keyContextOf(e))) return;
+
+      /*
+        Tab は使わない(FR-1)。ダイアログの中を除き、押してもフォーカスは動かない。
+
+        巡回させると、ツールバーのボタンにフォーカスがあるのに Enter が選んでいる
+        Task の名前を開く、という食い違いが出る。キャンバスの操作はクリックと
+        Shift+↑↓・Enter で行う。捕捉の段階で止めるのは、入力欄(メモ)の中の
+        Tab も既定の移動をさせないため。
+      */
+      if (command.type === 'blockTab') {
+        e.preventDefault();
+        return;
+      }
 
       /*
         Shift+↑↓ で、印を親 Task と childTask の間で動かす(FR-1)。
@@ -684,18 +706,16 @@ export function App(): React.JSX.Element {
         ここで受けるのは、こちらもノードより先に取る必要があるため。
         Shift を足すと React Flow は移動の幅を広げるだけで、動かすことには
         変わりがない。捕捉の段階で取らなければ、先に動かされる。
-
-        ダイアログが開いている間は何もしない —— そこでのキーはそちらのもの。
       */
-      if (e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
-        if (target?.closest('dialog')) return;
+      if (command.type === 'moveMark') {
         e.stopPropagation();
         e.preventDefault();
-        moveRowCursor(e.key === 'ArrowDown' ? 1 : -1);
+        moveRowCursor(command.delta);
         return;
       }
 
-      if (!target?.closest('.react-flow__node')) return;
+      // 止めるのは React Flow のノードの上だけ。ほかの場所の矢印は何も奪わない。
+      if (!(e.target as HTMLElement | null)?.closest('.react-flow__node')) return;
       e.stopPropagation();
       e.preventDefault();
     };
@@ -706,7 +726,7 @@ export function App(): React.JSX.Element {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keydown', onArrow, true);
     };
-  }, [send, addTaskHere, addChild, getNodes, cursorIn, moveRowCursor, requestDelete]);
+  }, [send, addTaskHere, addChild, resolveTarget, moveRowCursor, requestDelete]);
 
   /*
     作った直後の Task を選んでおく(FR-1)。
@@ -982,6 +1002,16 @@ export function App(): React.JSX.Element {
           onEdgesChange={onEdgesChange}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
+          /*
+            カードと依存の矢印を Tab で止まる対象にしない(FR-1)。
+
+            React Flow の既定では、カード1枚・矢印1本ごとに Tab が止まる。カードには
+            枠が出ないので、使い手には「押しても何も起きない Tab」が件数ぶん続き、
+            ツールバーへ戻るまでに十数回押すことになっていた。キャンバスの中は
+            クリックと Shift+↑↓ で選ぶもので、Tab で巡回することは想定しない。
+          */
+          nodesFocusable={false}
+          edgesFocusable={false}
           /*
             Delete / Backspace による削除を無効にする。
 

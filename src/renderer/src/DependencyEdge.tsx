@@ -57,6 +57,7 @@ export function DependencyEdge({
           線から × へカーソルを移す途中で消えて押せない。
         */}
         <button
+          tabIndex={-1}
           type="button"
           className={`edge-remove nodrag nopan${hovered ? ' is-shown' : ''}`}
           style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}

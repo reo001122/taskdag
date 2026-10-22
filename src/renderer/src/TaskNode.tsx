@@ -2,6 +2,7 @@ import { Handle, Position as HandlePosition, type NodeProps } from '@xyflow/reac
 import { useContext, useEffect, useRef, useState } from 'react';
 import type { ChildTaskSnapshot, Command, Progress, TaskSnapshot } from '../../shared/ipc';
 import { type DropPoint, startChildDrag } from './child-drag';
+import { commandFor, handOff, isImeComposing } from './keymap';
 import { logger } from './log';
 import { type Caret, focusInput, NodeMeasured, useCloseOnOutsidePointerDown } from './node-editing';
 
@@ -79,6 +80,7 @@ function StateToggle({
 }): React.JSX.Element {
   return (
     <button
+      tabIndex={-1}
       type="button"
       className={`state-toggle nodrag ${PROGRESS_CLASS[progress]}`}
       title={`${PROGRESS_LABEL[progress]}(クリックで変更)`}
@@ -90,9 +92,8 @@ function StateToggle({
         四角を押したときだけ「印はその行、フォーカスはボタン」とずれていた。
         見た目には出ないが、そこから先のキー操作の起点になる値である。
 
-        既定を止めるだけにして onClick は残す —— 見出しの ✎ / ＋ / × と同じ
-        onPress に寄せると、キーボードで focus して Space / Enter で起動する
-        経路が無くなる。
+        既定を止めるだけにして onClick は残す。キャンバスの中のボタンは Tab で
+        止まらない(tabIndex=-1)ので、キーボードから押す経路は今は無い。
       */
       onPointerDown={(e) => {
         if (e.button !== 0) return;
@@ -251,6 +252,7 @@ function EditableText({
     // ノードは動かない —— 移動は名前以外のどこを掴んでもできる。
     return (
       <button
+        tabIndex={-1}
         type="button"
         className={`${className} nodrag`}
         onClick={begin}
@@ -281,17 +283,27 @@ function EditableText({
         if (!closingRef.current && document.hasFocus()) inputRef.current?.focus();
       }}
       onKeyDown={(e) => {
+        // 日本語入力の変換中のキーは、何であっても操作として扱わない。Cmd+N の判定より
+        // 前に置く(keymap.ts の isImeComposing)。
+        if (isImeComposing(e.nativeEvent)) {
+          e.stopPropagation();
+          return;
+        }
+
         /*
           Cmd+N だけは通す(FR-1)。
 
           打っている途中で新しい Task に移るのは、書きかけを置き去りにする
           操作なので、まずここで確定させる。そのうえで作成はキャンバス側に
           任せる —— ＋ Task のボタンを押したときと同じ結果になる。
+          確定したら handOff で印を付けて通す(keymap.ts)。キャンバス側は、この
+          印の無い Cmd+N を入力欄の中から来たものとして拒否する。
           かつては「打っている間は効かない」にしていたが、ボタンでは作れて
           キーでは作れない、という食い違いが残っていた。
         */
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
+        if (commandFor(e.nativeEvent)?.type === 'newTask') {
           finishRef.current(false);
+          handOff(e.nativeEvent);
           return;
         }
 
@@ -305,10 +317,8 @@ function EditableText({
         */
         e.stopPropagation();
 
-        // 日本語入力の変換確定の Enter を、確定操作と取り違えない。
-        // IME 変換中の Enter は「変換を決める」ためのものであって、
-        // 入力を終える意思表示ではない。
-        if (e.nativeEvent.isComposing) return;
+        // (IME 変換中の Enter は「変換を決める」ためのもので、入力を終える意思表示では
+        // ない。上で除いてある。)
 
         /*
           Enter の3つ。確定だけ / 確定して childTask へ / 確定してメモへ。
@@ -405,6 +415,7 @@ function Memo({
     if (memo.length === 0) return null;
     return (
       <button
+        tabIndex={-1}
         type="button"
         className="memo-text nodrag"
         onMouseDown={(e) => e.stopPropagation()}
@@ -427,18 +438,22 @@ function Memo({
       onMouseDown={(e) => e.stopPropagation()}
       onBlur={finish}
       onKeyDown={(e) => {
+        // IME 変換中のキーは操作として扱わない。Cmd+N の判定より前に置く(名前の欄と同じ)。
+        if (isImeComposing(e.nativeEvent)) {
+          e.stopPropagation();
+          return;
+        }
+
         // Cmd+N は通す。ここで確定させ、作成はキャンバス側に任せる(名前の欄と同じ)。
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
+        if (commandFor(e.nativeEvent)?.type === 'newTask') {
           finish();
+          handOff(e.nativeEvent);
           return;
         }
 
         // キャンバスのショートカットへ渡さない。capture 側で止めると
         // このハンドラ自体が呼ばれなくなる(上と同じ理由)。
         e.stopPropagation();
-
-        // IME 変換中の Enter は「変換を決める」ためのもの。書き終える合図ではない。
-        if (e.nativeEvent.isComposing) return;
 
         /*
           Enter は確定、Shift+Enter は改行。
@@ -607,6 +622,7 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
                   件数は畳んでいるときだけ出す —— 開いていれば数えられる。
                 */
                   <button
+                    tabIndex={-1}
                     type="button"
                     className={`state-button${task.collapsed ? ' is-collapsed' : ''}`}
                     title={task.collapsed ? `展開 (${children.length} 件)` : '折りたたむ'}
@@ -629,6 +645,7 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
                   3つとも取り返しのつかない操作ではない(× も確認を出すだけ)。
                 */}
                 <button
+                  tabIndex={-1}
                   type="button"
                   className="state-button"
                   title="メモ"
@@ -637,6 +654,7 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
                   ✎
                 </button>
                 <button
+                  tabIndex={-1}
                   type="button"
                   className="state-button"
                   title="子タスクを追加"
@@ -645,6 +663,7 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
                   ＋
                 </button>
                 <button
+                  tabIndex={-1}
                   type="button"
                   className="state-button"
                   title="この Task を削除"
@@ -737,6 +756,7 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
 
                       <span className="child-actions nodrag">
                         <button
+                          tabIndex={-1}
                           type="button"
                           className="state-button"
                           title="上へ"
@@ -753,6 +773,7 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
                           ↑
                         </button>
                         <button
+                          tabIndex={-1}
                           type="button"
                           className="state-button"
                           title="下へ"
@@ -769,6 +790,7 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
                           ↓
                         </button>
                         <button
+                          tabIndex={-1}
                           type="button"
                           className="state-button"
                           title="メモ"
@@ -777,6 +799,7 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
                           ✎
                         </button>
                         <button
+                          tabIndex={-1}
                           type="button"
                           className="state-button"
                           title="削除"
