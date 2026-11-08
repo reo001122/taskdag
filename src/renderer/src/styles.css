@@ -103,14 +103,25 @@ body {
 .toolbar button {
   font: inherit;
   padding: 5px 10px;
-  border: 1px solid var(--border);
+  border: none;
   border-radius: 6px;
-  background: var(--surface);
+  background: transparent;
   color: var(--text);
   cursor: pointer;
 }
 .toolbar button:hover:not(:disabled) {
-  border-color: var(--text-dim);
+  background: var(--hover-shade);
+}
+.toolbar button.is-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 7px;
+}
+.toolbar-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
 }
 .toolbar button:disabled {
   opacity: 0.4;
@@ -1372,6 +1383,15 @@ body.is-dragging-child .child-grip {
 }
 .archive-progress.is-done {
   color: var(--ready);
+}
+/* 画面を切り替えるボタンは、他の操作と性質が違うので枠を残す */
+.toolbar button.is-view-toggle {
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.toolbar button.is-view-toggle:hover:not(:disabled) {
+  border-color: var(--text-dim);
+  background: var(--surface);
 }
 .toolbar button.is-view-toggle[aria-pressed="true"] {
   border-color: var(--select);

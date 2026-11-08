@@ -172,7 +172,7 @@ export function isHandedOff(event: object): boolean {
  * 一覧に載せない操作。
  * blockArrow / blockTab は利用者が使うものではなく、既定の動きを止めるだけ。
  * toggleHelp は一覧そのものを開閉する操作で、一覧を見ている人には「一覧を開閉」の行は
- * 要らない(? キー・ツールバーの「キー操作」・× で開閉できることは一覧の外に出ている)。
+ * 要らない(? キー・× で開閉できることは一覧の外に出ている)。
  */
 export type HiddenCommandType = 'blockArrow' | 'blockTab' | 'toggleHelp';
 

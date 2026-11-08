@@ -1533,7 +1533,7 @@ export default {
       geo,
     );
 
-    await clickToolbar('キー操作');
+    await evaluate(`document.querySelector('.help-close').click(); return 1;`);
     await waitFor('一覧がたたまれる', `return document.querySelector('.help-panel') === null`);
     const folded = await helpState();
     check(
@@ -1541,9 +1541,28 @@ export default {
       folded.collapsed && !folded.open,
       folded,
     );
-    await clickToolbar('キー操作');
+    await evaluate(`document.querySelector('.help-collapsed').click(); return 1;`);
     await waitFor('一覧が広がる', `return document.querySelector('.help-panel') !== null`);
     check('HP-1e もう一度押すと広がる', (await helpState()).open);
+
+    // ツールバーには「キー操作」のボタンが無く、Undo / Redo はアイコンだけで名前を持つ
+    const bar = await evaluate(`
+      const bs = [...document.querySelectorAll('.toolbar button')];
+      const icon = (label) => {
+        const b = bs.find((x) => x.getAttribute('aria-label') === label);
+        return !!b && b.querySelector('svg') !== null && b.textContent.trim() === '';
+      };
+      return {
+        keyHelp: bs.some((b) => b.textContent.includes('キー操作')),
+        undo: icon('Undo'),
+        redo: icon('Redo'),
+      };
+    `);
+    check(
+      'HP-1i ツールバーに「キー操作」は無く、Undo / Redo はアイコンと aria-label を持つ',
+      !bar.keyHelp && bar.undo && bar.redo,
+      bar,
+    );
 
     await evaluate(`document.activeElement?.blur(); return 1;`);
     await key({ key: '?', code: 191, shift: true, text: '?' });

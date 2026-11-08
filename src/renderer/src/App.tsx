@@ -46,6 +46,19 @@ import { type AutoEdit, TaskNode, type TaskNodeData } from './TaskNode';
 
 const log = logger('graph');
 
+/** ツールバーのアイコン(Undo / Redo)に共通の SVG 属性。色は文字色に従う。 */
+const ICON_PROPS = {
+  width: 16,
+  height: 16,
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 2,
+  strokeLinecap: 'round',
+  strokeLinejoin: 'round',
+  'aria-hidden': true,
+} as const;
+
 /**
  * 押された場所と画面の状態を DOM から読む。可否の判断はしない(keymap.ts の allowed)。
  */
@@ -1013,20 +1026,38 @@ export function App(): React.JSX.Element {
           + Project
         </button>
 
+        <span className="toolbar-sep" aria-hidden="true" />
+
         <button
           type="button"
+          className="is-icon"
+          aria-label="Undo"
+          title="元に戻す (⌘Z)"
           disabled={showArchive || !snapshot?.canUndo}
           onClick={() => send({ type: 'undo' })}
         >
-          Undo
+          {/* biome-ignore lint/a11y/noSvgWithoutTitle: 名前は親ボタンの aria-label が持つ。title を入れると textContent が増える */}
+          <svg {...ICON_PROPS}>
+            <path d="M3 7h10a5 5 0 0 1 0 10H8" />
+            <path d="M7 3 3 7l4 4" />
+          </svg>
         </button>
         <button
           type="button"
+          className="is-icon"
+          aria-label="Redo"
+          title="やり直す (⇧⌘Z)"
           disabled={showArchive || !snapshot?.canRedo}
           onClick={() => send({ type: 'redo' })}
         >
-          Redo
+          {/* biome-ignore lint/a11y/noSvgWithoutTitle: 名前は親ボタンの aria-label が持つ。title を入れると textContent が増える */}
+          <svg {...ICON_PROPS}>
+            <path d="M21 7H11a5 5 0 0 0 0 10h5" />
+            <path d="m17 3 4 4-4 4" />
+          </svg>
         </button>
+
+        <span className="toolbar-sep" aria-hidden="true" />
 
         <button
           type="button"
@@ -1060,6 +1091,7 @@ export function App(): React.JSX.Element {
           完了を非表示
         </label>
 
+        <span className="spacer" />
         <button
           type="button"
           className="is-view-toggle"
@@ -1070,7 +1102,6 @@ export function App(): React.JSX.Element {
           {showArchive ? 'キャンバスに戻る' : 'アーカイブ一覧'}
         </button>
 
-        <span className="spacer" />
         <span className="muted">
           {snapshot ? `${snapshot.tasks.length} tasks / 着手できる ${readyCount}` : '読み込み中…'}
         </span>
@@ -1079,14 +1110,6 @@ export function App(): React.JSX.Element {
             {error}
           </span>
         )}
-        <button
-          type="button"
-          aria-pressed={helpOpen}
-          onClick={() => setHelpOpen((open) => !open)}
-          title="キー操作の一覧をたたむ・広げる(? でも切り替え)"
-        >
-          キー操作
-        </button>
       </div>
 
       {showArchive && <ArchiveView archived={snapshot?.archived ?? []} />}

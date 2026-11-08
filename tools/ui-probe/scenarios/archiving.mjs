@@ -38,10 +38,10 @@ export default {
         `return [...document.querySelectorAll('.task-title')].map((t) => t.textContent).sort()`,
       );
     const toolbarButton = (text) => `[...document.querySelectorAll('.toolbar button')]
-      .find((b) => b.textContent.trim() === ${JSON.stringify(text)})`;
+      .find((b) => (b.textContent.trim() || b.getAttribute('aria-label')) === ${JSON.stringify(text)})`;
     const toolbarLabels = () =>
       evaluate(
-        `return [...document.querySelectorAll('.toolbar button')].map((b) => b.textContent.trim())`,
+        `return [...document.querySelectorAll('.toolbar button')].map((b) => b.textContent.trim() || b.getAttribute('aria-label'))`,
       );
     const press = (text) => evaluate(`${toolbarButton(text)}.click(); return 1;`);
     const disabled = (text) => evaluate(`return ${toolbarButton(text)}.disabled`);
