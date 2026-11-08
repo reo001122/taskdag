@@ -21,10 +21,10 @@
 export function actions(probe) {
   const { evaluate, waitFor, waitForFocus, wait, key, type, drag } = probe;
 
-  /** ツールバーのボタンを、書かれている文字で選んで押す。 */
+  /** ツールバーのボタンを、書かれている文字(アイコンだけのものは aria-label)で選んで押す。 */
   const clickToolbar = (text) =>
     evaluate(
-      `[...document.querySelectorAll('.toolbar button')].find((b) => b.textContent.includes(${JSON.stringify(text)})).click(); return 1;`,
+      `[...document.querySelectorAll('.toolbar button')].find((b) => b.textContent.includes(${JSON.stringify(text)}) || b.getAttribute('aria-label') === ${JSON.stringify(text)}).click(); return 1;`,
     );
 
   /**

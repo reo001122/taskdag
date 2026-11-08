@@ -143,7 +143,7 @@ export default {
 
     // --- Undo はセッションを跨がない(FR-8) ---
     const undoDisabled = await next.evaluate(`
-      const b = [...document.querySelectorAll('.toolbar button')].find((x) => x.textContent.includes('Undo'));
+      const b = [...document.querySelectorAll('.toolbar button')].find((x) => x.getAttribute('aria-label') === 'Undo');
       return b.disabled;
     `);
     check('E-1 再起動直後は Undo が効かない(履歴はセッション内のみ)', undoDisabled === true, {
