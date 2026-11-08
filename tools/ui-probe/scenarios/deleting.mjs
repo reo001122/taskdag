@@ -11,7 +11,7 @@ export default {
   description: 'F. 削除前に、何がなくなり何が繋ぎ直されるかを見せる',
 
   async run(ctx) {
-    const { evaluate, waitFor, wait, key, mouse, check } = ctx;
+    const { evaluate, waitFor, wait, key, mouse, wheel, check } = ctx;
     const { addTask, fitView, connect, edgeCount, locatePoint } = actions(ctx);
 
     /**
@@ -102,6 +102,140 @@ export default {
     );
 
     /*
+      確認を開いている間、キャンバスに影響を映す(FR-3)。
+
+      背景は沈めるだけでぼかさず、ダイアログは右端に寄る。外でのホイール/ピンチは
+      キャンバスへ渡り、それ以外の入力(クリック・キー)は背景へ届かない。
+      消えるものは赤、繋ぎ直されるものは緑の破線で、チェックに追従する。
+    */
+    const highlights = () =>
+      evaluate(`
+        const n = (sel) => document.querySelectorAll(sel).length;
+        return {
+          doomedTasks: [...document.querySelectorAll('.react-flow__node.is-doomed .task-title')].map((t) => t.textContent),
+          doomedEdges: n('.react-flow__edge.is-doomed-edge'),
+          previewEdges: n('.react-flow__edge.is-preview-edge'),
+        };
+      `);
+    const viewport = () =>
+      evaluate(`
+        const m = new DOMMatrix(getComputedStyle(document.querySelector('.react-flow__viewport')).transform);
+        return { x: m.e, y: m.f, zoom: m.a };
+      `);
+    const underDialogState = () =>
+      evaluate(`
+        return {
+          tasks: document.querySelectorAll('.task').length,
+          edges: document.querySelectorAll('.react-flow__edge:not(.is-preview-edge)').length,
+          selected: document.querySelectorAll('.react-flow__node.selected').length,
+          dialog: !!document.querySelector('dialog[open]'),
+        };
+      `);
+
+    const shape = await evaluate(`
+      const d = document.querySelector('dialog[open]').getBoundingClientRect();
+      const bd = getComputedStyle(document.querySelector('dialog[open]'), '::backdrop');
+      return {
+        gapRight: Math.round(innerWidth - d.right),
+        left: Math.round(d.left), width: Math.round(d.width), height: Math.round(d.height),
+        innerWidth, innerHeight,
+        backdropFilter: bd.backdropFilter,
+      };
+    `);
+    check(
+      'F-10a 確認は右端に寄り、縦に長い',
+      shape.gapRight <= 24 &&
+        shape.left > shape.innerWidth / 2 &&
+        shape.height > shape.innerHeight * 0.8,
+      shape,
+    );
+    check('F-10b 背景はぼかさない', shape.backdropFilter === 'none', shape.backdropFilter);
+
+    let lit = await highlights();
+    check(
+      'F-10c 消える Task と、なくなる依存が赤で示される',
+      lit.doomedTasks.join() === 'B' && lit.doomedEdges === 2,
+      lit,
+    );
+    check('F-10d 繋ぎ直される依存が1本、緑の破線で示される', lit.previewEdges === 1, lit);
+    const dashed = await evaluate(`
+      const p = document.querySelector('.react-flow__edge.is-preview-edge .react-flow__edge-path');
+      return getComputedStyle(p).strokeDasharray;
+    `);
+    check('F-10e 予告の線は破線', dashed !== 'none' && dashed !== '', dashed);
+
+    // ダイアログの外(::backdrop)。左寄りの点なら、右端の確認には掛からない。
+    const outside = { x: 200, y: Math.round(shape.innerHeight / 2) };
+    const inside = await evaluate(`
+      const r = document.querySelector('dialog[open]').getBoundingClientRect();
+      return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+    `);
+    const v0 = await viewport();
+    await wheel(outside, { deltaY: 100 });
+    await wait(200);
+    const v1 = await viewport();
+    check(
+      'F-11a 確認の外のホイールでキャンバスが動く',
+      Math.abs(v1.y - v0.y) > 10 && v1.zoom === v0.zoom,
+      { v0, v1 },
+    );
+    // 全体表示は上限(2)に張り付いていることがあるので、縮める向きで見る。
+    await wheel(outside, { deltaY: 100, modifiers: 2 });
+    await wait(200);
+    const v2 = await viewport();
+    check(
+      'F-11b 確認の外のピンチ(Ctrl+ホイール)で拡大縮小する',
+      v2.zoom < v1.zoom && v2.zoom >= 0.2,
+      { v1, v2 },
+    );
+    await wheel(inside, { deltaY: 300 });
+    await wheel(inside, { deltaY: -100, modifiers: 2 });
+    await wait(200);
+    const v3 = await viewport();
+    check(
+      'F-11c 確認の中のホイールではキャンバスは動かない',
+      v3.x === v2.x && v3.y === v2.y && v3.zoom === v2.zoom,
+      { v2, v3 },
+    );
+
+    const stateBefore = await underDialogState();
+    await mouse('mousePressed', outside.x, outside.y, { buttons: 1 });
+    await mouse('mouseReleased', outside.x, outside.y, { buttons: 0 });
+    await wait(300);
+    await key({ key: 'Delete', code: 46 });
+    await key({ key: 'z', code: 90, meta: true });
+    await wait(400);
+    const stateAfter = await underDialogState();
+    check(
+      'F-11d 開いている間の背景クリック・Delete・Cmd+Z は背景に効かない',
+      JSON.stringify(stateBefore) === JSON.stringify(stateAfter) && stateAfter.dialog,
+      { stateBefore, stateAfter },
+    );
+    check(
+      'F-11e 予告はそのまま残る',
+      JSON.stringify(await highlights()) === JSON.stringify(lit),
+      await highlights(),
+    );
+
+    // 繋ぎ直しのチェックに予告が追従する
+    const toggleAdded = () =>
+      evaluate(
+        `document.querySelector('dialog[open] .edge-list.is-added input').click(); return 1;`,
+      );
+    await toggleAdded();
+    await wait(200);
+    lit = await highlights();
+    check(
+      'F-12a チェックを外すと予告の線が消える',
+      lit.previewEdges === 0 && lit.doomedEdges === 2,
+      lit,
+    );
+    await toggleAdded();
+    await wait(200);
+    lit = await highlights();
+    check('F-12b 入れ直すと戻る', lit.previewEdges === 1, lit);
+
+    /*
       繋ぎ直しは確認の場で外せる(FR-1)。
 
       FR-3 の規則は「繋がっていた相手どうしを繋ぐ」であって、それがいつも
@@ -124,6 +258,12 @@ export default {
       `return ![...document.querySelectorAll('.task-title')].some((t) => t.textContent === 'B')`,
     );
     check('F-8b 外した繋ぎ直しは作られない', (await edgeCount()) === 0, await edgeCount());
+    check(
+      'F-12d 実行すると予告は消える',
+      JSON.stringify(await highlights()) ===
+        JSON.stringify({ doomedTasks: [], doomedEdges: 0, previewEdges: 0 }),
+      await highlights(),
+    );
 
     // 消した B を作り直して、続きの検査へ
     await evaluate(`
@@ -146,6 +286,12 @@ export default {
       !(await evaluate(`return !!document.querySelector('dialog[open]')`)),
     );
     check('F-5b Escape では何も消えない', (await edgeCount()) === 2, await edgeCount());
+    check(
+      'F-12c 取り消すと予告は消える',
+      JSON.stringify(await highlights()) ===
+        JSON.stringify({ doomedTasks: [], doomedEdges: 0, previewEdges: 0 }),
+      await highlights(),
+    );
 
     // --- 線に重ねた × で、その依存だけを外せる(FR-3) ---
     const cross = await evaluate(`
