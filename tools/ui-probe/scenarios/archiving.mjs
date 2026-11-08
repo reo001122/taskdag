@@ -356,6 +356,36 @@ export default {
     await finish('Q');
     await pressArchiveOf('Q');
     await waitFor('確認が開く', `return !!document.querySelector('dialog[open]')`);
+    const lit = () =>
+      evaluate(`
+        return {
+          doomed: [...document.querySelectorAll('.react-flow__node.is-doomed .task-title')].map((t) => t.textContent).join(),
+          removed: document.querySelectorAll('.react-flow__edge.is-doomed-edge').length,
+          preview: document.querySelectorAll('.react-flow__edge.is-preview-edge').length,
+        };
+      `);
+    const dockRight = await evaluate(`
+      const r = document.querySelector('dialog[open]').getBoundingClientRect();
+      return {
+        gapRight: Math.round(innerWidth - r.right),
+        left: Math.round(r.left),
+        innerWidth,
+        filter: getComputedStyle(document.querySelector('dialog[open]'), '::backdrop').backdropFilter,
+      };
+    `);
+    check(
+      'G-9a アーカイブの確認も右端に寄り、背景をぼかさない',
+      dockRight.gapRight <= 24 &&
+        dockRight.left > dockRight.innerWidth / 2 &&
+        dockRight.filter === 'none',
+      dockRight,
+    );
+    let shown = await lit();
+    check(
+      'G-9b 移る Task となくなる依存が赤、繋ぎ直しが緑の破線で示される',
+      shown.doomed === 'Q' && shown.removed === 2 && shown.preview === 1,
+      shown,
+    );
     const boxes = () =>
       evaluate(
         `return [...document.querySelectorAll('dialog[open] .edge-list.is-added .edge-check')].map((c) => c.checked)`,
@@ -374,7 +404,23 @@ export default {
       'チェックが外れる',
       `return !document.querySelector('dialog[open] .edge-check')?.checked`,
     );
+    await waitFor(
+      '緑の破線が消える',
+      `return !document.querySelector('.react-flow__edge.is-preview-edge')`,
+    );
+    shown = await lit();
+    check(
+      'G-9c チェックを外すと緑の破線が消える',
+      shown.preview === 0 && shown.removed === 2,
+      shown,
+    );
     await confirmDialog();
+    shown = await lit();
+    check(
+      'G-9d 実行すると予告は消える',
+      shown.doomed === '' && shown.removed === 0 && shown.preview === 0,
+      shown,
+    );
     await waitFor('Q が消える', `return !${find('Q')}`);
     await wait(300);
     check(

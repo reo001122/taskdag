@@ -28,7 +28,7 @@ import { ArchiveView } from './ArchiveView';
 import { clearDropFeedback, type DropPoint, findDropPoint, showDropFeedback } from './child-drag';
 import { PROJECT_COLOR_COUNT, projectColorAt } from './colors';
 import { DependencyEdge, type DependencyEdgeData } from './DependencyEdge';
-import { ArchiveDialog, DeleteDialog, TextPromptDialog } from './Dialogs';
+import { ArchiveDialog, type CanvasPreview, DeleteDialog, TextPromptDialog } from './Dialogs';
 import { HelpPanel } from './HelpPanel';
 import { allowed, commandFor, isHandedOff, type KeyContext } from './keymap';
 import {
@@ -90,6 +90,8 @@ export function App(): React.JSX.Element {
   // キャンバスの代わりにアーカイブの一覧を出しているか(FR-11)。
   const [showArchive, setShowArchive] = useState(false);
   const [archivePlan, setArchivePlan] = useState<{ plan: ArchivePlan; bulk: boolean } | null>(null);
+  // 確認ダイアログが映す予告。表示専用で、グラフには書かない。
+  const [preview, setPreview] = useState<CanvasPreview | null>(null);
   const [askProjectName, setAskProjectName] = useState(false);
   // キー操作の一覧。起動時は閉じていて、開閉の状態は保存しない。
   // 常時表示。たたんだ状態は保存しない(起動時は常に広がっている)。
@@ -135,6 +137,52 @@ export function App(): React.JSX.Element {
    */
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+
+  /*
+    確認ダイアログの予告を重ねた表示用の配列。state 自体は変えない(onNodesChange 等は
+    元の配列に効く)。予告が無いときは同じ配列をそのまま渡す。
+  */
+  const shownNodes = useMemo(() => {
+    if (!preview) return nodes;
+    const doomed = new Set(preview.doomedTaskIds);
+    return nodes.map((n) =>
+      doomed.has(n.id)
+        ? { ...n, className: [n.className, 'is-doomed'].filter(Boolean).join(' ') }
+        : n,
+    );
+  }, [nodes, preview]);
+  const shownEdges = useMemo(() => {
+    if (!preview) return edges;
+    const removed = new Set(preview.removedEdges.map((e) => `${e.from}->${e.to}`));
+    const marked = edges.map((e) =>
+      removed.has(`${e.source}->${e.target}`)
+        ? {
+            ...e,
+            className: 'is-doomed-edge',
+            markerEnd: {
+              type: MarkerType.ArrowClosed,
+              width: 18,
+              height: 18,
+              color: 'var(--danger)',
+            },
+          }
+        : e,
+    );
+    const present = new Set(nodes.map((n) => n.id));
+    const added: Edge[] = preview.addedEdges
+      .filter((e) => present.has(e.from) && present.has(e.to))
+      .map((e) => ({
+        id: `preview:${e.from}->${e.to}`,
+        source: e.from,
+        target: e.to,
+        className: 'is-preview-edge',
+        selectable: false,
+        focusable: false,
+        deletable: false,
+        markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18, color: 'var(--ready)' },
+      }));
+    return [...marked, ...added];
+  }, [nodes, edges, preview]);
 
   /**
    * 接続ドラッグ中に、接続してよい相手の集合を保持する。
@@ -1120,8 +1168,8 @@ export function App(): React.JSX.Element {
       */}
       <div style={{ flex: 1, position: 'relative', display: showArchive ? 'none' : undefined }}>
         <ReactFlow
-          nodes={nodes}
-          edges={edges}
+          nodes={shownNodes}
+          edges={shownEdges}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           nodeTypes={nodeTypes}
@@ -1352,6 +1400,7 @@ export function App(): React.JSX.Element {
           plan={archivePlan.plan}
           snapshot={snapshot}
           bulk={archivePlan.bulk}
+          onPreview={setPreview}
           onCancel={() => setArchivePlan(null)}
           onConfirm={(keepReconnections) => {
             send(
@@ -1372,6 +1421,7 @@ export function App(): React.JSX.Element {
         <DeleteDialog
           plan={deletePlan}
           snapshot={snapshot}
+          onPreview={setPreview}
           onCancel={() => setDeletePlan(null)}
           onConfirm={(keepReconnections) => {
             send({ type: 'deleteTask', id: deletePlan.taskId, keepReconnections });

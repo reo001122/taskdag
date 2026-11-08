@@ -1,3 +1,4 @@
+import { useReactFlow } from '@xyflow/react';
 import { useEffect, useRef, useState } from 'react';
 import type { ArchivePlan, DeletePlan, GraphSnapshot } from '../../shared/ipc';
 
@@ -66,6 +67,90 @@ export function TextPromptDialog({
   );
 }
 
+const edgeKeyOf = (edge: { from: string; to: string }): string => `${edge.from}->${edge.to}`;
+
+/**
+ * 確認ダイアログが開いている間にキャンバスへ映す予告(FR-3, FR-11)。
+ *
+ * 表示専用。グラフには書かない(AppService.mutate を通らない)。
+ */
+export type CanvasPreview = {
+  /** 消える Task(赤く囲む) */
+  doomedTaskIds: string[];
+  /** なくなる依存(赤) */
+  removedEdges: { from: string; to: string }[];
+  /** 繋ぎ直される依存(緑の破線)。チェックを外したものは含めない。 */
+  addedEdges: { from: string; to: string }[];
+};
+
+// キャンバスの App.tsx と揃える値。ズームの範囲は minZoom={0.2} と RF 既定の maxZoom=2。
+const CANVAS_MIN_ZOOM = 0.2;
+const CANVAS_MAX_ZOOM = 2;
+// RF の panOnScrollSpeed 既定値
+const PAN_ON_SCROLL_SPEED = 0.5;
+
+/**
+ * ダイアログの外(::backdrop)でのホイール/ピンチを、キャンバスの移動・拡大縮小へ渡す。
+ *
+ * ::backdrop 上のイベントは <dialog> 要素に届く。ダイアログ本体の外にポインタが
+ * あるときだけ拾い、中ではそのまま(中身のスクロール)にする。
+ * 計算は @xyflow/system の createPanOnScrollHandler に合わせてある
+ * (移動は deltaX/Y × panOnScrollSpeed、ピンチは 2^(-deltaY × 0.002 [× mac なら 10])
+ * でポインタ中心)。RF のハンドラそのものは使えないので写している。
+ */
+function useForwardWheelToCanvas(ref: React.RefObject<HTMLDialogElement | null>): void {
+  const { getViewport, setViewport } = useReactFlow();
+  useEffect(() => {
+    const dialog = ref.current;
+    if (!dialog) return;
+    const isMac = navigator.userAgent.includes('Mac');
+    const onWheel = (e: WheelEvent): void => {
+      const box = dialog.getBoundingClientRect();
+      const inside =
+        e.clientX >= box.left &&
+        e.clientX <= box.right &&
+        e.clientY >= box.top &&
+        e.clientY <= box.bottom;
+      if (inside) {
+        // ページ全体のズームだけは止める(RF の nowheel と同じ)
+        if (e.ctrlKey) e.preventDefault();
+        return;
+      }
+      e.preventDefault();
+      const view = getViewport();
+      if (e.ctrlKey || e.metaKey) {
+        const unit = e.deltaMode === 1 ? 0.05 : e.deltaMode ? 1 : 0.002;
+        const delta = -e.deltaY * unit * (e.ctrlKey && isMac ? 10 : 1);
+        const zoom = Math.min(CANVAS_MAX_ZOOM, Math.max(CANVAS_MIN_ZOOM, view.zoom * 2 ** delta));
+        const pane = document.querySelector('.react-flow')?.getBoundingClientRect();
+        const px = e.clientX - (pane?.left ?? 0);
+        const py = e.clientY - (pane?.top ?? 0);
+        const ratio = zoom / view.zoom;
+        void setViewport({
+          x: px - (px - view.x) * ratio,
+          y: py - (py - view.y) * ratio,
+          zoom,
+        });
+        return;
+      }
+      const normalize = e.deltaMode === 1 ? 20 : 1;
+      let dx = e.deltaX * normalize;
+      let dy = e.deltaY * normalize;
+      if (!isMac && e.shiftKey) {
+        dx = e.deltaY * normalize;
+        dy = 0;
+      }
+      void setViewport({
+        x: view.x - dx * PAN_ON_SCROLL_SPEED,
+        y: view.y - dy * PAN_ON_SCROLL_SPEED,
+        zoom: view.zoom,
+      });
+    };
+    dialog.addEventListener('wheel', onWheel, { passive: false });
+    return () => dialog.removeEventListener('wheel', onWheel);
+  }, [ref, getViewport, setViewport]);
+}
+
 /**
  * 削除確認(FR-1)
  *
@@ -76,11 +161,13 @@ export function DeleteDialog({
   plan,
   snapshot,
   onCancel,
+  onPreview,
   onConfirm,
 }: {
   plan: DeletePlan;
   snapshot: GraphSnapshot;
   onCancel: () => void;
+  onPreview: (preview: CanvasPreview | null) => void;
   onConfirm: (keepReconnections: { from: string; to: string }[]) => void;
 }): React.JSX.Element {
   const titleOf = (id: string): string => snapshot.tasks.find((t) => t.id === id)?.title ?? id;
@@ -107,10 +194,21 @@ export function DeleteDialog({
   useEffect(() => {
     ref.current?.showModal();
   }, []);
+  useForwardWheelToCanvas(ref);
+
+  // 開いている間だけキャンバスに予告を映す。チェックの増減に追従し、閉じれば消える。
+  useEffect(() => {
+    onPreview({
+      doomedTaskIds: [plan.taskId],
+      removedEdges: plan.removedEdges,
+      addedEdges: plan.addedEdges.filter((e) => !dropped.has(edgeKeyOf(e))),
+    });
+    return () => onPreview(null);
+  }, [plan, dropped, onPreview]);
 
   return (
-    <dialog className="dialog" ref={ref} onCancel={onCancel} onClose={onCancel}>
-      <div>
+    <dialog className="dialog dialog-side" ref={ref} onCancel={onCancel} onClose={onCancel}>
+      <div className="dialog-body">
         <h2>
           「<span className="doomed">{target}</span>」を削除しますか？
         </h2>
@@ -205,6 +303,7 @@ export function ArchiveDialog({
   snapshot,
   bulk,
   onCancel,
+  onPreview,
   onConfirm,
 }: {
   plan: ArchivePlan;
@@ -212,6 +311,7 @@ export function ArchiveDialog({
   /** ツールバーからまとめて移すとき。1件ずつなら対象の名前を見出しに出す。 */
   bulk: boolean;
   onCancel: () => void;
+  onPreview: (preview: CanvasPreview | null) => void;
   onConfirm: (keepReconnections: { from: string; to: string }[]) => void;
 }): React.JSX.Element {
   const titleOf = (id: string): string => snapshot.tasks.find((t) => t.id === id)?.title ?? id;
@@ -221,6 +321,7 @@ export function ArchiveDialog({
   useEffect(() => {
     ref.current?.showModal();
   }, []);
+  useForwardWheelToCanvas(ref);
 
   const edgeKey = (edge: { from: string; to: string }): string => `${edge.from}->${edge.to}`;
   const [dropped, setDropped] = useState<ReadonlySet<string>>(new Set());
@@ -232,9 +333,19 @@ export function ArchiveDialog({
       return next;
     });
 
+  // 一括のときも、planArchive が出した最終形をそのまま映す。
+  useEffect(() => {
+    onPreview({
+      doomedTaskIds: plan.taskIds,
+      removedEdges: plan.removedEdges,
+      addedEdges: plan.addedEdges.filter((e) => !dropped.has(edgeKeyOf(e))),
+    });
+    return () => onPreview(null);
+  }, [plan, dropped, onPreview]);
+
   return (
-    <dialog className="dialog" ref={ref} onCancel={onCancel} onClose={onCancel}>
-      <div>
+    <dialog className="dialog dialog-side" ref={ref} onCancel={onCancel} onClose={onCancel}>
+      <div className="dialog-body">
         <h2>
           {bulk ? (
             <>完了した {plan.taskIds.length} 件をアーカイブしますか？</>

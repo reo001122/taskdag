@@ -38,6 +38,8 @@
   --danger: #b42318;
   /* 危険なボタンの上に載せる文字色。地の色に合わせて反転させる。 */
   --danger-ink: #ffffff;
+  /* 確認ダイアログの背後。キャンバスを読めるよう、うっすら沈めるだけにする。 */
+  --scrim: rgb(0 0 0 / 12%);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -61,6 +63,7 @@
 
     --danger: #f87171;
     --danger-ink: #2b0f0f;
+    --scrim: rgb(0 0 0 / 30%);
   }
 }
 
@@ -979,6 +982,48 @@ body.is-dragging-child .child-grip {
   backdrop-filter: blur(2px);
 }
 
+/*
+  削除・アーカイブの確認は右端に寄せ、キャンバスの中央を見せたまま影響を示す。
+  ぼかしは掛けない(後ろを読ませるため)。showModal() のままなので、キー・クリック・
+  フォーカスは背景へ届かない。ホイールだけは Dialogs.tsx がキャンバスへ渡す。
+*/
+.dialog-side {
+  margin: 0;
+  inset: 12px 12px 12px auto;
+  width: min(400px, 92vw);
+  height: calc(100vh - 24px);
+  max-height: none;
+}
+.dialog-side[open] {
+  display: flex;
+  flex-direction: column;
+}
+.dialog-side .dialog-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.dialog-side::backdrop {
+  background: var(--scrim);
+  backdrop-filter: none;
+}
+
+/* 確認が映す予告。消えるものは赤、繋ぎ直されるものは緑の破線。 */
+.react-flow__node.is-doomed .task {
+  outline: 2px solid var(--danger);
+  outline-offset: 2px;
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+}
+.react-flow__edge.is-doomed-edge .react-flow__edge-path {
+  stroke: var(--danger);
+  stroke-width: 2.5;
+}
+.react-flow__edge.is-preview-edge .react-flow__edge-path {
+  stroke: var(--ready);
+  stroke-width: 2.5;
+  stroke-dasharray: 7 5;
+}
+
 .dialog h2 {
   margin: 0 0 8px;
   font-size: 15px;
@@ -1124,6 +1169,10 @@ body.is-dragging-child .child-grip {
   margin-top: 20px;
   padding-top: 14px;
   border-top: 1px solid var(--border);
+}
+/* 縦長の確認では、操作を下端に置く。 */
+.dialog-side .dialog-body .actions {
+  margin-top: auto;
 }
 
 /* 既定のままだと OS のボタンがそのまま出て、暗い面から浮いてしまう。 */
