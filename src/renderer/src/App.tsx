@@ -25,9 +25,10 @@ import type {
   GraphSnapshot,
 } from '../../shared/ipc';
 import { ArchiveView } from './ArchiveView';
+import { buildEdges, buildProjectFrames, buildTaskNodes, mergeNodes } from './build-flow';
 import { clearDropFeedback, type DropPoint, findDropPoint, showDropFeedback } from './child-drag';
-import { PROJECT_COLOR_COUNT, projectColorAt } from './colors';
-import { DependencyEdge, type DependencyEdgeData } from './DependencyEdge';
+import { PROJECT_COLOR_COUNT } from './colors';
+import { DependencyEdge } from './DependencyEdge';
 import { ArchiveDialog, type CanvasPreview, DeleteDialog, TextPromptDialog } from './Dialogs';
 import { HelpPanel } from './HelpPanel';
 import { allowed, commandFor, isHandedOff, type KeyContext } from './keymap';
@@ -41,8 +42,8 @@ import {
 } from './layout';
 import { logger } from './log';
 import { clearOverlapMarks, showOverlapMarks } from './overlap-mark';
-import { ProjectFrameNode, type ProjectNodeData } from './ProjectNode';
-import { type AutoEdit, TaskNode, type TaskNodeData } from './TaskNode';
+import { ProjectFrameNode } from './ProjectNode';
+import { type AutoEdit, TaskNode } from './TaskNode';
 
 const log = logger('graph');
 
@@ -893,115 +894,26 @@ export function App(): React.JSX.Element {
     return sizes;
   }, []);
 
-  const built = useMemo(() => {
-    if (!snapshot) return { nodes: [] as Node[], edges: [] as Edge[] };
-
-    const hidden = new Set(
-      snapshot.hideCompleted
-        ? snapshot.tasks.filter((t) => t.progress === 'done').map((t) => t.id)
-        : [],
-    );
-
-    const colorOf = new Map(
-      snapshot.projects.map((p) => [p.id, projectColorAt(p.colorIndex)] as const),
-    );
-
-    const frames: Node[] = snapshot.projects.map((project) => {
-      const data: ProjectNodeData = {
-        id: project.id,
-        name: project.name,
-        color: projectColorAt(project.colorIndex),
-        colorIndex: project.colorIndex,
-        onRecolor: (id, colorIndex) => send({ type: 'setProjectColor', id, colorIndex }),
-        onResizing: (id: string, rect: Rect) => markFrameBlocked(`project:${id}`, rect),
-        onResizeEnd: (id, position, width, height) => {
-          markFrameBlocked(`project:${id}`, null);
-          // 相手に届く大きさで離したら、送らずに元の寸法へ戻す(FR-4)。
-          if (wouldOverlap(id, { ...position, width, height })) {
-            restoreFrameSize(id);
-            return;
-          }
-          send({ type: 'resizeProject', id, position, width, height });
-        },
-        onRename: (id, name) => send({ type: 'renameProject', id, name }),
-        onDelete: (id) => send({ type: 'deleteProject', id }),
-      };
-      return {
-        id: `project:${project.id}`,
-        type: 'projectFrame',
-        position: project.position,
-        data: data as never,
-        // dragHandle は指定しない。枠の内側のどこを掴んでも動く。
-        // 中の Task は手前(zIndex 0)にいるので、今までどおり個別に掴める。
-        // Task より背面に置く
-        zIndex: -1,
-        style: { width: project.width, height: project.height },
-      };
-    });
-
-    const childrenByParent = new Map<string, GraphSnapshot['childTasks']>();
-    for (const child of snapshot.childTasks) {
-      const list = childrenByParent.get(child.parentId) ?? [];
-      list.push(child);
-      childrenByParent.set(child.parentId, list);
-    }
-
-    const taskNodes: Node[] = snapshot.tasks
-      .filter((t) => !hidden.has(t.id))
-      .map((task) => {
-        // childTaskIds の並びが表示順。実体を並び順どおりに引き当てる。
-        const pool = childrenByParent.get(task.id) ?? [];
-        const ordered = task.childTaskIds
-          .map((id) => pool.find((c) => c.id === id))
-          .filter((c): c is NonNullable<typeof c> => c !== undefined);
-
-        const data: TaskNodeData = {
-          task,
-          children: ordered,
-          projectColor: task.projectId === null ? null : (colorOf.get(task.projectId) ?? null),
-          hideCompleted: snapshot.hideCompleted,
-          onChildDropped,
-          onRowPressed: focusRow,
-          autoMemo,
-          onAutoMemoConsumed,
-          autoEdit,
-          cursorChildId: cursorIn(task.id),
+  const builtNodes = useMemo(() => {
+    if (!snapshot) return [];
+    return [
+      ...buildProjectFrames(snapshot, { send, markFrameBlocked, wouldOverlap, restoreFrameSize }),
+      ...buildTaskNodes(
+        snapshot,
+        {
           send,
           requestDelete,
           requestArchive: requestArchiveOne,
           onAutoEditConsumed,
+          onAutoMemoConsumed,
           onChildChainAdd: addChild,
           onChildRemoveWhileEditing: removeChildWhileEditing,
-        };
-        return {
-          id: task.id,
-          type: 'task',
-          // 取っ手からだけ動かす(FR-6)。本体のどこでも掴めると、childTask の
-          // 取っ手との違いが読めず、掴めるかどうかが場所ごとに変わる。
-          dragHandle: '.task-grip',
-          position: task.position,
-          data: data as never,
-        };
-      });
-
-    // 非表示の Task に繋がるエッジは描かない。
-    // 結果として残るエッジは「まだ実際にブロックしているもの」だけになる(FR-6)。
-    const visibleEdges: Edge[] = snapshot.edges
-      .filter((e) => !hidden.has(e.from) && !hidden.has(e.to))
-      .map((e) => {
-        const data: DependencyEdgeData = { onRemove: removeEdge };
-        return {
-          id: e.id,
-          source: e.from,
-          target: e.to,
-          type: 'dependency',
-          data: data as never,
-          // 向きが依存の向きそのもの。線だけでは「どちらが先か」が伝わらない。
-          markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18 },
-        };
-      });
-
-    return { nodes: [...frames, ...taskNodes], edges: visibleEdges };
+          onChildDropped,
+          onRowPressed: focusRow,
+        },
+        { autoEdit, autoMemo, cursorIn },
+      ),
+    ];
   }, [
     snapshot,
     send,
@@ -1009,7 +921,6 @@ export function App(): React.JSX.Element {
     requestArchiveOne,
     addChild,
     removeChildWhileEditing,
-    removeEdge,
     onAutoEditConsumed,
     onAutoMemoConsumed,
     autoEdit,
@@ -1022,38 +933,20 @@ export function App(): React.JSX.Element {
     onChildDropped,
   ]);
 
-  /*
-    作り直したノードを、既にあるものへ重ねる。丸ごと差し替えない。
+  // エッジは印にも編集要求にも依存させない。印が1行動いても作り直さない。
+  const builtEdges = useMemo(
+    () => (snapshot ? buildEdges(snapshot, removeEdge) : []),
+    [snapshot, removeEdge],
+  );
 
-    React Flow はノードを差し替えられると、そのノードの measured(測った寸法)を
-    受け取り直す。こちらが作る側は寸法を知らないので undefined になり、
-    測り直しが終わるまでの1フレーム、そのノードは visibility: hidden にされる。
-    グラフが変わるたびに画面がちらつく原因がこれだった(実測: 削除時に 333H222…)。
-    端点の寸法が無い間はエッジも描かれないので、矢印も同じ1フレーム消える。
-
-    重ねれば measured がそのまま残る。React Flow が持たせている選択状態も
-    巻き添えで消えなくなる。
-  */
+  // 重ね方の理由は mergeNodes に書いてある。丸ごと差し替えない。
   useEffect(() => {
-    setNodes((current) => {
-      const existing = new Map(current.map((node) => [node.id, node]));
-      return built.nodes.map((node) => {
-        const before = existing.get(node.id);
-        if (!before) return node;
-        /*
-          大きさだけは引き継がない。
+    setNodes((current) => mergeNodes(current, builtNodes));
+  }, [builtNodes, setNodes]);
 
-          枠の大きさを変えると React Flow はノードに width / height を書き込み、
-          以降そちらを style より優先して読む。重ねるときにそれを残すと、
-          Undo でスナップショットが前の大きさへ戻っても、画面は変形後のまま
-          になる(実測: 460×340 → 400×295 にしてから Cmd+Z しても 400×295)。
-          幾何はこちらが持っている値が正なので、毎回 style から読ませる。
-        */
-        return { ...before, ...node, width: undefined, height: undefined };
-      });
-    });
-    setEdges(built.edges);
-  }, [built, setNodes, setEdges]);
+  useEffect(() => {
+    setEdges(builtEdges);
+  }, [builtEdges, setEdges]);
 
   // アーカイブできる Task(FR-11)。非表示にしている完了 Task も数える。
   const completedIds = useMemo(
