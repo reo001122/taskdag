@@ -11,7 +11,7 @@ export default {
 
   async run(ctx) {
     const { evaluate, wait, waitFor, mouse, check } = ctx;
-    const { addTask, fitView, locatePoint } = actions(ctx);
+    const { addTask, fitView, locatePoint, settleLayout } = actions(ctx);
 
     /** Task ごとの childTask の並び。 */
     const structure = () =>
@@ -41,6 +41,9 @@ export default {
       } else {
         await wait(600);
       }
+      // 戻ったあとの Task は寸法を測り直すので、位置が落ち着くまで待つ
+      // (CI で、続く取っ手の座標が pane に覆われた —— #15)。
+      await settleLayout();
     };
 
     /**
@@ -90,6 +93,9 @@ export default {
      * 渡さない場合(例: 何も変わらないはずの操作)は見た目の後片付けだけを待つ。
      */
     const carry = async (from, to, settleCondition) => {
+      const vp0 = await evaluate(
+        `return document.querySelector('.react-flow__viewport')?.style.transform`,
+      );
       await mouse('mousePressed', from.x, from.y, { buttons: 1 });
       /*
         動かし始めたら、**運びが始まったことを先に確かめる。**
@@ -135,6 +141,20 @@ export default {
           光: document.querySelectorAll('.is-drop-target').length,
         };
       `);
+      /*
+        離す直前に、表示の変換が掴んだ時から動いていないことを確かめる。
+
+        動いていると、掴む前に測った離す点が別の場所を指す(#15)。そのまま離すと
+        「運んだ結果が反映されない」という、原因の読めない落ち方をする。
+      */
+      const vpNow = await evaluate(
+        `return document.querySelector('.react-flow__viewport')?.style.transform`,
+      );
+      if (vpNow !== vp0) {
+        throw new Error(
+          `運んでいる間に画面が動いた(離す点がずれる): ${vp0} → ${vpNow} 離す点 ${JSON.stringify(to)}`,
+        );
+      }
       await mouse('mouseReleased', to.x, to.y, { buttons: 0 });
       await waitFor(
         '運んでいる印が消える',

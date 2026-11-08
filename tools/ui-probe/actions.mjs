@@ -53,8 +53,49 @@ export function actions(probe) {
 
   /** 左下の「全体を表示」。画面の外に出たものを呼び戻す。 */
   const fitView = async () => {
+    // 測り終えていない Task があると、全体を表示してもそれを除いた範囲に合わせられ、
+    // 測り終えたあとで位置がずれる(#15。下端に寄ったまま掴んで運ぶと、端での自動
+    // スクロールで画面が動き、離す点が余白になった)。
+    await waitFor(
+      '全 Task の寸法が測り終わる',
+      `return [...document.querySelectorAll('.react-flow__node')].every(
+        (n) => getComputedStyle(n).visibility !== 'hidden' && n.getBoundingClientRect().width > 0)`,
+    );
     await evaluate(`document.querySelector('.react-flow__controls-fitview').click(); return 1;`);
-    await wait(400);
+    await settleLayout();
+  };
+
+  /**
+   * 画面の配置が落ち着くまで待つ。
+   *
+   * 固定時間(400ms)だけ待つ形では、負荷が高いと React Flow がまだ Task の寸法を
+   * 測り終えておらず、表示の変換(viewport)や各 Task の位置がこのあとで動く。
+   * そのあいだに測った座標で掴み、離す点を決めると、運んでいる間に目標がずれ、
+   * 離した点が余白になる(#15。落ちた回は掴み手の座標が通常と違っていた)。
+   *
+   * viewport の変換と全 Task の矩形が、続けて3回(80ms 間隔)同じになれば落ち着いたとみなす。
+   */
+  const settleLayout = async () => {
+    const sample = `
+      const vp = document.querySelector('.react-flow__viewport')?.style.transform ?? '';
+      const rects = [...document.querySelectorAll('.react-flow__node')].map((n) => {
+        const r = n.getBoundingClientRect();
+        return [r.left, r.top, r.width, r.height].map((v) => Math.round(v * 10) / 10).join(',');
+      });
+      return vp + '|' + rects.join(';');
+    `;
+    let last = null;
+    let same = 0;
+    const deadline = Date.now() + 4000;
+    while (same < 3) {
+      if (Date.now() > deadline) {
+        throw new Error('条件が満たされないまま 4000ms 経過: 画面の配置が落ち着く');
+      }
+      await wait(80);
+      const now = await evaluate(sample);
+      same = now === last ? same + 1 : 0;
+      last = now;
+    }
   };
 
   /**
@@ -184,5 +225,14 @@ export function actions(probe) {
     `);
   };
 
-  return { clickToolbar, addTask, fitView, connect, taskCount, edgeCount, locatePoint };
+  return {
+    clickToolbar,
+    addTask,
+    fitView,
+    settleLayout,
+    connect,
+    taskCount,
+    edgeCount,
+    locatePoint,
+  };
 }
