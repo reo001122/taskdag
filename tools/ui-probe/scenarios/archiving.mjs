@@ -144,8 +144,8 @@ export default {
       };
     `);
     check(
-      'G-1b 札は文字で「アーカイブ」と書かれ、名前のすぐ右に並ぶ',
-      badgeLook.text === 'アーカイブ' &&
+      'G-1b 札は文字で「片付ける」と書かれ、名前のすぐ右に並ぶ',
+      badgeLook.text === '片付ける' &&
         badgeLook.tabIndex === -1 &&
         badgeLook.nodrag &&
         badgeLook.fontSize >= 10 &&
@@ -214,12 +214,12 @@ export default {
     );
 
     // --- 一覧(画面の切り替え) -------------------------------------------
-    await press('アーカイブ');
+    await press('アーカイブ一覧');
     await waitFor('一覧が出る', `return !!document.querySelector('.archive-view')`);
     check(
       'G-4j 一覧を出している間、ツールバーのボタンは「キャンバスに戻る」になる',
       (await toolbarLabels()).includes('キャンバスに戻る') &&
-        !(await toolbarLabels()).includes('アーカイブ'),
+        !(await toolbarLabels()).includes('アーカイブ一覧'),
       await toolbarLabels(),
     );
     let items = await archiveItems();
@@ -294,8 +294,8 @@ export default {
     await waitFor('キャンバスへ戻る', `return !document.querySelector('.archive-view')`);
     check('G-4i もう一度押すとキャンバスへ戻る', await canvasVisible());
     check(
-      'G-4k キャンバスを出している間は「アーカイブ」に戻っている',
-      (await toolbarLabels()).includes('アーカイブ') &&
+      'G-4k キャンバスを出している間は「アーカイブ一覧」に戻っている',
+      (await toolbarLabels()).includes('アーカイブ一覧') &&
         !(await toolbarLabels()).includes('キャンバスに戻る'),
       await toolbarLabels(),
     );
@@ -308,7 +308,7 @@ export default {
       (await taskTitles()).join() === 'W,X,Y,Z',
       await taskTitles(),
     );
-    await press('アーカイブ');
+    await press('アーカイブ一覧');
     await waitFor('一覧が出る', `return !!document.querySelector('.archive-view')`);
     check(
       'G-5b そのとき一覧からも消える',
@@ -331,7 +331,7 @@ export default {
     await wait(30);
     await pressArchiveOf('Y');
     await waitFor('Y が消える', `return document.querySelectorAll('.task').length === 2`);
-    await press('アーカイブ');
+    await press('アーカイブ一覧');
     await waitFor('一覧が出る', `return !!document.querySelector('.archive-view')`);
     items = await archiveItems();
     check(
@@ -414,7 +414,7 @@ export default {
     const next = await ctx.restart();
     await next.wait(600);
     await next.evaluate(
-      `[...document.querySelectorAll('.toolbar button')].find((b) => b.textContent.trim() === 'アーカイブ').click(); return 1;`,
+      `[...document.querySelectorAll('.toolbar button')].find((b) => b.textContent.trim() === 'アーカイブ一覧').click(); return 1;`,
     );
     await next.waitFor('一覧が出る', `return !!document.querySelector('.archive-view')`);
     const restored = await next.evaluate(

@@ -620,18 +620,19 @@ export function TaskNode({ data, selected, width }: NodeProps): React.JSX.Elemen
 
                 {/*
                   完了した Task にだけ、名前のすぐ右に出す(FR-11)。未完了はアーカイブできない。
-                  編集の部品(✎ ＋ ×)と取り違えないよう、文字で書いた札にしてある。
-                  名前が長いときは名前のほうが折り返し、札は縮めない。
+                  編集の部品(✎ ＋ ×)と取り違えないよう、文字で書いたボタンにしてある。
+                  状態の印に見えないよう、文言は動詞にし、形も丸い札にしない。
+                  名前が長いときは名前のほうが折り返し、ボタンは縮めない。
                 */}
                 {isDone && (
                   <button
                     tabIndex={-1}
                     type="button"
                     className="archive-badge nodrag"
-                    title="アーカイブへ移す"
+                    title="アーカイブへ移す(アーカイブ一覧で読める)"
                     onPointerDown={onPress(() => requestArchive(task.id))}
                   >
-                    アーカイブ
+                    片付ける
                   </button>
                 )}
               </span>

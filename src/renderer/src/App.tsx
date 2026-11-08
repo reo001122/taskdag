@@ -1067,7 +1067,7 @@ export function App(): React.JSX.Element {
           onClick={() => setShowArchive((open) => !open)}
           title="アーカイブした Task の一覧に切り替える。もう一度押すとキャンバスへ戻る"
         >
-          {showArchive ? 'キャンバスに戻る' : 'アーカイブ'}
+          {showArchive ? 'キャンバスに戻る' : 'アーカイブ一覧'}
         </button>
 
         <span className="spacer" />
