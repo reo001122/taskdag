@@ -17,11 +17,18 @@ import '@xyflow/react/dist/style.css';
 import './styles.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { type Rect, rectIntersection, rectsOverlap } from '../../shared/geometry';
-import type { Command, CommandResult, DeletePlan, GraphSnapshot } from '../../shared/ipc';
+import type {
+  ArchivePlan,
+  Command,
+  CommandResult,
+  DeletePlan,
+  GraphSnapshot,
+} from '../../shared/ipc';
+import { ArchiveView } from './ArchiveView';
 import { clearDropFeedback, type DropPoint, findDropPoint, showDropFeedback } from './child-drag';
 import { PROJECT_COLOR_COUNT, projectColorAt } from './colors';
 import { DependencyEdge, type DependencyEdgeData } from './DependencyEdge';
-import { DeleteDialog, TextPromptDialog } from './Dialogs';
+import { ArchiveDialog, DeleteDialog, TextPromptDialog } from './Dialogs';
 import { HelpPanel } from './HelpPanel';
 import { allowed, commandFor, isHandedOff, type KeyContext } from './keymap';
 import {
@@ -49,7 +56,9 @@ function keyContextOf(e: KeyboardEvent): KeyContext {
     fromEditable:
       from !== null && (from.closest('input, textarea') !== null || from.isContentEditable),
     fromDialog: from?.closest('dialog') != null,
-    dialogOpen: document.querySelector('dialog[open]') !== null,
+    // アーカイブの一覧を出している間も、背景のキャンバスには触れさせない(FR-11)。
+    // 見えていないグラフを Cmd+Z や Delete が動かすのを防ぐ。
+    dialogOpen: document.querySelector('dialog[open], .archive-view') !== null,
     inputOpen: document.querySelector('.text-input, .memo-input') !== null,
     handedOff: isHandedOff(e),
   };
@@ -64,6 +73,10 @@ export function App(): React.JSX.Element {
   const { screenToFlowPosition, flowToScreenPosition, getNodes } = useReactFlow();
   const [error, setError] = useState<string | null>(null);
   const [deletePlan, setDeletePlan] = useState<DeletePlan | null>(null);
+  // アーカイブの確認(FR-11)。bulk はツールバーからまとめて移すとき。
+  // キャンバスの代わりにアーカイブの一覧を出しているか(FR-11)。
+  const [showArchive, setShowArchive] = useState(false);
+  const [archivePlan, setArchivePlan] = useState<{ plan: ArchivePlan; bulk: boolean } | null>(null);
   const [askProjectName, setAskProjectName] = useState(false);
   // キー操作の一覧。起動時は閉じていて、開閉の状態は保存しない。
   // 常時表示。たたんだ状態は保存しない(起動時は常に広がっている)。
@@ -553,6 +566,34 @@ export function App(): React.JSX.Element {
     [send],
   );
 
+  /**
+   * 完了した Task をアーカイブへ移す(FR-11)。
+   *
+   * 1件ずつ(完了した Task の名前の横の札)は、依存が繋ぎ直される・外れるときだけ確認を出し、無ければ
+   * そのまま移す(削除と同じ)。まとめて(ツールバー)は、何件移すかを見せるために
+   * いつも確認を出す。どちらも直後の Cmd+Z で戻る(FR-8)。
+   */
+  const requestArchive = useCallback(
+    (ids: string[], bulk: boolean) => {
+      void (async () => {
+        if (ids.length === 0) return;
+        const plan = await window.api.planArchive(ids);
+        if (!plan) return;
+        const changesDependencies = plan.removedEdges.length > 0 || plan.addedEdges.length > 0;
+        if (!bulk && !changesDependencies) {
+          send({ type: 'archiveTask', id: ids[0] as string });
+          return;
+        }
+        setArchivePlan({ plan, bulk });
+      })();
+    },
+    [send],
+  );
+  const requestArchiveOne = useCallback(
+    (id: string) => requestArchive([id], false),
+    [requestArchive],
+  );
+
   /*
     キーボードの入口。解釈と可否は keymap.ts にあり、ここは「対象の決定」と「実行」だけ。
 
@@ -866,6 +907,7 @@ export function App(): React.JSX.Element {
           cursorChildId: cursorIn(task.id),
           send,
           requestDelete,
+          requestArchive: requestArchiveOne,
           onAutoEditConsumed,
           onChildChainAdd: addChild,
           onChildRemoveWhileEditing: removeChildWhileEditing,
@@ -903,6 +945,7 @@ export function App(): React.JSX.Element {
     snapshot,
     send,
     requestDelete,
+    requestArchiveOne,
     addChild,
     removeChildWhileEditing,
     removeEdge,
@@ -951,29 +994,43 @@ export function App(): React.JSX.Element {
     setEdges(built.edges);
   }, [built, setNodes, setEdges]);
 
+  // アーカイブできる Task(FR-11)。非表示にしている完了 Task も数える。
+  const completedIds = useMemo(
+    () => snapshot?.tasks.filter((t) => t.progress === 'done').map((t) => t.id) ?? [],
+    [snapshot],
+  );
+
   const readyCount =
     snapshot?.tasks.filter((t) => t.readiness === 'ready' && t.progress !== 'done').length ?? 0;
 
   return (
     <div className="app">
       <div className="toolbar">
-        <button type="button" onClick={addTaskHere}>
+        <button type="button" disabled={showArchive} onClick={addTaskHere}>
           + Task
         </button>
-        <button type="button" onClick={() => setAskProjectName(true)}>
+        <button type="button" disabled={showArchive} onClick={() => setAskProjectName(true)}>
           + Project
         </button>
 
-        <button type="button" disabled={!snapshot?.canUndo} onClick={() => send({ type: 'undo' })}>
+        <button
+          type="button"
+          disabled={showArchive || !snapshot?.canUndo}
+          onClick={() => send({ type: 'undo' })}
+        >
           Undo
         </button>
-        <button type="button" disabled={!snapshot?.canRedo} onClick={() => send({ type: 'redo' })}>
+        <button
+          type="button"
+          disabled={showArchive || !snapshot?.canRedo}
+          onClick={() => send({ type: 'redo' })}
+        >
           Redo
         </button>
 
         <button
           type="button"
-          disabled={!snapshot || snapshot.tasks.length === 0}
+          disabled={showArchive || !snapshot || snapshot.tasks.length === 0}
           onClick={() => {
             if (!snapshot) return;
             const layout = computeLayout(snapshot, measureTasks());
@@ -985,6 +1042,15 @@ export function App(): React.JSX.Element {
           整列
         </button>
 
+        <button
+          type="button"
+          disabled={showArchive || completedIds.length === 0}
+          onClick={() => requestArchive(completedIds, true)}
+          title="完了している Task をまとめてアーカイブへ移す(非表示のものも含む)"
+        >
+          完了をアーカイブ
+        </button>
+
         <label>
           <input
             type="checkbox"
@@ -993,6 +1059,16 @@ export function App(): React.JSX.Element {
           />
           完了を非表示
         </label>
+
+        <button
+          type="button"
+          className="is-view-toggle"
+          aria-pressed={showArchive}
+          onClick={() => setShowArchive((open) => !open)}
+          title="アーカイブした Task の一覧に切り替える。もう一度押すとキャンバスへ戻る"
+        >
+          {showArchive ? 'キャンバスに戻る' : 'アーカイブ一覧'}
+        </button>
 
         <span className="spacer" />
         <span className="muted">
@@ -1013,7 +1089,13 @@ export function App(): React.JSX.Element {
         </button>
       </div>
 
-      <div style={{ flex: 1, position: 'relative' }}>
+      {showArchive && <ArchiveView archived={snapshot?.archived ?? []} />}
+
+      {/*
+        一覧を出している間もキャンバスは作ったままにして、見えなくするだけにする。
+        外すと戻ったときに表示位置と拡大率が初期化される。
+      */}
+      <div style={{ flex: 1, position: 'relative', display: showArchive ? 'none' : undefined }}>
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -1238,6 +1320,27 @@ export function App(): React.JSX.Element {
               ...NEW_PROJECT_SIZE,
               colorIndex,
             });
+          }}
+        />
+      )}
+
+      {archivePlan && snapshot && (
+        <ArchiveDialog
+          plan={archivePlan.plan}
+          snapshot={snapshot}
+          bulk={archivePlan.bulk}
+          onCancel={() => setArchivePlan(null)}
+          onConfirm={(keepReconnections) => {
+            send(
+              archivePlan.bulk
+                ? { type: 'archiveCompletedTasks', keepReconnections }
+                : {
+                    type: 'archiveTask',
+                    id: archivePlan.plan.taskIds[0] as string,
+                    keepReconnections,
+                  },
+            );
+            setArchivePlan(null);
           }}
         />
       )}

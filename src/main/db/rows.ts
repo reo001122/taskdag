@@ -38,6 +38,16 @@ export type ChildTaskRow = {
   memo: string;
 };
 
+export type ArchivedTaskRow = {
+  id: string;
+  title: string;
+  memo: string;
+  /** JSON 配列 [{title, progress, memo}]。配列の並びが表示順。 */
+  child_tasks: string;
+  archived_at: number;
+  project_name: string | null;
+};
+
 export type EdgeRow = { id: string; from_task_id: string; to_task_id: string };
 
 export type GraphRows = {
@@ -45,6 +55,7 @@ export type GraphRows = {
   tasks: Map<string, TaskRow>;
   childTasks: Map<string, ChildTaskRow>;
   edges: Map<string, EdgeRow>;
+  archived: Map<string, ArchivedTaskRow>;
 };
 
 /** ドメインのグラフを DB の行へ射影する。 */
@@ -99,5 +110,17 @@ export function toRows(graph: TaskGraph): GraphRows {
     edges.set(e.id, { id: e.id, from_task_id: e.from, to_task_id: e.to });
   }
 
-  return { projects, tasks, childTasks, edges };
+  const archived = new Map<string, ArchivedTaskRow>();
+  for (const a of graph.archived) {
+    archived.set(a.id, {
+      id: a.id,
+      title: a.title,
+      memo: a.memo,
+      child_tasks: JSON.stringify(a.childTasks),
+      archived_at: a.archivedAt,
+      project_name: a.projectName,
+    });
+  }
+
+  return { projects, tasks, childTasks, edges, archived };
 }

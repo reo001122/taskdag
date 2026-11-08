@@ -52,6 +52,36 @@ describe('AppService — 通常の永続化', () => {
   });
 });
 
+describe('AppService — アーカイブの永続化(FR-11)', () => {
+  const countRows = (table: string): number =>
+    (db.prepare(`SELECT COUNT(*) n FROM ${table}`).get() as unknown as { n: number }).n;
+
+  it('FR-11: アーカイブで Task が消え、記録の行ができる。Undo で戻る', () => {
+    service.mutate((store) => store.createTask('t1', { x: 0, y: 0 }));
+    const id = firstTaskId();
+    service.mutate((store) => store.setTaskProgress(id, 'done'));
+
+    service.mutate((store) => store.archiveTask(id, 1234));
+    expect(countRows('tasks')).toBe(0);
+    expect(countRows('archived_tasks')).toBe(1);
+
+    service.mutate((store) => store.undo());
+    expect(countRows('tasks')).toBe(1);
+    expect(countRows('archived_tasks')).toBe(0);
+  });
+
+  it('FR-11: 再起動(読み直し)後も記録が残る', () => {
+    service.mutate((store) => store.createTask('t1', { x: 0, y: 0 }));
+    const id = firstTaskId();
+    service.mutate((store) => store.setTaskProgress(id, 'done'));
+    service.mutate((store) => store.archiveCompletedTasks(1234));
+
+    const reopened = new AppService(db);
+    expect(reopened.graph.archived.map((r) => [r.title, r.archivedAt])).toEqual([['t1', 1234]]);
+    expect(reopened.graph.tasks.size).toBe(0);
+  });
+});
+
 describe('AppService — 永続化に失敗したときの巻き戻し', () => {
   /**
    * ドメイン層は Progress を型でしか縛れない。IPC / MCP から実行時に不正な値が

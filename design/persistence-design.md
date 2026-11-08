@@ -65,6 +65,18 @@ CREATE TABLE app_settings (
 );
 -- 例: ('hide_completed_tasks', 'false')
 
+-- アーカイブの記録(FR-11, v6)。グラフから外れた Task の読み取り専用の写し。
+-- tasks とは外部キーで繋がない(元の Task はもう無い)。
+-- child_tasks は {title, progress, memo} の JSON 配列で、並びが表示順
+CREATE TABLE archived_tasks (
+  id           TEXT PRIMARY KEY,
+  title        TEXT NOT NULL,
+  memo         TEXT NOT NULL,
+  child_tasks  TEXT NOT NULL,
+  archived_at  INTEGER NOT NULL,   -- エポックミリ秒
+  project_name TEXT                -- アーカイブの時点の Project 名の写し。属さなければ NULL
+);
+
 CREATE INDEX idx_edges_to   ON dependency_edges(to_task_id);
 CREATE INDEX idx_edges_from ON dependency_edges(from_task_id);
 CREATE INDEX idx_child_parent_order ON child_tasks(parent_id, order_index);
@@ -188,6 +200,7 @@ type GraphDiff = {
   tasks:      EntityDiff<Task>;
   childTasks: EntityDiff<ChildTask>;
   edges:      EntityDiff<DependencyEdge>;
+  archived:   EntityDiff<ArchivedTask>;   // FR-11
 };
 
 computeDiff(before: TaskGraph, after: TaskGraph): GraphDiff
@@ -212,6 +225,7 @@ BEGIN;
   DELETE dependency_edges → child_tasks → tasks → projects
   -- 挿入は親側から
   INSERT projects → tasks → child_tasks → dependency_edges
+  -- archived_tasks は外部キーを持たないので順序を問わない
   -- 更新は順序を問わない
   UPDATE ...
 COMMIT;

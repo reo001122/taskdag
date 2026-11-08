@@ -75,13 +75,37 @@ type Project = {
   colorIndex: number;    // 表示側の配色表の何番目か。色そのものは持たない
 };
 
+/** アーカイブした childTask の写し(FR-11)。id も親子の参照も持たない */
+type ArchivedChildTask = {
+  title: string;
+  progress: Progress;
+  memo: string;
+};
+
+/** アーカイブした Task の記録(FR-11)。読むためだけの写し。グラフには参加しない */
+type ArchivedTask = {
+  id: TaskId;                    // アーカイブ前の id。グラフには存在しない。記録の識別用
+  title: string;
+  memo: string;
+  childTasks: ArchivedChildTask[];
+  archivedAt: number;            // エポックミリ秒。ドメインは時計を持たないので外から渡される
+  projectName: string | null;    // アーカイブの時点の名前の写し(所属は保存しないため、残すにはここしかない)
+};
+
 type TaskGraph = {
   tasks: ReadonlyMap<TaskId, Task>;
   childTasks: ReadonlyMap<ChildTaskId, ChildTask>;
   edges: ReadonlyMap<EdgeId, DependencyEdge>;
   projects: ReadonlyMap<ProjectId, Project>;
+  archived: readonly ArchivedTask[];   // アーカイブの記録(FR-11, D-15)
 };
 ```
+
+`archived` を `TaskGraph` の中に置くのは、Undo がグラフ全体のスナップショットを積む方式(§4, D-3)
+だからである。記録がグラフの外にあると、Cmd+Z でグラフだけが戻って記録が残る。
+`projectName` は所属の導出(§3.5)の結果の写しだが、「導出できるものは保存しない」の例外に
+当たらない —— Task が消えれば導けなくなり、Project の名前も後から変わるため、残すなら
+写すしかない。
 
 ### 設計判断: `DependencyEdge` に `kind` を持たせない
 
@@ -281,6 +305,45 @@ flowchart TD
 `moveProject` は枠と中身を一緒に動かす。中身を置き去りにすると枠から外れて所属が消えるため。
 `resizeProject` は枠だけを変える —— 広げれば取り込み、狭めれば外れる。
 
+### 3.6 完了した Task のアーカイブ(FR-11)
+
+アーカイブは「削除して、読むための記録を残す」操作である。
+
+```
+archiveTasks(graph, ids, newId, archivedAt):
+  ids の順に1件ずつ:
+    Task が完了(done)していなければ task_not_done
+    記録を作る(名前・メモ・childTask の写し・archivedAt・属していた Project の名前)
+    deleteTask(graph, id, newId)      ← 3.2 の関数をそのまま呼ぶ
+    archived に記録を追加
+```
+
+- **グラフから外す部分は `deleteTask` を呼ぶ。** childTask を道連れにすることも、依存の
+  繋ぎ直し(FR-3)も3.2のままになる。規則を書き写さないので、削除とアーカイブで結果が
+  食い違うことはない。
+- **まとめて移す(`archiveCompletedTasks`)は、1件ずつの適用を `graph.tasks` の並びの順に
+  繰り返したもの**である。「1件ずつ順に適用した結果と一致する」を実装で保証している。
+  順序が結果に効きうるのは両側複数になる境界だけで、その場合も並びが決まっているので
+  同じグラフからは同じ結果になる。
+- **1件でも完了していなければ全体を失敗にする。** 部分的には移さない。
+- `projectName` は、Task が消える前に `projectOfTask`(3.5)で求めて名前を写す。時刻は
+  引数で受ける —— ドメインは時計を持たない。
+- 戻す操作は持たない。直後の Undo だけが戻せる。
+- アーカイブした Task はグラフにいないので、Ready/Blocked の導出にも、先行としても現れない。
+  先行がアーカイブされたあとの後続の状態は、3.2で繋ぎ直された先行で決まる。
+
+- **繋ぎ直しを外す(`keep`)。** 1件なら `deleteTask` の `keep` にそのまま渡す。複数のときは、
+  全てを順に適用し終えたあとで、**新しくできた依存のうち `keep` に無いものを除く**(元から
+  あった依存は触らない)。確認に出る繋ぎ直しは `planArchive` が全体を順に適用した最終形で、
+  途中で繋ぎ直されて後で消えた依存は出ない。段ごとに `keep` で絞ると、確認に出ていない
+  途中の依存を指定できてしまい、最終形が確認とずれうる。最後に絞れば、確認に出たものから
+  外した分を引いたものが、実際にできるものと一致する。絞り込みにしかならない点は
+  `deleteTask` と同じで、新しくできた依存以外を `keep` に書いても無視する。
+
+`planArchive(ids)` は `archiveTasks` を試しに走らせ、前後のエッジを(id でなく from/to の
+組で)比べる。見せた内容と実際に起きることが、同じコードから出るので食い違わない。
+途中で繋ぎ直されて後で消えた依存は、前後の差に現れない。
+
 ## 4. Undo / Redo(FR-8)
 
 ### 方式: スナップショット方式を採用する
@@ -340,7 +403,8 @@ type DomainError =
   | { type: 'self_loop'; id: TaskId }
   | { type: 'index_out_of_range'; index: number; length: number }
   | { type: 'projects_overlap'; a: ProjectId; b: ProjectId }
-  | { type: 'cannot_nest_into_itself'; id: TaskId };
+  | { type: 'cannot_nest_into_itself'; id: TaskId }
+  | { type: 'task_not_done'; id: TaskId };
 ```
 
 #### Task
@@ -354,6 +418,8 @@ type DomainError =
 | `setTaskCollapsed(id, collapsed)` | Task不在 |
 | `moveTask(id, position)` | Task不在 |
 | `deleteTask(id, keep?)` | Task不在。`keep` は繋ぎ直すエッジの指定(FR-1) |
+| `archiveTask(id, archivedAt, keep?)` | Task不在 / 完了していない(`task_not_done`)。FR-11。`keep` は繋ぎ直すエッジの指定で、`deleteTask` にそのまま渡す(FR-1) |
+| `archiveCompletedTasks(archivedAt, keep?)` | しない。完了した Task が無ければ何もせず、履歴にも積まない。FR-11。`keep` は「最終的に残す繋ぎ直し」の集合(下の 3.6) |
 
 **所属を渡す引数も、所属を付け替える操作も無い。** Project は領域であり、所属は位置から
 導出される(§3.5, D-1)。動かせば変わる。
@@ -424,6 +490,8 @@ getAllTaskProjects(): ReadonlyMap<TaskId, ProjectId | null>
 
 canConnect(from: TaskId, to: TaskId): boolean   // UIの接続可否判定用(3.1)
 planDeleteTask(id: TaskId): Result<DeleteTaskPlan, DomainError>  // 削除前の提示(FR-1)
+planArchive(ids: readonly TaskId[]): Result<ArchivePlan, DomainError>  // アーカイブ前の提示(FR-11)
+completedTaskIds(): TaskId[]                     // アーカイブできる Task(FR-11)
 ```
 
 導出値(Readiness と所属)は、1件ずつ引くものと全件まとめて引くものの両方がある。
@@ -441,6 +509,14 @@ planDeleteTask(id: TaskId): Result<DeleteTaskPlan, DomainError>  // 削除前の
 - 直接の逆方向(`B→A` がある時の `A→B`)を拒否する
 - 間接的な循環(`A→B→C` がある時の `C→A`)を拒否する
 - 循環にならない接続は許可する
+
+**アーカイブ(FR-11)**
+- 完了した Task だけが対象になる(未完了は `task_not_done`)
+- `A→B(完了)→C` で B を移すと A→C に繋ぎ直る / 入力・出力とも複数なら繋ぎ直さない
+- childTask は完了かどうかに関わらず一緒に移る
+- まとめて移した結果が、1件ずつ順に適用した結果と一致する
+- Cmd+Z 1回でグラフと記録が揃って戻る
+- アーカイブした Task は Ready/Blocked の導出に現れない
 
 **削除と再接続(FR-3)**
 - 入力1・出力1 → 再接続する

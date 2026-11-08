@@ -1,4 +1,11 @@
 import {
+  type ArchivePlan,
+  archiveCompletedTasks,
+  archiveTasks,
+  completedTaskIds,
+  planArchive,
+} from './archive';
+import {
   createChildTask,
   deleteChildTask,
   reorderChildTask,
@@ -116,6 +123,16 @@ export class TaskGraphStore {
     return planDeleteTask(this.#present, id);
   }
 
+  /** 完了している Task の id(FR-11)。 */
+  completedTaskIds(): TaskId[] {
+    return completedTaskIds(this.#present);
+  }
+
+  /** アーカイブ前に変更内容を提示するための計画(FR-11)。 */
+  planArchive(ids: readonly TaskId[]): Result<ArchivePlan, DomainError> {
+    return planArchive(this.#present, ids);
+  }
+
   // --- 履歴 -----------------------------------------------------------------
 
   undo(): boolean {
@@ -194,6 +211,8 @@ export class TaskGraphStore {
     const before = this.#present;
     const result = fn(before);
     if (!result.ok) return result;
+    // 何も変えなかった操作(移す対象が無いアーカイブなど)は履歴に積まない
+    if (result.value === before) return okVoid;
 
     this.#present = result.value;
     if (this.#batchDepth === 0) this.#pushHistory(before);
@@ -236,6 +255,26 @@ export class TaskGraphStore {
     keep?: readonly { readonly from: TaskId; readonly to: TaskId }[],
   ): Result<void, DomainError> {
     return this.#run((g) => deleteTask(g, id, this.#newId, keep));
+  }
+
+  /**
+   * 完了している Task を、childTask ごとアーカイブへ移す(FR-11)。
+   * archivedAt はドメインが時計を持たないので呼び出し側が渡す。
+   */
+  archiveTask(
+    id: TaskId,
+    archivedAt: number,
+    keep?: readonly { readonly from: TaskId; readonly to: TaskId }[],
+  ): Result<void, DomainError> {
+    return this.#run((g) => archiveTasks(g, [id], this.#newId, archivedAt, keep));
+  }
+
+  /** 完了しているトップレベルの Task をまとめて移す。1回の Undo で戻る(FR-11)。 */
+  archiveCompletedTasks(
+    archivedAt: number,
+    keep?: readonly { readonly from: TaskId; readonly to: TaskId }[],
+  ): Result<void, DomainError> {
+    return this.#run((g) => archiveCompletedTasks(g, this.#newId, archivedAt, keep));
   }
 
   // --- コマンド: childTask --------------------------------------------------

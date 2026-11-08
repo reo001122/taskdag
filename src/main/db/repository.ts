@@ -1,5 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import {
+  type ArchivedChildTask,
+  type ArchivedTask,
   type ChildTask,
   type ChildTaskId,
   childTaskId,
@@ -15,7 +17,7 @@ import {
   taskId,
 } from '../domain/model';
 import type { GraphDiff } from './diff';
-import type { ChildTaskRow, EdgeRow, ProjectRow, TaskRow } from './rows';
+import type { ArchivedTaskRow, ChildTaskRow, EdgeRow, ProjectRow, TaskRow } from './rows';
 
 /**
  * SQLite への読み書き(design/persistence-design.md §3)
@@ -33,6 +35,11 @@ export function load(db: DatabaseSync): TaskGraph {
     .prepare('SELECT * FROM child_tasks ORDER BY parent_id, order_index')
     .all() as unknown as ChildTaskRow[];
   const edgeRows = db.prepare('SELECT * FROM dependency_edges').all() as unknown as EdgeRow[];
+
+  // 同時刻(まとめてアーカイブ)の並びを再起動で変えないよう、id で決着をつける
+  const archivedRows = db
+    .prepare('SELECT * FROM archived_tasks ORDER BY archived_at, id')
+    .all() as unknown as ArchivedTaskRow[];
 
   const projects = new Map<ProjectId, Project>();
   for (const r of projectRows) {
@@ -92,7 +99,16 @@ export function load(db: DatabaseSync): TaskGraph {
     edges.set(id, { id, from: taskId(r.from_task_id), to: taskId(r.to_task_id) });
   }
 
-  return { tasks, childTasks, edges, projects };
+  const archived: ArchivedTask[] = archivedRows.map((r) => ({
+    id: taskId(r.id),
+    title: r.title,
+    memo: r.memo,
+    childTasks: JSON.parse(r.child_tasks) as ArchivedChildTask[],
+    archivedAt: r.archived_at,
+    projectName: r.project_name,
+  }));
+
+  return { tasks, childTasks, edges, projects, archived };
 }
 
 /**
@@ -248,6 +264,24 @@ export function applyDiff(db: DatabaseSync, diff: GraphDiff): void {
     );
     for (const r of [...diff.edges.inserted, ...diff.edges.updated]) {
       upsertEdge.run(r.id, r.from_task_id, r.to_task_id);
+    }
+
+    // アーカイブの記録。外部キーは無い(元の Task はもう無い)ので順序の制約は無い
+    const deleteArchived = db.prepare('DELETE FROM archived_tasks WHERE id = ?');
+    for (const id of diff.archived.deleted) deleteArchived.run(id);
+
+    const upsertArchived = db.prepare(
+      `INSERT INTO archived_tasks (id, title, memo, child_tasks, archived_at, project_name)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         title = excluded.title,
+         memo = excluded.memo,
+         child_tasks = excluded.child_tasks,
+         archived_at = excluded.archived_at,
+         project_name = excluded.project_name`,
+    );
+    for (const r of [...diff.archived.inserted, ...diff.archived.updated]) {
+      upsertArchived.run(r.id, r.title, r.memo, r.child_tasks, r.archived_at, r.project_name);
     }
 
     db.exec('COMMIT');

@@ -52,6 +52,29 @@ function readColorIndex(o: Obj): Result<number, string> {
   return ok(value);
 }
 
+/**
+ * keepReconnections(deleteTask / archiveTask / archiveCompletedTasks で共通)。
+ * 省略は「全て繋ぎ直す」で、空配列は「1本も繋ぎ直さない」。区別して通す。
+ */
+function parseKeepReconnections(
+  raw: unknown,
+): Result<{ from: string; to: string }[] | undefined, string> {
+  if (raw === undefined) return ok(undefined);
+  if (!Array.isArray(raw)) return err('"keepReconnections" must be an array');
+  const keep: { from: string; to: string }[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null) {
+      return err('"keepReconnections" must contain objects');
+    }
+    const { from, to } = entry as Record<string, unknown>;
+    if (!isNonEmptyString(from) || !isNonEmptyString(to)) {
+      return err('"keepReconnections" entries need non-empty "from" and "to"');
+    }
+    keep.push({ from, to });
+  }
+  return ok(keep);
+}
+
 export function parseCommand(raw: unknown): Result<Command, string> {
   if (!isObject(raw)) return err('command must be an object');
   const type = raw.type;
@@ -110,26 +133,21 @@ export function parseCommand(raw: unknown): Result<Command, string> {
       return ok({ type, id: id.value, collapsed: raw.collapsed });
     }
 
-    case 'deleteTask': {
+    case 'deleteTask':
+    case 'archiveTask': {
       const id = needId();
       if (!id.ok) return id;
-      if (raw.keepReconnections === undefined) return ok({ type, id: id.value });
+      const keep = parseKeepReconnections(raw.keepReconnections);
+      if (!keep.ok) return keep;
+      return keep.value === undefined
+        ? ok({ type, id: id.value })
+        : ok({ type, id: id.value, keepReconnections: keep.value });
+    }
 
-      if (!Array.isArray(raw.keepReconnections)) {
-        return err('"keepReconnections" must be an array');
-      }
-      const keep: { from: string; to: string }[] = [];
-      for (const entry of raw.keepReconnections) {
-        if (typeof entry !== 'object' || entry === null) {
-          return err('"keepReconnections" must contain objects');
-        }
-        const { from, to } = entry as Record<string, unknown>;
-        if (!isNonEmptyString(from) || !isNonEmptyString(to)) {
-          return err('"keepReconnections" entries need non-empty "from" and "to"');
-        }
-        keep.push({ from, to });
-      }
-      return ok({ type, id: id.value, keepReconnections: keep });
+    case 'archiveCompletedTasks': {
+      const keep = parseKeepReconnections(raw.keepReconnections);
+      if (!keep.ok) return keep;
+      return keep.value === undefined ? ok({ type }) : ok({ type, keepReconnections: keep.value });
     }
 
     case 'deleteChildTask':

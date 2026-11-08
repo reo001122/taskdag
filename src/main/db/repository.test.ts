@@ -17,6 +17,44 @@ function roundTrip(graph: TaskGraph): TaskGraph {
   return load(db);
 }
 
+describe('load / applyDiff — アーカイブの記録(FR-11)', () => {
+  const record = (id: string, archivedAt: number, projectName: string | null = null) => ({
+    id: T(id),
+    title: `タイトル ${id}`,
+    memo: '改行\nを含む\u3000メモ "quote"',
+    childTasks: [
+      { title: 'c1', progress: 'done' as const, memo: '' },
+      { title: 'c2', progress: 'in_progress' as const, memo: 'm' },
+    ],
+    archivedAt,
+    projectName,
+  });
+
+  it('FR-11: 記録(childTask の並び・Project 名・時刻)が往復で保たれる', () => {
+    const graph = {
+      ...buildGraph({ tasks: { A: {} } }),
+      archived: [record('x', 1_700_000_000_000, '設計'), record('y', 1_700_000_001_000)],
+    };
+    const after = roundTrip(graph);
+    expect(after.archived).toEqual(graph.archived);
+    expect(after.tasks.has(T('A'))).toBe(true);
+  });
+
+  it('FR-11: 同じ時刻の記録は、再読み込みしても同じ並びになる', () => {
+    const graph = { ...emptyGraph, archived: [record('b', 5), record('a', 5)] };
+    const first = roundTrip(graph).archived.map((r) => r.id);
+    expect(first).toEqual([T('a'), T('b')]);
+    expect(load(db).archived.map((r) => r.id)).toEqual(first);
+  });
+
+  it('FR-11: 記録の取り消し(Undo)が DB から行を消す', () => {
+    const withRecord = { ...emptyGraph, archived: [record('x', 1)] };
+    applyDiff(db, computeDiff(emptyGraph, withRecord));
+    applyDiff(db, computeDiff(withRecord, emptyGraph));
+    expect(load(db).archived).toEqual([]);
+  });
+});
+
 describe('load / applyDiff — 往復', () => {
   it('空のグラフを往復できる', () => {
     const after = roundTrip(emptyGraph);
@@ -157,6 +195,7 @@ describe('applyDiff のトランザクション', () => {
         updated: [],
         deleted: [],
       },
+      archived: { inserted: [], updated: [], deleted: [] },
     };
 
     expect(() => applyDiff(db, broken)).toThrow();

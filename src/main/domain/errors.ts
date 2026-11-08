@@ -16,7 +16,8 @@ export type DomainError =
   | { readonly type: 'self_loop'; readonly id: TaskId }
   | { readonly type: 'index_out_of_range'; readonly index: number; readonly length: number }
   | { readonly type: 'projects_overlap'; readonly a: ProjectId; readonly b: ProjectId }
-  | { readonly type: 'cannot_nest_into_itself'; readonly id: TaskId };
+  | { readonly type: 'cannot_nest_into_itself'; readonly id: TaskId }
+  | { readonly type: 'task_not_done'; readonly id: TaskId };
 
 export const taskNotFound = (id: TaskId): DomainError => ({ type: 'task_not_found', id });
 export const childTaskNotFound = (id: ChildTaskId): DomainError => ({
@@ -45,6 +46,7 @@ export const cannotNestIntoItself = (id: TaskId): DomainError => ({
   type: 'cannot_nest_into_itself',
   id,
 });
+export const taskNotDone = (id: TaskId): DomainError => ({ type: 'task_not_done', id });
 export const indexOutOfRange = (index: number, length: number): DomainError => ({
   type: 'index_out_of_range',
   index,
@@ -79,5 +81,7 @@ export function describeDomainError(error: DomainError): string {
       return `Projects ${error.a} and ${error.b} would overlap. Frames must not overlap.`;
     case 'cannot_nest_into_itself':
       return `Task ${error.id} cannot become a child of itself.`;
+    case 'task_not_done':
+      return `Task ${error.id} is not done. Only done Tasks can be archived.`;
   }
 }
